@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "build:production": "echo 'Production build completed - no build step required for Node.js'",
     "deploy": "railway up",
     "test": "jest",
     "test:watch": "jest --watch",
