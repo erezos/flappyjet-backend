@@ -187,6 +187,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚂 FlappyJet Backend running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🚀 Railway deployment ready!`);
 });
 
 module.exports = app;
