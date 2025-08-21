@@ -83,48 +83,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Migration endpoint (temporary for setup)
-app.post('/migrate', async (req, res) => {
-  try {
-    // Run migrations
-    const { spawn } = require('child_process');
-    const migrate = spawn('node', ['scripts/migrate.js'], {
-      env: { ...process.env, NODE_ENV: 'production' }
-    });
-    
-    let output = '';
-    migrate.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-    
-    migrate.stderr.on('data', (data) => {
-      output += data.toString();
-    });
-    
-    migrate.on('close', (code) => {
-      if (code === 0) {
-        res.json({
-          success: true,
-          message: 'Database migrations completed successfully',
-          output: output
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          message: 'Migration failed',
-          output: output
-        });
-      }
-    });
-    
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to run migrations',
-      error: error.message
-    });
-  }
-});
+// Migration endpoint removed for security
 
 // API Routes
 app.use('/api/auth', authRoutes(db));
