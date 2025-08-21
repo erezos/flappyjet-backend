@@ -6,11 +6,21 @@ require('dotenv').config();
 const isProduction = process.env.NODE_ENV === 'production';
 
 console.log(`🗄️ Running database migrations for ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} environment...`);
+console.log(`🔍 DATABASE_URL available: ${process.env.DATABASE_URL ? 'YES' : 'NO'}`);
 
 // Database connection
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error('❌ DATABASE_URL environment variable is not set');
+  process.exit(1);
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: isProduction ? { rejectUnauthorized: false } : false
+  connectionString: databaseUrl,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 // Migration scripts in order
