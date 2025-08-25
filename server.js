@@ -95,45 +95,79 @@ let cacheManager = null;
 // Initialize services only if database is available
 if (db) {
   try {
+    console.log('🔧 Starting service initialization...');
+    
     // Initialize monitoring service
-    monitoringService = new MonitoringService(db);
-    console.log('📊 ✅ Monitoring Service initialized');
+    try {
+      monitoringService = new MonitoringService(db);
+      console.log('📊 ✅ Monitoring Service initialized');
+    } catch (error) {
+      console.error('📊 ❌ Monitoring Service failed:', error.message);
+    }
     
     // Initialize enhanced leaderboard service for WebSocket integration
-    enhancedLeaderboardService = new EnhancedLeaderboardService(db);
+    try {
+      enhancedLeaderboardService = new EnhancedLeaderboardService(db);
+      console.log('🏆 ✅ Enhanced Leaderboard Service initialized');
+    } catch (error) {
+      console.error('🏆 ❌ Enhanced Leaderboard Service failed:', error.message);
+    }
     
     // Initialize WebSocket Manager
-    wsManager = new WebSocketManager(server, enhancedLeaderboardService);
-    console.log('🌐 ✅ WebSocket Manager initialized');
+    try {
+      wsManager = new WebSocketManager(server, enhancedLeaderboardService);
+      console.log('🌐 ✅ WebSocket Manager initialized');
+    } catch (error) {
+      console.error('🌐 ❌ WebSocket Manager failed:', error.message);
+    }
     
     // Initialize Cache Manager
-    cacheManager = new SimpleCacheManager();
-    console.log('💾 ✅ Cache Manager initialized');
+    try {
+      cacheManager = new SimpleCacheManager();
+      console.log('💾 ✅ Cache Manager initialized');
+    } catch (error) {
+      console.error('💾 ❌ Cache Manager failed:', error.message);
+    }
     
     // Initialize Prize Manager
-    prizeManager = new PrizeManager({ db, wsManager });
-    console.log('🏆 ✅ Prize Manager initialized');
+    try {
+      prizeManager = new PrizeManager({ db, wsManager });
+      console.log('🏆 ✅ Prize Manager initialized');
+    } catch (error) {
+      console.error('🏆 ❌ Prize Manager failed:', error.message);
+    }
     
     // Initialize Tournament Manager
-    tournamentManager = new TournamentManager({ 
-      db, 
-      cacheManager, 
-      prizeManager, 
-      wsManager 
-    });
-    console.log('🏆 ✅ Tournament Manager initialized');
+    try {
+      tournamentManager = new TournamentManager({ 
+        db, 
+        cacheManager, 
+        prizeManager, 
+        wsManager 
+      });
+      console.log('🏆 ✅ Tournament Manager initialized');
+    } catch (error) {
+      console.error('🏆 ❌ Tournament Manager failed:', error.message);
+    }
     
     // Initialize Tournament Scheduler
-    tournamentScheduler = new TournamentScheduler({ 
-      db, 
-      tournamentManager, 
-      wsManager 
-    });
-    tournamentScheduler.start();
-    console.log('🏆 ✅ Tournament Scheduler started');
+    try {
+      tournamentScheduler = new TournamentScheduler({ 
+        db, 
+        tournamentManager, 
+        wsManager 
+      });
+      tournamentScheduler.start();
+      console.log('🏆 ✅ Tournament Scheduler started');
+    } catch (error) {
+      console.error('🏆 ❌ Tournament Scheduler failed:', error.message);
+    }
+    
+    console.log('🔧 ✅ Service initialization completed');
     
   } catch (error) {
-    console.warn('🚂 ⚠️ Service initialization failed:', error.message);
+    console.error('🚂 ❌ Service initialization failed:', error);
+    console.log('🚂 ⚠️ Continuing with available services...');
   }
 } else {
   console.log('🚂 ⚠️ Database not available, running in minimal mode');
@@ -173,11 +207,22 @@ app.use(rateLimitMiddleware);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
+  console.log('🏥 Health check requested');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    services: {
+      database: !!db,
+      monitoring: !!monitoringService,
+      websocket: !!wsManager,
+      cache: !!cacheManager,
+      tournament: !!tournamentManager,
+      scheduler: !!tournamentScheduler
+    }
   });
 });
 
@@ -342,13 +387,29 @@ process.on('SIGINT', async () => {
   });
 });
 
-// Start server
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
-  console.log(`🚀 Railway deployment ready!`);
-});
+// Start server with error handling
+try {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    console.log(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
+    console.log(`🚀 Railway deployment ready!`);
+  });
+
+  server.on('error', (error) => {
+    console.error('🚨 Server startup error:', error);
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use`);
+    } else if (error.code === 'EACCES') {
+      console.error(`❌ Permission denied for port ${PORT}`);
+    }
+    process.exit(1);
+  });
+
+} catch (error) {
+  console.error('🚨 Fatal server error:', error);
+  process.exit(1);
+}
 
 module.exports = app;
