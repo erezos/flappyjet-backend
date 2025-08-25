@@ -10,14 +10,14 @@ const router = express.Router();
 
 // Middleware
 const { authenticateToken } = require('../middleware/auth');
-const { rateLimitMiddleware } = require('../middleware/rate-limit');
+const { tournamentRateLimit } = require('../middleware/rate-limit');
 
 /**
  * Get current active tournament
  * GET /api/tournaments/current
  */
 router.get('/current', 
-  rateLimitMiddleware('tournaments', 60, 100), // 100 requests per minute
+  tournamentRateLimit, // Tournament rate limiting
   async (req, res) => {
     try {
       const tournamentManager = req.app.locals.tournamentManager;
@@ -52,7 +52,7 @@ router.get('/current',
  */
 router.post('/:tournamentId/register',
   authenticateToken,
-  rateLimitMiddleware('tournament_register', 300, 5), // 5 registrations per 5 minutes
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID'),
     body('playerName').isLength({ min: 1, max: 50 }).withMessage('Player name must be 1-50 characters')
@@ -107,7 +107,7 @@ router.post('/:tournamentId/register',
  */
 router.post('/:tournamentId/scores',
   authenticateToken,
-  rateLimitMiddleware('tournament_score', 60, 30), // 30 scores per minute
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID'),
     body('score').isInt({ min: 0 }).withMessage('Score must be a non-negative integer'),
@@ -166,7 +166,7 @@ router.post('/:tournamentId/scores',
  * GET /api/tournaments/:tournamentId/leaderboard
  */
 router.get('/:tournamentId/leaderboard',
-  rateLimitMiddleware('tournament_leaderboard', 60, 120), // 120 requests per minute
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID'),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be 1-100'),
@@ -226,7 +226,7 @@ router.get('/:tournamentId/leaderboard',
  */
 router.get('/player/:playerId/stats',
   authenticateToken,
-  rateLimitMiddleware('player_tournament_stats', 60, 60), // 60 requests per minute
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('playerId').isUUID().withMessage('Invalid player ID')
   ],
@@ -282,7 +282,7 @@ router.get('/player/:playerId/stats',
  */
 router.get('/player/:playerId/prizes',
   authenticateToken,
-  rateLimitMiddleware('player_prizes', 60, 30), // 30 requests per minute
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('playerId').isUUID().withMessage('Invalid player ID'),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be 1-100')
@@ -342,7 +342,7 @@ router.get('/player/:playerId/prizes',
  */
 router.post('/create-weekly',
   authenticateToken,
-  rateLimitMiddleware('admin_create_tournament', 3600, 10), // 10 per hour
+  tournamentRateLimit, // Tournament rate limiting
   [
     body('name').optional().isLength({ min: 1, max: 255 }).withMessage('Name must be 1-255 characters'),
     body('prizePool').optional().isInt({ min: 0 }).withMessage('Prize pool must be non-negative'),
@@ -404,7 +404,7 @@ router.post('/create-weekly',
  */
 router.post('/:tournamentId/start',
   authenticateToken,
-  rateLimitMiddleware('admin_start_tournament', 3600, 20), // 20 per hour
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID')
   ],
@@ -460,7 +460,7 @@ router.post('/:tournamentId/start',
  */
 router.post('/:tournamentId/end',
   authenticateToken,
-  rateLimitMiddleware('admin_end_tournament', 3600, 20), // 20 per hour
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID')
   ],
@@ -518,7 +518,7 @@ router.post('/:tournamentId/end',
  */
 router.get('/:tournamentId/prize-stats',
   authenticateToken,
-  rateLimitMiddleware('admin_prize_stats', 60, 30), // 30 per minute
+  tournamentRateLimit, // Tournament rate limiting
   [
     param('tournamentId').isUUID().withMessage('Invalid tournament ID')
   ],
