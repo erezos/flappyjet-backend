@@ -4,7 +4,7 @@
   "description": "FlappyJet Pro - Production Railway Backend with 90%+ Test Coverage",
   "main": "server.js",
   "scripts": {
-    "start": "node minimal-server.js",
+    "start": "node intermediate-server.js",
     "dev": "nodemon server.js",
     "deploy": "railway up",
     "build": "echo 'No build step required for Node.js'",
