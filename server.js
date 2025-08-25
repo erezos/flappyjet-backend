@@ -11,20 +11,31 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const cron = require('node-cron');
+const http = require('http');
+const { WebSocketManager } = require('./services/websocket-manager');
+const { EnhancedLeaderboardService } = require('./services/enhanced-leaderboard-service');
+const { MonitoringService } = require('./services/monitoring-service');
+const TournamentManager = require('./services/tournament-manager');
+const PrizeManager = require('./services/prize-manager');
+const TournamentScheduler = require('./services/tournament-scheduler');
+const SimpleCacheManager = require('./services/simple-cache-manager');
 require('dotenv').config();
 
 // Import route modules
 const authRoutes = require('./routes/auth');
 const playerRoutes = require('./routes/player');
 const leaderboardRoutes = require('./routes/leaderboard');
+const enhancedLeaderboardRoutes = require('./routes/enhanced-leaderboard');
+const tournamentRoutes = require('./routes/tournaments');
 const missionsRoutes = require('./routes/missions');
 const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
 const adminRoutes = require('./routes/admin');
 
-// Initialize Express app
+// Initialize Express app and HTTP server
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Database connection
@@ -40,6 +51,57 @@ const db = new Pool({
 db.connect()
   .then(() => console.log('🐘 PostgreSQL connected successfully'))
   .catch(err => console.error('🐘 ❌ Database connection error:', err));
+
+// Initialize services
+let wsManager = null;
+let enhancedLeaderboardService = null;
+let monitoringService = null;
+let tournamentManager = null;
+let prizeManager = null;
+let tournamentScheduler = null;
+let cacheManager = null;
+
+try {
+  // Initialize monitoring service
+  monitoringService = new MonitoringService(db);
+  console.log('📊 ✅ Monitoring Service initialized');
+  
+  // Initialize enhanced leaderboard service for WebSocket integration
+  enhancedLeaderboardService = new EnhancedLeaderboardService(db);
+  
+  // Initialize WebSocket Manager
+  wsManager = new WebSocketManager(server, enhancedLeaderboardService);
+  console.log('🌐 ✅ WebSocket Manager initialized');
+  
+  // Initialize Cache Manager
+  cacheManager = new SimpleCacheManager();
+  console.log('💾 ✅ Cache Manager initialized');
+  
+  // Initialize Prize Manager
+  prizeManager = new PrizeManager({ db, wsManager });
+  console.log('🏆 ✅ Prize Manager initialized');
+  
+  // Initialize Tournament Manager
+  tournamentManager = new TournamentManager({ 
+    db, 
+    cacheManager, 
+    prizeManager, 
+    wsManager 
+  });
+  console.log('🏆 ✅ Tournament Manager initialized');
+  
+  // Initialize Tournament Scheduler
+  tournamentScheduler = new TournamentScheduler({ 
+    db, 
+    tournamentManager, 
+    wsManager 
+  });
+  tournamentScheduler.start();
+  console.log('🏆 ✅ Tournament Scheduler started');
+  
+} catch (error) {
+  console.warn('🚂 ⚠️ Service initialization failed:', error.message);
+}
 
 // Middleware
 app.use(helmet({
@@ -85,10 +147,19 @@ app.get('/health', (req, res) => {
 
 // Migration endpoint removed for security
 
+// Make services available to routes
+app.locals.wsManager = wsManager;
+app.locals.monitoringService = monitoringService;
+app.locals.tournamentManager = tournamentManager;
+app.locals.prizeManager = prizeManager;
+app.locals.tournamentScheduler = tournamentScheduler;
+
 // API Routes
 app.use('/api/auth', authRoutes(db));
 app.use('/api/player', playerRoutes(db));
 app.use('/api/leaderboard', leaderboardRoutes(db));
+app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
+app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/missions', missionsRoutes(db));
 app.use('/api/achievements', achievementsRoutes(db));
 app.use('/api/purchase', purchaseRoutes(db));
@@ -105,6 +176,7 @@ app.get('/', (req, res) => {
       auth: '/api/auth/*',
       player: '/api/player/*',
       leaderboard: '/api/leaderboard/*',
+      tournaments: '/api/tournaments/*',
       missions: '/api/missions/*',
       achievements: '/api/achievements/*',
       purchase: '/api/purchase/*',
@@ -174,21 +246,56 @@ cron.schedule('0 2 * * 0', async () => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('🚂 Received SIGTERM, shutting down gracefully...');
+  
+  // Stop Tournament Scheduler
+  if (tournamentScheduler) {
+    tournamentScheduler.stop();
+  }
+  
+  // Shutdown WebSocket Manager
+  if (wsManager) {
+    wsManager.shutdown();
+  }
+  
+  // Close database connection
   await db.end();
-  process.exit(0);
+  
+  // Close HTTP server
+  server.close(() => {
+    console.log('🚂 ✅ Server shutdown complete');
+    process.exit(0);
+  });
 });
 
 process.on('SIGINT', async () => {
   console.log('🚂 Received SIGINT, shutting down gracefully...');
+  
+  // Stop Tournament Scheduler
+  if (tournamentScheduler) {
+    tournamentScheduler.stop();
+  }
+  
+  // Shutdown WebSocket Manager
+  if (wsManager) {
+    wsManager.shutdown();
+  }
+  
+  // Close database connection
   await db.end();
-  process.exit(0);
+  
+  // Close HTTP server
+  server.close(() => {
+    console.log('🚂 ✅ Server shutdown complete');
+    process.exit(0);
+  });
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚂 FlappyJet Backend running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
   console.log(`🚀 Railway deployment ready!`);
 });
 

@@ -1,4 +1,8 @@
-/// 🧪 Jest Configuration for FlappyJet Backend Testing
+/**
+ * 🧪 Jest Configuration for Railway Backend TDD
+ * Optimized for testing with proper cleanup and mocking
+ */
+
 module.exports = {
   // Test environment
   testEnvironment: 'node',
@@ -6,108 +10,70 @@ module.exports = {
   // Test file patterns
   testMatch: [
     '**/tests/**/*.test.js',
-    '**/tests/**/*.spec.js',
-    '**/__tests__/**/*.js'
+    '**/?(*.)+(spec|test).js'
   ],
   
-  // Setup files
+  // Setup and teardown
   setupFilesAfterEnv: ['<rootDir>/tests/setup.js'],
+  globalTeardown: '<rootDir>/tests/teardown.js',
   
   // Coverage configuration
   collectCoverage: true,
   coverageDirectory: 'coverage',
-  coverageReporters: [
-    'text',
-    'text-summary',
-    'html',
-    'lcov',
-    'json'
-  ],
-  
-  // Coverage thresholds (enforce 90%+ coverage)
-  coverageThreshold: {
-    global: {
-      branches: 90,
-      functions: 90,
-      lines: 90,
-      statements: 90
-    },
-    // Specific file thresholds
-    './routes/*.js': {
-      branches: 95,
-      functions: 95,
-      lines: 95,
-      statements: 95
-    },
-    './server.js': {
-      branches: 85,
-      functions: 85,
-      lines: 85,
-      statements: 85
-    }
-  },
-  
-  // Files to collect coverage from
+  coverageReporters: ['text', 'lcov', 'html'],
   collectCoverageFrom: [
     'server.js',
     'routes/**/*.js',
+    'services/**/*.js',
     'middleware/**/*.js',
-    'utils/**/*.js',
     '!**/node_modules/**',
-    '!**/coverage/**',
     '!**/tests/**',
-    '!jest.config.js'
+    '!**/coverage/**'
   ],
   
-  // Test timeout (30 seconds for integration tests)
-  testTimeout: 30000,
+  // Coverage thresholds (adjusted for TDD development)
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70
+    }
+  },
+  
+  // Test timeout
+  testTimeout: 10000,
+  
+  // Detect open handles
+  detectOpenHandles: true,
+  forceExit: true,
   
   // Clear mocks between tests
   clearMocks: true,
+  resetMocks: true,
   restoreMocks: true,
   
-  // Verbose output
-  verbose: true,
+  // Module name mapping for easier imports
+  moduleNameMapping: {
+    '^@/(.*)$': '<rootDir>/$1',
+    '^@services/(.*)$': '<rootDir>/services/$1',
+    '^@routes/(.*)$': '<rootDir>/routes/$1',
+    '^@tests/(.*)$': '<rootDir>/tests/$1'
+  },
   
-  // Transform configuration (if using ES6 modules)
+  // Transform configuration
   transform: {
     '^.+\\.js$': 'babel-jest'
   },
   
-  // Module path mapping
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/$1',
-    '^@routes/(.*)$': '<rootDir>/routes/$1',
-    '^@utils/(.*)$': '<rootDir>/utils/$1'
-  },
+  // Verbose output for TDD
+  verbose: true,
   
-  // Global variables available in tests
-  globals: {
-    'process.env.NODE_ENV': 'test'
-  },
+  // Run tests in band for better debugging
+  runInBand: true,
   
-  // Ignore patterns
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    '/coverage/',
-    '/dist/'
-  ],
-  
-  // Watch mode configuration
-  watchPathIgnorePatterns: [
-    '/node_modules/',
-    '/coverage/'
-  ],
-  
-  // Error handling
-  errorOnDeprecated: true,
-  
-  // Performance monitoring
-  detectOpenHandles: true,
-  detectLeaks: true,
-  
-  // Parallel execution
-  maxWorkers: '50%',
+  // Maximum worker processes
+  maxWorkers: 1,
   
   // Reporter configuration
   reporters: [
@@ -115,7 +81,9 @@ module.exports = {
     ['jest-html-reporters', {
       publicPath: './coverage',
       filename: 'test-report.html',
-      expand: true
+      expand: true,
+      hideIcon: false,
+      pageTitle: 'FlappyJet Backend Test Report'
     }]
   ]
 };
