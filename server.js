@@ -39,18 +39,27 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Database connection
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+let db = null;
+try {
+  db = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
 
-// Test database connection
-db.connect()
-  .then(() => console.log('🐘 PostgreSQL connected successfully'))
-  .catch(err => console.error('🐘 ❌ Database connection error:', err));
+  // Test database connection
+  db.connect()
+    .then(() => console.log('🐘 PostgreSQL connected successfully'))
+    .catch(err => {
+      console.error('🐘 ❌ Database connection error:', err);
+      console.log('🚂 ⚠️ Continuing without database for health check...');
+    });
+} catch (error) {
+  console.error('🐘 ❌ Database initialization error:', error);
+  console.log('🚂 ⚠️ Continuing without database for health check...');
+}
 
 // Initialize services
 let wsManager = null;
@@ -61,46 +70,51 @@ let prizeManager = null;
 let tournamentScheduler = null;
 let cacheManager = null;
 
-try {
-  // Initialize monitoring service
-  monitoringService = new MonitoringService(db);
-  console.log('📊 ✅ Monitoring Service initialized');
-  
-  // Initialize enhanced leaderboard service for WebSocket integration
-  enhancedLeaderboardService = new EnhancedLeaderboardService(db);
-  
-  // Initialize WebSocket Manager
-  wsManager = new WebSocketManager(server, enhancedLeaderboardService);
-  console.log('🌐 ✅ WebSocket Manager initialized');
-  
-  // Initialize Cache Manager
-  cacheManager = new SimpleCacheManager();
-  console.log('💾 ✅ Cache Manager initialized');
-  
-  // Initialize Prize Manager
-  prizeManager = new PrizeManager({ db, wsManager });
-  console.log('🏆 ✅ Prize Manager initialized');
-  
-  // Initialize Tournament Manager
-  tournamentManager = new TournamentManager({ 
-    db, 
-    cacheManager, 
-    prizeManager, 
-    wsManager 
-  });
-  console.log('🏆 ✅ Tournament Manager initialized');
-  
-  // Initialize Tournament Scheduler
-  tournamentScheduler = new TournamentScheduler({ 
-    db, 
-    tournamentManager, 
-    wsManager 
-  });
-  tournamentScheduler.start();
-  console.log('🏆 ✅ Tournament Scheduler started');
-  
-} catch (error) {
-  console.warn('🚂 ⚠️ Service initialization failed:', error.message);
+// Initialize services only if database is available
+if (db) {
+  try {
+    // Initialize monitoring service
+    monitoringService = new MonitoringService(db);
+    console.log('📊 ✅ Monitoring Service initialized');
+    
+    // Initialize enhanced leaderboard service for WebSocket integration
+    enhancedLeaderboardService = new EnhancedLeaderboardService(db);
+    
+    // Initialize WebSocket Manager
+    wsManager = new WebSocketManager(server, enhancedLeaderboardService);
+    console.log('🌐 ✅ WebSocket Manager initialized');
+    
+    // Initialize Cache Manager
+    cacheManager = new SimpleCacheManager();
+    console.log('💾 ✅ Cache Manager initialized');
+    
+    // Initialize Prize Manager
+    prizeManager = new PrizeManager({ db, wsManager });
+    console.log('🏆 ✅ Prize Manager initialized');
+    
+    // Initialize Tournament Manager
+    tournamentManager = new TournamentManager({ 
+      db, 
+      cacheManager, 
+      prizeManager, 
+      wsManager 
+    });
+    console.log('🏆 ✅ Tournament Manager initialized');
+    
+    // Initialize Tournament Scheduler
+    tournamentScheduler = new TournamentScheduler({ 
+      db, 
+      tournamentManager, 
+      wsManager 
+    });
+    tournamentScheduler.start();
+    console.log('🏆 ✅ Tournament Scheduler started');
+    
+  } catch (error) {
+    console.warn('🚂 ⚠️ Service initialization failed:', error.message);
+  }
+} else {
+  console.log('🚂 ⚠️ Database not available, running in minimal mode');
 }
 
 // Middleware
@@ -154,17 +168,29 @@ app.locals.tournamentManager = tournamentManager;
 app.locals.prizeManager = prizeManager;
 app.locals.tournamentScheduler = tournamentScheduler;
 
-// API Routes
-app.use('/api/auth', authRoutes(db));
-app.use('/api/player', playerRoutes(db));
-app.use('/api/leaderboard', leaderboardRoutes(db));
-app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
-app.use('/api/tournaments', tournamentRoutes);
-app.use('/api/missions', missionsRoutes(db));
-app.use('/api/achievements', achievementsRoutes(db));
-app.use('/api/purchase', purchaseRoutes(db));
-app.use('/api/analytics', analyticsRoutes(db));
-app.use('/api/admin', adminRoutes(db));
+// API Routes (only if database is available)
+if (db) {
+  app.use('/api/auth', authRoutes(db));
+  app.use('/api/player', playerRoutes(db));
+  app.use('/api/leaderboard', leaderboardRoutes(db));
+  app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
+  app.use('/api/tournaments', tournamentRoutes);
+  app.use('/api/missions', missionsRoutes(db));
+  app.use('/api/achievements', achievementsRoutes(db));
+  app.use('/api/purchase', purchaseRoutes(db));
+  app.use('/api/analytics', analyticsRoutes(db));
+  app.use('/api/admin', adminRoutes(db));
+  console.log('🚂 ✅ All API routes initialized');
+} else {
+  // Minimal routes for health check
+  app.get('/api/*', (req, res) => {
+    res.status(503).json({ 
+      error: 'Service temporarily unavailable - database not connected',
+      path: req.originalUrl 
+    });
+  });
+  console.log('🚂 ⚠️ API routes disabled - database not available');
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -258,7 +284,9 @@ process.on('SIGTERM', async () => {
   }
   
   // Close database connection
-  await db.end();
+  if (db) {
+    await db.end();
+  }
   
   // Close HTTP server
   server.close(() => {
@@ -281,7 +309,9 @@ process.on('SIGINT', async () => {
   }
   
   // Close database connection
-  await db.end();
+  if (db) {
+    await db.end();
+  }
   
   // Close HTTP server
   server.close(() => {
