@@ -1,0 +1,18 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacksConfig]
+# Use Node.js 18 for compatibility
+nodeVersion = "18"
+
+[deploy]
+# Production environment
+startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+[env]
+# Ensure production mode
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "true"
+NPM_CONFIG_OMIT = "dev"
