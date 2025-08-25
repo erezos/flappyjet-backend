@@ -1,9 +1,6 @@
 [build]
-builder = "nixpacks"
-
-[build.nixpacksConfig]
-# Use Node.js 18 for compatibility
-nodeVersion = "18"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 # Production environment

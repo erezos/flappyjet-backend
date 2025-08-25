@@ -55,7 +55,7 @@
     "jest-html-reporters": "^3.1.5",
     "nock": "^13.5.0",
     "nodemon": "^3.0.2",
-    "redis-memory-server": "^0.10.0",
+
     "supertest": "^6.3.3"
   },
   "engines": {
