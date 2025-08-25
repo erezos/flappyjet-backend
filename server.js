@@ -49,9 +49,31 @@ try {
     connectionTimeoutMillis: 2000,
   });
 
-  // Test database connection
+  // Test database connection and auto-migrate
   db.connect()
-    .then(() => console.log('🐘 PostgreSQL connected successfully'))
+    .then(async () => {
+      console.log('🐘 PostgreSQL connected successfully');
+      
+      // Check if tournament tables exist, if not, run migration
+      try {
+        await db.query('SELECT 1 FROM tournaments LIMIT 1');
+        console.log('🏆 Tournament tables already exist');
+      } catch (error) {
+        if (error.code === '42P01') { // Table does not exist
+          console.log('🏗️ Tournament tables not found, running auto-migration...');
+          try {
+            const { runMigration } = require('./scripts/migrate-tournament-schema');
+            await runMigration(db);
+            console.log('🏗️ ✅ Auto-migration completed successfully');
+          } catch (migrationError) {
+            console.error('🏗️ ❌ Auto-migration failed:', migrationError);
+            console.log('🚂 ⚠️ Continuing without tournament tables...');
+          }
+        } else {
+          console.error('🏆 ❌ Error checking tournament tables:', error);
+        }
+      }
+    })
     .catch(err => {
       console.error('🐘 ❌ Database connection error:', err);
       console.log('🚂 ⚠️ Continuing without database for health check...');
