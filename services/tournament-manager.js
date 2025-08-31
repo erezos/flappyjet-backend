@@ -145,7 +145,7 @@ class TournamentManager {
       const tournament = tournamentResult.rows[0];
 
       // Check if registration is allowed
-      if (tournament.status !== 'upcoming' && tournament.status !== 'registration') {
+      if (tournament.status !== 'upcoming' && tournament.status !== 'registration' && tournament.status !== 'active') {
         return {
           success: false,
           error: 'Tournament registration is closed'
