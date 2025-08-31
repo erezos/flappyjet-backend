@@ -498,6 +498,40 @@ class WebSocketManager {
   }
 
   /**
+   * Send notification to a specific player
+   */
+  notifyPlayer(playerId, message) {
+    try {
+      // Check if player has any active connections
+      const hasActiveConnections = Array.from(this.clients.values()).some(c => c.userId === playerId);
+      
+      if (!hasActiveConnections) {
+        console.log(`🌐 📤 No active connections for player ${playerId}`);
+        return;
+      }
+
+      const messageData = {
+        type: 'player_notification',
+        ...message,
+        timestamp: new Date().toISOString()
+      };
+
+      let successCount = 0;
+      this.clients.forEach((client, clientId) => {
+        if (client.userId === playerId && this.sendToClient(clientId, messageData)) {
+          successCount++;
+        }
+      });
+
+      const totalPlayerConnections = Array.from(this.clients.values()).filter(c => c.userId === playerId).length;
+      console.log(`🌐 📤 Notified player ${playerId}: ${successCount}/${totalPlayerConnections} connections`);
+    } catch (error) {
+      console.error(`🌐 ❌ Error in notifyPlayer:`, error);
+      this.stats.errors++;
+    }
+  }
+
+  /**
    * Shutdown WebSocket server
    */
   shutdown() {
