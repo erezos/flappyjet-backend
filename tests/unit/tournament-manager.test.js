@@ -47,14 +47,31 @@ describe('TournamentManager', () => {
   describe('Tournament Creation', () => {
     test('should create weekly tournament with default settings', async () => {
       const mockTournamentId = '123e4567-e89b-12d3-a456-426614174000';
+
+      // Mock the database function call
       mockDb.query.mockResolvedValueOnce({
-        rows: [{ id: mockTournamentId, name: 'Weekly Championship 2024-01-15' }]
+        rows: [{ tournament_id: mockTournamentId }]
+      });
+
+      // Mock the tournament details query
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{
+          id: mockTournamentId,
+          name: 'Weekly Championship 2024-01-15',
+          tournament_type: 'weekly',
+          start_date: new Date(),
+          end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          status: 'upcoming',
+          prize_pool: 1750
+        }]
       });
 
       const result = await tournamentManager.createWeeklyTournament();
 
       expect(result.success).toBe(true);
+      expect(result.tournament).toBeDefined();
       expect(result.tournament.id).toBe(mockTournamentId);
+      expect(result.tournament.prizePool).toBe(1750);
       expect(mockDb.query).toHaveBeenCalledWith(
         expect.stringContaining('SELECT create_weekly_tournament'),
         expect.any(Array)
@@ -64,9 +81,23 @@ describe('TournamentManager', () => {
     test('should create tournament with custom prize pool', async () => {
       const mockTournamentId = '123e4567-e89b-12d3-a456-426614174000';
       const customPrizePool = 5000;
-      
+
+      // Mock the database function call
       mockDb.query.mockResolvedValueOnce({
-        rows: [{ id: mockTournamentId }]
+        rows: [{ tournament_id: mockTournamentId }]
+      });
+
+      // Mock the tournament details query
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{
+          id: mockTournamentId,
+          name: 'Super Weekly Championship',
+          tournament_type: 'weekly',
+          start_date: new Date(),
+          end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          status: 'upcoming',
+          prize_pool: customPrizePool
+        }]
       });
 
       const result = await tournamentManager.createWeeklyTournament({
@@ -172,28 +203,44 @@ describe('TournamentManager', () => {
 
     test('should submit tournament score and update leaderboard', async () => {
       const score = 1500;
-      
+
       // Mock participant exists and tournament is active
-      mockDb.query
-        .mockResolvedValueOnce({
-          rows: [{ 
-            tournament_id: mockTournamentId,
-            player_id: mockPlayerId,
-            best_score: 1200
-          }]
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'updated-participant' }] // Score update result
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: 'leaderboard-entry' }] // Leaderboard snapshot
-        })
-        .mockResolvedValueOnce({
-          rows: [
-            { player_id: mockPlayerId, player_name: 'TestPlayer', score: 1500, rank: 1 },
-            { player_id: 'other-player', player_name: 'OtherPlayer', score: 1400, rank: 2 }
-          ]
-        });
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{
+          tournament_id: mockTournamentId,
+          player_id: mockPlayerId,
+          player_name: 'TestPlayer',
+          best_score: 1200,
+          total_games: 5
+        }]
+      });
+
+      // Mock score update (new best score)
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'updated-participant' }]
+      });
+
+      // Mock leaderboard snapshot creation
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'leaderboard-entry' }]
+      });
+
+      // Mock rank query - no players have higher scores, so rank should be 1
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ rank: 1 }]
+      });
+
+      // Mock event logging
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'event-id' }]
+      });
+
+      // Mock leaderboard query for WebSocket broadcast
+      mockDb.query.mockResolvedValueOnce({
+        rows: [
+          { player_id: mockPlayerId, player_name: 'TestPlayer', score: 1500, rank: 1, total_games: 6, final_rank: null, prize_won: null }
+        ]
+      });
 
       const result = await tournamentManager.submitScore(mockTournamentId, {
         playerId: mockPlayerId,
@@ -201,9 +248,17 @@ describe('TournamentManager', () => {
         gameData: { duration: 120, obstacles: 15 }
       });
 
+      // Debug: log the actual result to see what's wrong
+      if (!result.success) {
+        console.log('Test failed with result:', result);
+      }
+
       expect(result.success).toBe(true);
       expect(result.newBest).toBe(true);
       expect(result.rank).toBe(1);
+      expect(result.score).toBe(1500);
+      expect(result.previousBest).toBe(1200);
+      expect(result.totalGames).toBe(6);
       expect(mockWebSocketManager.broadcastToRoom).toHaveBeenCalledWith(
         `tournament_${mockTournamentId}`,
         expect.objectContaining({
@@ -227,12 +282,30 @@ describe('TournamentManager', () => {
     });
 
     test('should not update if score is not better', async () => {
+      // Mock participant exists with higher score
       mockDb.query.mockResolvedValueOnce({
-        rows: [{ 
+        rows: [{
           tournament_id: mockTournamentId,
           player_id: mockPlayerId,
-          best_score: 2000 // Higher than submitted score
+          player_name: 'TestPlayer',
+          best_score: 2000, // Higher than submitted score
+          total_games: 5
         }]
+      });
+
+      // Mock games increment (not score update since it's not a new best)
+      mockDb.query.mockResolvedValueOnce({
+        rows: []
+      });
+
+      // Mock rank query
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ rank: 2 }] // Player is ranked 2nd since someone has higher score
+      });
+
+      // Mock event logging
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'event-id' }]
       });
 
       const result = await tournamentManager.submitScore(mockTournamentId, {
@@ -242,7 +315,11 @@ describe('TournamentManager', () => {
 
       expect(result.success).toBe(true);
       expect(result.newBest).toBe(false);
-      expect(mockDb.query).toHaveBeenCalledTimes(1); // Only the participant check
+      expect(result.score).toBe(1500);
+      expect(result.previousBest).toBe(2000);
+      expect(result.rank).toBe(2);
+      expect(result.totalGames).toBe(6);
+      expect(mockDb.query).toHaveBeenCalledTimes(4); // participant check, games increment, rank query, event logging
     });
   });
 
@@ -264,9 +341,19 @@ describe('TournamentManager', () => {
       const result = await tournamentManager.startTournament(mockTournamentId);
 
       expect(result.success).toBe(true);
-      expect(mockDb.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE tournaments SET status = $1'),
+      expect(result.message).toContain('started successfully');
+      expect(result.participantCount).toBe(2);
+
+      // Check that the tournament update was called (1st call)
+      expect(mockDb.query).toHaveBeenNthCalledWith(1,
+        expect.stringContaining('UPDATE tournaments SET status = $1, updated_at = NOW() WHERE id = $2 AND status = \'upcoming\''),
         ['active', mockTournamentId]
+      );
+
+      // Check that participants query was called (2nd call)
+      expect(mockDb.query).toHaveBeenNthCalledWith(2,
+        expect.stringContaining('SELECT player_id, player_name FROM tournament_participants'),
+        [mockTournamentId]
       );
       expect(mockWebSocketManager.broadcastToRoom).toHaveBeenCalledWith(
         `tournament_${mockTournamentId}`,
@@ -278,44 +365,76 @@ describe('TournamentManager', () => {
 
     test('should end tournament and distribute prizes', async () => {
       const mockLeaderboard = [
-        { player_id: 'player1', player_name: 'Winner', score: 2000, rank: 1 },
-        { player_id: 'player2', player_name: 'Second', score: 1800, rank: 2 },
-        { player_id: 'player3', player_name: 'Third', score: 1600, rank: 3 }
+        { player_id: 'player1', player_name: 'Winner', score: 2000, rank: 1, total_games: 10, final_rank: null, prize_won: null },
+        { player_id: 'player2', player_name: 'Second', score: 1800, rank: 2, total_games: 8, final_rank: null, prize_won: null },
+        { player_id: 'player3', player_name: 'Third', score: 1600, rank: 3, total_games: 6, final_rank: null, prize_won: null }
       ];
 
-      mockDb.query
-        .mockResolvedValueOnce({
-          rows: [{ 
-            id: mockTournamentId, 
-            prize_pool: 1000,
-            prize_distribution: { "1": 0.5, "2": 0.3, "3": 0.2 }
-          }]
-        })
-        .mockResolvedValueOnce({
-          rows: mockLeaderboard
-        })
-        .mockResolvedValueOnce({
-          rows: [{ id: mockTournamentId }] // Tournament status update
-        });
+      // Mock tournament details query
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{
+          id: mockTournamentId,
+          name: 'Test Tournament',
+          prize_pool: 1000,
+          prize_distribution: { "1": 0.5, "2": 0.3, "3": 0.2 },
+          status: 'active'
+        }]
+      });
 
+      // Mock _getTournamentLeaderboard call
+      mockDb.query.mockResolvedValueOnce({
+        rows: mockLeaderboard
+      });
+
+      // Mock prize distribution
       mockPrizeManager.distributePrizes.mockResolvedValue({
         success: true,
         distributions: [
           { playerId: 'player1', amount: 500 },
           { playerId: 'player2', amount: 300 },
           { playerId: 'player3', amount: 200 }
-        ]
+        ],
+        totalDistributed: 1000
+      });
+
+      // Mock leaderboard snapshot creations (3 players)
+      mockDb.query.mockResolvedValueOnce({ rows: [{ id: 'snapshot1' }] });
+      mockDb.query.mockResolvedValueOnce({ rows: [{ id: 'snapshot2' }] });
+      mockDb.query.mockResolvedValueOnce({ rows: [{ id: 'snapshot3' }] });
+
+      // Mock tournament status update
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: mockTournamentId }]
+      });
+
+      // Mock event logging
+      mockDb.query.mockResolvedValueOnce({
+        rows: [{ id: 'event-id' }]
       });
 
       const result = await tournamentManager.endTournament(mockTournamentId);
 
+      // Debug: log the actual result to see what's wrong
+      if (!result.success) {
+        console.log('End tournament test failed with result:', result);
+      }
+
       expect(result.success).toBe(true);
       expect(result.finalLeaderboard).toHaveLength(3);
+      expect(result.prizeDistributions).toHaveLength(3);
+      expect(result.totalPrizesDistributed).toBe(1000);
+      expect(result.message).toContain('ended successfully');
       expect(mockPrizeManager.distributePrizes).toHaveBeenCalledWith(
         mockTournamentId,
         mockLeaderboard,
         { "1": 0.5, "2": 0.3, "3": 0.2 },
         1000
+      );
+      expect(mockWebSocketManager.broadcastToRoom).toHaveBeenCalledWith(
+        `tournament_${mockTournamentId}`,
+        expect.objectContaining({
+          type: 'tournament_ended'
+        })
       );
     });
   });

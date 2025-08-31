@@ -231,32 +231,71 @@ afterAll(() => {
 global.testHelpers = {
   createMockDbPool,
   createMockRedis,
-  
+  mockDatabase: createMockDbPool, // Alias for backward compatibility
+
   // Database helpers
   mockDbQuery: (query, result) => {
     global.testConfig.dbPool.query.mockImplementationOnce(() => Promise.resolve(result));
   },
-  
+
   mockDbError: (query, error) => {
     global.testConfig.dbPool.query.mockImplementationOnce(() => Promise.reject(error));
   },
-  
+
   // Redis helpers
   mockRedisGet: (key, value) => {
     global.testConfig.redisClient.get.mockImplementationOnce(() => Promise.resolve(value));
   },
-  
+
   mockRedisError: (method, error) => {
     global.testConfig.redisClient[method].mockImplementationOnce(() => Promise.reject(error));
   },
-  
+
   // Cleanup helpers
   addCleanup: (fn) => {
     global.testConfig.cleanup.push(fn);
   },
-  
+
   // Wait helper
-  wait: (ms) => new Promise(resolve => setTimeout(resolve, ms))
+  wait: (ms) => new Promise(resolve => setTimeout(resolve, ms)),
+
+  // Authentication helpers for new JWT system
+  generateTestToken: (playerData = {}) => {
+    const jwt = require('jsonwebtoken');
+    const payload = {
+      playerId: playerData.playerId || 'test-player-id',
+      username: playerData.username || 'TestPlayer',
+      deviceId: playerData.deviceId || 'test-device-id',
+      iat: Math.floor(Date.now() / 1000)
+    };
+    return jwt.sign(payload, 'test-jwt-secret-key', { expiresIn: '1h' });
+  },
+
+  createTestPlayer: async (playerData = {}) => {
+    const playerId = playerData.id || 'test-player-' + Date.now();
+    const deviceId = playerData.device_id || 'test-device-' + Date.now();
+    const nickname = playerData.nickname || 'TestPlayer';
+
+    // Mock database response
+    global.testConfig.dbPool.query.mockImplementationOnce(() => Promise.resolve({
+      rows: [{
+        id: playerId,
+        device_id: deviceId,
+        nickname: nickname,
+        created_at: new Date(),
+        last_active_at: new Date()
+      }],
+      rowCount: 1
+    }));
+
+    return {
+      id: playerId,
+      device_id: deviceId,
+      nickname: nickname,
+      created_at: new Date().toISOString(),
+      last_active_at: new Date().toISOString()
+    };
+  }
 };
 
 // Suppress console logs in tests unless explicitly needed

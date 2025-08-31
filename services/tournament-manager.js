@@ -111,6 +111,15 @@ class TournamentManager {
     try {
       const { playerId, playerName } = playerData;
 
+      // Debug logging
+      console.log('🏆 Tournament registration debug:', {
+        tournamentId,
+        playerId,
+        playerName,
+        playerIdType: typeof playerId,
+        isValidUUID: isValidUUID(playerId)
+      });
+
       // Validate inputs
       if (!isValidUUID(tournamentId)) {
         return {
@@ -123,6 +132,13 @@ class TournamentManager {
         return {
           success: false,
           error: 'Player ID and name are required'
+        };
+      }
+
+      if (!isValidUUID(playerId)) {
+        return {
+          success: false,
+          error: `Invalid player ID format: ${playerId}`
         };
       }
 

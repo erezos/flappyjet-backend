@@ -4,56 +4,159 @@
  */
 
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
+/**
+ * JWT Secret - In production, this should be in environment variables
+ */
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 /**
  * Middleware to authenticate JWT tokens
- * For now, this is a placeholder that allows all requests through
- * TODO: Implement proper JWT authentication when user system is ready
+ * Validates JWT tokens and sets req.user with player information
  */
 const authenticateToken = (req, res, next) => {
-  // For development/testing, we'll skip authentication
-  // and use a default player ID
-  
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-  
+
   if (!token) {
-    // For now, assign a default player ID for testing
+    return res.status(401).json({
+      success: false,
+      error: 'Access token required',
+      code: 'AUTH_TOKEN_MISSING'
+    });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({
+        success: false,
+        error: 'Invalid or expired token',
+        code: 'AUTH_TOKEN_INVALID'
+      });
+    }
+
+    // Set user information from JWT payload
     req.user = {
-      id: 'default-player-id',
-      playerId: 'default-player-id',
-      username: 'TestPlayer'
+      id: decoded.playerId,
+      playerId: decoded.playerId,
+      username: decoded.username || 'Anonymous',
+      deviceId: decoded.deviceId,
+      iat: decoded.iat,
+      exp: decoded.exp
     };
+
+    // Debug logging
+    console.log('🔐 Auth middleware debug:', {
+      decodedPlayerId: decoded.playerId,
+      reqUserPlayerId: req.user.playerId,
+      tokenValid: true
+    });
+
+    next();
+  });
+};
+
+/**
+ * Optional authentication - doesn't fail if no token provided
+ * Useful for endpoints that work with or without authentication
+ */
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    // No token provided, continue without user
+    req.user = null;
     return next();
   }
-  
-  // TODO: Implement proper JWT verification
-  // jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-  //   if (err) return res.sendStatus(403);
-  //   req.user = user;
-  //   next();
-  // });
-  
-  // For now, just pass through with default user
-  req.user = {
-    id: 'default-player-id',
-    playerId: 'default-player-id',
-    username: 'TestPlayer'
-  };
-  next();
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      // Invalid token, but don't fail - continue without user
+      req.user = null;
+      return next();
+    }
+
+    req.user = {
+      id: decoded.playerId,
+      playerId: decoded.playerId,
+      username: decoded.username || 'Anonymous',
+      deviceId: decoded.deviceId,
+      iat: decoded.iat,
+      exp: decoded.exp
+    };
+    next();
+  });
 };
 
 /**
  * Middleware to check if user is admin
- * TODO: Implement proper admin role checking
+ * Checks for admin role in user data
  */
 const requireAdmin = (req, res, next) => {
-  // For now, allow all requests through
-  // TODO: Check user role from database
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      code: 'AUTH_REQUIRED'
+    });
+  }
+
+  // TODO: Implement proper admin role checking from database
+  // For now, check if user has admin flag or is in admin list
+  const adminPlayerIds = process.env.ADMIN_PLAYER_IDS ?
+    process.env.ADMIN_PLAYER_IDS.split(',') : [];
+
+  if (!adminPlayerIds.includes(req.user.playerId)) {
+    return res.status(403).json({
+      success: false,
+      error: 'Admin access required',
+      code: 'ADMIN_REQUIRED'
+    });
+  }
+
   next();
+};
+
+/**
+ * Generate JWT token for a player
+ */
+const generateToken = (playerData) => {
+  const payload = {
+    playerId: playerData.playerId,
+    username: playerData.username || 'Anonymous',
+    deviceId: playerData.deviceId || generateDeviceId(),
+    iat: Math.floor(Date.now() / 1000)
+  };
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+};
+
+/**
+ * Generate a unique device ID
+ */
+const generateDeviceId = () => {
+  return crypto.randomBytes(16).toString('hex');
+};
+
+/**
+ * Validate token without middleware (utility function)
+ */
+const validateToken = (token) => {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return null;
+  }
 };
 
 module.exports = {
   authenticateToken,
-  requireAdmin
+  optionalAuth,
+  requireAdmin,
+  generateToken,
+  validateToken,
+  generateDeviceId
 };

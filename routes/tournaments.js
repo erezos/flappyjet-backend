@@ -9,14 +9,16 @@ const { v4: uuidv4, validate: isValidUUID } = require('uuid');
 const router = express.Router();
 
 // Middleware
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { tournamentRateLimit } = require('../middleware/rate-limit');
 
 /**
  * Get current active tournament
  * GET /api/tournaments/current
+ * Uses optionalAuth - works with or without authentication
  */
-router.get('/current', 
+router.get('/current',
+  optionalAuth, // Allow anonymous access for tournament viewing
   tournamentRateLimit, // Tournament rate limiting
   async (req, res) => {
     try {
