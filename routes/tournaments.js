@@ -49,6 +49,64 @@ router.get('/current',
 );
 
 /**
+ * Unified tournament session endpoint
+ * POST /api/tournaments/session
+ * Handles registration, score submission, and state retrieval in one call
+ */
+router.post('/session',
+  authenticateToken,
+  tournamentRateLimit,
+  [
+    body('tournamentId').optional().isString().withMessage('Tournament ID must be a string'),
+    body('action').isIn(['get_status', 'submit_score']).withMessage('Action must be get_status or submit_score'),
+    body('score').optional().isInt({ min: 0 }).withMessage('Score must be a non-negative integer'),
+    body('gameData').optional().isObject().withMessage('Game data must be an object')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { tournamentId = 'current', action, score, gameData } = req.body;
+      const playerId = req.user.playerId;
+      const playerName = req.user.username || 'Anonymous';
+
+      const tournamentManager = req.app.locals.tournamentManager;
+      const result = await tournamentManager.handleTournamentSession({
+        tournamentId,
+        playerId,
+        playerName,
+        action,
+        score,
+        gameData
+      });
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error
+        });
+      }
+
+      res.json(result);
+
+    } catch (error) {
+      console.error('Error handling tournament session:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Tournament session failed'
+      });
+    }
+  }
+);
+
+/**
  * Register for tournament
  * POST /api/tournaments/:tournamentId/register
  */

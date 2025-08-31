@@ -704,7 +704,16 @@ class TournamentManager {
     `;
 
     const result = await this.db.query(query, [tournamentId, limit, offset]);
-    return result.rows;
+    
+    // Ensure rank is returned as integer
+    return result.rows.map(row => ({
+      ...row,
+      rank: parseInt(row.rank, 10),
+      score: parseInt(row.score, 10),
+      total_games: parseInt(row.total_games, 10),
+      final_rank: row.final_rank ? parseInt(row.final_rank, 10) : null,
+      prize_won: parseInt(row.prize_won || 0, 10)
+    }));
   }
 
   async _getPlayerRank(tournamentId, playerId) {
@@ -718,7 +727,8 @@ class TournamentManager {
     `;
 
     const result = await this.db.query(query, [tournamentId, playerId]);
-    return result.rows[0]?.rank || null;
+    const rank = result.rows[0]?.rank;
+    return rank ? parseInt(rank, 10) : null;
   }
 
   async _createLeaderboardSnapshot(tournamentId, playerId, playerName, score, isFinal = false) {
@@ -746,6 +756,168 @@ class TournamentManager {
     return await this.db.query(query, [
       tournamentId, eventType, JSON.stringify(eventData)
     ]);
+  }
+
+  /**
+   * Unified tournament session handler
+   * Handles registration, score submission, and state retrieval in one optimized call
+   */
+  async handleTournamentSession(sessionData) {
+    try {
+      const { tournamentId, playerId, playerName, action, score, gameData } = sessionData;
+
+      // Step 1: Get current tournament (resolve 'current' if needed)
+      let actualTournamentId = tournamentId;
+      if (tournamentId === 'current') {
+        const currentResult = await this.getCurrentTournament();
+        if (!currentResult.success || !currentResult.tournament) {
+          return {
+            success: false,
+            error: 'No active tournament available'
+          };
+        }
+        actualTournamentId = currentResult.tournament.id;
+      }
+
+      // Step 2: Get tournament details
+      const tournament = await this._getTournamentById(actualTournamentId);
+      if (!tournament) {
+        return {
+          success: false,
+          error: 'Tournament not found'
+        };
+      }
+
+      // Step 3: Check/ensure player registration
+      let playerRegistration = await this._getPlayerRegistration(actualTournamentId, playerId);
+      let justRegistered = false;
+
+      if (!playerRegistration) {
+        // Auto-register player if tournament allows it
+        if (tournament.status === 'upcoming' || tournament.status === 'registration' || tournament.status === 'active') {
+          const registerResult = await this.registerPlayer(actualTournamentId, {
+            playerId,
+            playerName
+          });
+          
+          if (registerResult.success) {
+            playerRegistration = await this._getPlayerRegistration(actualTournamentId, playerId);
+            justRegistered = true;
+          } else {
+            return {
+              success: false,
+              error: `Registration failed: ${registerResult.error}`
+            };
+          }
+        } else {
+          return {
+            success: false,
+            error: 'Tournament registration is closed'
+          };
+        }
+      }
+
+      // Step 4: Handle score submission if requested
+      let scoreSubmissionResult = null;
+      if (action === 'submit_score' && score !== undefined) {
+        const submitResult = await this.submitScore(actualTournamentId, {
+          playerId,
+          score,
+          gameData
+        });
+        
+        if (submitResult.success) {
+          scoreSubmissionResult = {
+            accepted: true,
+            newBest: submitResult.newBest,
+            score: submitResult.score,
+            previousBest: submitResult.previousBest,
+            rankImprovement: submitResult.previousRank ? (submitResult.previousRank - submitResult.rank) : 0
+          };
+          
+          // Refresh player registration to get updated stats
+          playerRegistration = await this._getPlayerRegistration(actualTournamentId, playerId);
+        } else {
+          scoreSubmissionResult = {
+            accepted: false,
+            error: submitResult.error
+          };
+        }
+      }
+
+      // Step 5: Get current rank and leaderboard context
+      const playerRank = await this._getPlayerRank(actualTournamentId, playerId);
+      const leaderboard = await this._getTournamentLeaderboard(actualTournamentId, {
+        limit: 10,
+        offset: 0
+      });
+
+      // Step 6: Build comprehensive response
+      return {
+        success: true,
+        tournament: {
+          id: tournament.id,
+          name: tournament.name,
+          status: tournament.status,
+          endsAt: tournament.ends_at,
+          prizePool: tournament.prize_pool
+        },
+        player: {
+          registered: true,
+          rank: playerRank,
+          bestScore: playerRegistration.best_score || 0,
+          totalGames: playerRegistration.total_games || 0,
+          justRegistered
+        },
+        scoreSubmission: scoreSubmissionResult,
+        leaderboard: leaderboard.map(entry => ({
+          rank: entry.rank,
+          playerName: entry.player_name,
+          score: entry.score
+        }))
+      };
+
+    } catch (error) {
+      console.error('Error in handleTournamentSession:', error);
+      return {
+        success: false,
+        error: 'Tournament session failed'
+      };
+    }
+  }
+
+  /**
+   * Get player registration for a tournament
+   */
+  async _getPlayerRegistration(tournamentId, playerId) {
+    try {
+      const query = `
+        SELECT * FROM tournament_participants 
+        WHERE tournament_id = $1 AND player_id = $2
+      `;
+      const result = await this.db.query(query, [tournamentId, playerId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error getting player registration:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get tournament by ID
+   */
+  async _getTournamentById(tournamentId) {
+    try {
+      const query = `
+        SELECT * FROM tournaments 
+        WHERE id = $1
+      `;
+      const result = await this.db.query(query, [tournamentId]);
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error getting tournament by ID:', error);
+      return null;
+    }
   }
 }
 
