@@ -859,7 +859,7 @@ class TournamentManager {
           id: tournament.id,
           name: tournament.name,
           status: tournament.status,
-          endsAt: tournament.ends_at,
+          endsAt: tournament.ends_at ? tournament.ends_at.toISOString() : null,
           prizePool: tournament.prize_pool
         },
         player: {

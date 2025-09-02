@@ -75,7 +75,53 @@ router.post('/session',
 
       const { tournamentId = 'current', action, score, gameData } = req.body;
       const playerId = req.user.playerId;
-      const playerName = req.user.username || 'Anonymous';
+      
+      // Get player name from database for temporary tokens, fallback to JWT username
+      let playerName = req.user.username || 'Anonymous';
+      
+      // If using temporary token (username is 'Anonymous'), try to get real name from database
+      if (playerName === 'Anonymous' && playerId) {
+        try {
+          const db = req.app.locals.db;
+          // Try different possible table/field combinations
+          let playerQuery;
+          try {
+            playerQuery = await db.query(
+              'SELECT nickname FROM players WHERE id = $1',
+              [playerId]
+            );
+          } catch (e1) {
+            try {
+              playerQuery = await db.query(
+                'SELECT username FROM players WHERE id = $1',
+                [playerId]
+              );
+            } catch (e2) {
+              try {
+                playerQuery = await db.query(
+                  'SELECT nickname FROM users WHERE id = $1',
+                  [playerId]
+                );
+              } catch (e3) {
+                console.warn('Could not find player in any table:', e3.message);
+                playerQuery = { rows: [] };
+              }
+            }
+          }
+          
+          if (playerQuery.rows.length > 0) {
+            const row = playerQuery.rows[0];
+            playerName = row.nickname || row.username || `Pilot${playerId.slice(-4)}`;
+          } else {
+            // Generate a consistent pilot name from player ID
+            playerName = `Pilot${playerId.slice(-4)}`;
+          }
+        } catch (dbError) {
+          console.warn('Database error fetching player name:', dbError.message);
+          // Generate a consistent pilot name from player ID
+          playerName = `Pilot${playerId.slice(-4)}`;
+        }
+      }
 
       const tournamentManager = req.app.locals.tournamentManager;
       const result = await tournamentManager.handleTournamentSession({
