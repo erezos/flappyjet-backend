@@ -30,10 +30,13 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
+      console.log('🔐 JWT Verification Error:', err.name, err.message);
+      console.log('🔐 Token (first 50 chars):', token.substring(0, 50));
       return res.status(403).json({
         success: false,
         error: 'Invalid or expired token',
-        code: 'AUTH_TOKEN_INVALID'
+        code: 'AUTH_TOKEN_INVALID',
+        debug: process.env.NODE_ENV === 'development' ? err.message : undefined
       });
     }
 
