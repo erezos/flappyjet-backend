@@ -27,9 +27,15 @@ module.exports = (db) => {
     appVersion: Joi.string().max(20).default('1.0.0')
   });
 
-  // Generate JWT token
-  const generateToken = (playerId) => {
-    return jwt.sign({ playerId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  // Generate JWT token with player data
+  const generateToken = (playerId, playerData = {}) => {
+    const payload = {
+      playerId: playerId,
+      username: playerData.nickname || playerData.username || 'Anonymous',
+      deviceId: playerData.deviceId,
+      iat: Math.floor(Date.now() / 1000)
+    };
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   };
 
   // Middleware to verify JWT token
@@ -103,8 +109,11 @@ module.exports = (db) => {
         );
       }
 
-      // Generate JWT token
-      const token = generateToken(playerId);
+      // Generate JWT token with player data
+      const token = generateToken(playerId, {
+        nickname: nickname,
+        deviceId: deviceId
+      });
 
       // Get player data
       const playerData = await db.query(
@@ -174,8 +183,11 @@ module.exports = (db) => {
         [playerData.id, platform, appVersion]
       );
 
-      // Generate JWT token
-      const token = generateToken(playerData.id);
+      // Generate JWT token with player data
+      const token = generateToken(playerData.id, {
+        nickname: playerData.nickname,
+        deviceId: playerData.device_id
+      });
 
       res.json({
         success: true,
@@ -206,8 +218,17 @@ module.exports = (db) => {
         return res.status(403).json({ error: 'Invalid player or account banned' });
       }
 
-      // Generate new token
-      const token = generateToken(req.playerId);
+      // Get player data for token generation
+      const playerData = await db.query(
+        'SELECT nickname, device_id FROM players WHERE id = $1',
+        [req.playerId]
+      );
+      
+      // Generate new token with player data
+      const token = generateToken(req.playerId, {
+        nickname: playerData.rows[0]?.nickname,
+        deviceId: playerData.rows[0]?.device_id
+      });
 
       res.json({
         success: true,
