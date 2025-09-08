@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
@@ -114,7 +115,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Purchase validation error:', error);
+      logger.error('Purchase validation error:', error);
       res.status(500).json({ error: 'Failed to validate purchase' });
     }
   });
@@ -152,7 +153,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Purchase history error:', error);
+      logger.error('Purchase history error:', error);
       res.status(500).json({ error: 'Failed to fetch purchase history' });
     }
   });
@@ -212,7 +213,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Purchase stats error:', error);
+      logger.error('Purchase stats error:', error);
       res.status(500).json({ error: 'Failed to fetch purchase statistics' });
     }
   });

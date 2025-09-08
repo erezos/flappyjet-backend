@@ -5,6 +5,7 @@
 
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 /**
  * JWT Secret - In production, this should be in environment variables
@@ -30,8 +31,8 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.log('🔐 JWT Verification Error:', err.name, err.message);
-      console.log('🔐 Token (first 50 chars):', token.substring(0, 50));
+      logger.info('🔐 JWT Verification Error:', err.name, err.message);
+      logger.info('🔐 Token (first 50 chars):', token.substring(0, 50));
       return res.status(403).json({
         success: false,
         error: 'Invalid or expired token',
@@ -51,7 +52,7 @@ const authenticateToken = (req, res, next) => {
     };
 
     // Debug logging
-    console.log('🔐 Auth middleware debug:', {
+    logger.info('🔐 Auth middleware debug:', {
       decodedPlayerId: decoded.playerId,
       reqUserPlayerId: req.user.playerId,
       tokenValid: true

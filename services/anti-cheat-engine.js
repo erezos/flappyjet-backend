@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 /**
  * 🛡️ Anti-Cheat Engine
  * Advanced cheat detection and prevention system
@@ -120,7 +121,7 @@ class AntiCheatEngine {
       };
 
     } catch (error) {
-      console.error('🛡️ ❌ Anti-cheat validation error:', error.message);
+      logger.error('🛡️ ❌ Anti-cheat validation error:', error.message);
       
       // On error, log and allow (fail open for availability)
       await this._logValidationResult(playerId, scoreData, true, `Validation error: ${error.message}`);
@@ -211,7 +212,7 @@ class AntiCheatEngine {
         criticalViolations: result.rows.filter(r => r.severity === 'critical').length
       };
     } catch (error) {
-      console.error('🛡️ ❌ Failed to get cheat history:', error.message);
+      logger.error('🛡️ ❌ Failed to get cheat history:', error.message);
       return {
         success: false,
         error: error.message
@@ -262,7 +263,7 @@ class AntiCheatEngine {
         }
       };
     } catch (error) {
-      console.error('🛡️ ❌ Failed to get anti-cheat stats:', error.message);
+      logger.error('🛡️ ❌ Failed to get anti-cheat stats:', error.message);
       return {
         success: false,
         error: error.message
@@ -338,7 +339,7 @@ class AntiCheatEngine {
 
       return { isValid: true };
     } catch (error) {
-      console.error('🛡️ ❌ Submission rate validation error:', error.message);
+      logger.error('🛡️ ❌ Submission rate validation error:', error.message);
       return { isValid: true }; // Fail open
     }
   }
@@ -373,7 +374,7 @@ class AntiCheatEngine {
 
       return { isValid: true };
     } catch (error) {
-      console.error('🛡️ ❌ Duplicate score validation error:', error.message);
+      logger.error('🛡️ ❌ Duplicate score validation error:', error.message);
       return { isValid: true }; // Fail open
     }
   }
@@ -421,7 +422,7 @@ class AntiCheatEngine {
 
       return { isValid: true };
     } catch (error) {
-      console.error('🛡️ ❌ Device fingerprint validation error:', error.message);
+      logger.error('🛡️ ❌ Device fingerprint validation error:', error.message);
       return { isValid: true }; // Fail open
     }
   }
@@ -452,7 +453,7 @@ class AntiCheatEngine {
         scoreData.deviceFingerprint || null
       ]);
     } catch (error) {
-      console.error('🛡️ ❌ Failed to log validation result:', error.message);
+      logger.error('🛡️ ❌ Failed to log validation result:', error.message);
       // Don't throw - logging failure shouldn't break validation
     }
   }
@@ -480,7 +481,7 @@ class AntiCheatEngine {
         CREATE INDEX IF NOT EXISTS idx_anti_cheat_pattern ON anti_cheat_logs(pattern);
       `);
     } catch (error) {
-      console.error('🛡️ ❌ Failed to ensure anti-cheat table:', error.message);
+      logger.error('🛡️ ❌ Failed to ensure anti-cheat table:', error.message);
     }
   }
 }

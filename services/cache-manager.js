@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 /**
  * 💾 Cache Manager Service
  * Redis-based caching with intelligent TTL and pattern-based invalidation
@@ -32,7 +33,7 @@ class CacheManager {
         try {
           return JSON.parse(value);
         } catch (parseError) {
-          console.warn('💾 ⚠️ Failed to parse cached value:', parseError.message);
+          logger.warn('💾 ⚠️ Failed to parse cached value:', parseError.message);
           // Delete corrupted cache entry
           await this.redis.del(prefixedKey);
           this.stats.misses++;
@@ -43,7 +44,7 @@ class CacheManager {
       this.stats.misses++;
       return null;
     } catch (error) {
-      console.error('💾 ❌ Cache get error:', error.message);
+      logger.error('💾 ❌ Cache get error:', error.message);
       this.stats.errors++;
       return null;
     }
@@ -63,7 +64,7 @@ class CacheManager {
       
       return true;
     } catch (error) {
-      console.error('💾 ❌ Cache set error:', error.message);
+      logger.error('💾 ❌ Cache set error:', error.message);
       this.stats.errors++;
       return false;
     }
@@ -83,7 +84,7 @@ class CacheManager {
       
       return result > 0;
     } catch (error) {
-      console.error('💾 ❌ Cache delete error:', error.message);
+      logger.error('💾 ❌ Cache delete error:', error.message);
       this.stats.errors++;
       return false;
     }
@@ -107,7 +108,7 @@ class CacheManager {
       
       return 0;
     } catch (error) {
-      console.error('💾 ❌ Cache pattern delete error:', error.message);
+      logger.error('💾 ❌ Cache pattern delete error:', error.message);
       this.stats.errors++;
       return 0;
     }
@@ -122,7 +123,7 @@ class CacheManager {
       const result = await this.redis.exists(prefixedKey);
       return result === 1;
     } catch (error) {
-      console.error('💾 ❌ Cache exists error:', error.message);
+      logger.error('💾 ❌ Cache exists error:', error.message);
       this.stats.errors++;
       return false;
     }
@@ -136,7 +137,7 @@ class CacheManager {
       const prefixedKey = this._prefixKey(key);
       return await this.redis.ttl(prefixedKey);
     } catch (error) {
-      console.error('💾 ❌ Cache TTL error:', error.message);
+      logger.error('💾 ❌ Cache TTL error:', error.message);
       this.stats.errors++;
       return -1;
     }
@@ -151,7 +152,7 @@ class CacheManager {
       const result = await this.redis.expire(prefixedKey, ttl);
       return result === 1;
     } catch (error) {
-      console.error('💾 ❌ Cache expire error:', error.message);
+      logger.error('💾 ❌ Cache expire error:', error.message);
       this.stats.errors++;
       return false;
     }
@@ -172,7 +173,7 @@ class CacheManager {
       
       return result;
     } catch (error) {
-      console.error('💾 ❌ Cache increment error:', error.message);
+      logger.error('💾 ❌ Cache increment error:', error.message);
       this.stats.errors++;
       return null;
     }
@@ -194,7 +195,7 @@ class CacheManager {
             result[key] = JSON.parse(value);
             this.stats.hits++;
           } catch (parseError) {
-            console.warn('💾 ⚠️ Failed to parse cached value for key:', key);
+            logger.warn('💾 ⚠️ Failed to parse cached value for key:', key);
             result[key] = null;
             this.stats.misses++;
           }
@@ -206,7 +207,7 @@ class CacheManager {
       
       return result;
     } catch (error) {
-      console.error('💾 ❌ Cache getMultiple error:', error.message);
+      logger.error('💾 ❌ Cache getMultiple error:', error.message);
       this.stats.errors++;
       return {};
     }
@@ -231,7 +232,7 @@ class CacheManager {
       
       return true;
     } catch (error) {
-      console.error('💾 ❌ Cache setMultiple error:', error.message);
+      logger.error('💾 ❌ Cache setMultiple error:', error.message);
       this.stats.errors++;
       return false;
     }
@@ -252,7 +253,7 @@ class CacheManager {
       
       return 0;
     } catch (error) {
-      console.error('💾 ❌ Cache clear error:', error.message);
+      logger.error('💾 ❌ Cache clear error:', error.message);
       this.stats.errors++;
       return 0;
     }
@@ -359,14 +360,14 @@ class CacheManager {
       
       return value;
     } catch (error) {
-      console.error('💾 ❌ Cache getOrSet error:', error.message);
+      logger.error('💾 ❌ Cache getOrSet error:', error.message);
       this.stats.errors++;
       
       // On error, still try to call the fetch function
       try {
         return await fetchFunction();
       } catch (fetchError) {
-        console.error('💾 ❌ Fetch function error:', fetchError.message);
+        logger.error('💾 ❌ Fetch function error:', fetchError.message);
         throw fetchError;
       }
     }

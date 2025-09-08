@@ -4,6 +4,7 @@
  */
 
 const cron = require('node-cron');
+const logger = require('../utils/logger');
 
 class TournamentScheduler {
   constructor({ db, tournamentManager, wsManager }) {
@@ -19,11 +20,11 @@ class TournamentScheduler {
    */
   start() {
     if (this.isRunning) {
-      console.log('🏆 Tournament scheduler already running');
+      logger.info('🏆 Tournament scheduler already running');
       return;
     }
 
-    console.log('🏆 Starting tournament scheduler...');
+    logger.info('🏆 Starting tournament scheduler...');
 
     // Schedule weekly tournament creation (Sundays at 23:50 UTC)
     // Creates next week's tournament 10 minutes before current one ends
@@ -67,7 +68,7 @@ class TournamentScheduler {
     }));
 
     this.isRunning = true;
-    console.log('🏆 ✅ Tournament scheduler started with 5 scheduled jobs');
+    logger.info('🏆 ✅ Tournament scheduler started with 5 scheduled jobs');
   }
 
   /**
@@ -75,21 +76,21 @@ class TournamentScheduler {
    */
   stop() {
     if (!this.isRunning) {
-      console.log('🏆 Tournament scheduler not running');
+      logger.info('🏆 Tournament scheduler not running');
       return;
     }
 
-    console.log('🏆 Stopping tournament scheduler...');
+    logger.info('🏆 Stopping tournament scheduler...');
 
     // Stop all scheduled jobs
     for (const [name, job] of this.scheduledJobs) {
       job.destroy();
-      console.log(`🏆 ⏹️ Stopped job: ${name}`);
+      logger.info(`🏆 ⏹️ Stopped job: ${name}`);
     }
 
     this.scheduledJobs.clear();
     this.isRunning = false;
-    console.log('🏆 ✅ Tournament scheduler stopped');
+    logger.info('🏆 ✅ Tournament scheduler stopped');
   }
 
   /**
@@ -107,7 +108,7 @@ class TournamentScheduler {
    * Manually trigger tournament creation (for testing)
    */
   async createWeeklyTournamentNow(options = {}) {
-    console.log('🏆 🔧 Manually creating weekly tournament...');
+    logger.info('🏆 🔧 Manually creating weekly tournament...');
     return await this._createNextWeeklyTournament(options);
   }
 
@@ -115,7 +116,7 @@ class TournamentScheduler {
 
   async _createNextWeeklyTournament(options = {}) {
     try {
-      console.log('🏆 📅 Creating next weekly tournament...');
+      logger.info('🏆 📅 Creating next weekly tournament...');
 
       // Check if there's already an upcoming tournament
       const currentResult = await this.tournamentManager.getCurrentTournament();
@@ -130,7 +131,7 @@ class TournamentScheduler {
           nextWeek.setDate(nextWeek.getDate() + 7);
           
           if (startDate > nextWeek) {
-            console.log('🏆 ⏭️ Next weekly tournament already exists, skipping creation');
+            logger.info('🏆 ⏭️ Next weekly tournament already exists, skipping creation');
             return { success: true, skipped: true };
           }
         }
@@ -147,7 +148,7 @@ class TournamentScheduler {
       const result = await this.tournamentManager.createWeeklyTournament(tournamentOptions);
 
       if (result.success) {
-        console.log(`🏆 ✅ Created weekly tournament: ${result.tournament.name} (ID: ${result.tournament.id})`);
+        logger.info(`🏆 ✅ Created weekly tournament: ${result.tournament.name} (ID: ${result.tournament.id})`);
         
         // Notify via WebSocket
         if (this.wsManager) {
@@ -160,12 +161,12 @@ class TournamentScheduler {
 
         return result;
       } else {
-        console.error('🏆 ❌ Failed to create weekly tournament:', result.error);
+        logger.error('🏆 ❌ Failed to create weekly tournament:', result.error);
         return result;
       }
 
     } catch (error) {
-      console.error('🏆 ❌ Error in _createNextWeeklyTournament:', error);
+      logger.error('🏆 ❌ Error in _createNextWeeklyTournament:', error);
       return {
         success: false,
         error: error.message
@@ -194,19 +195,19 @@ class TournamentScheduler {
 
         // Check if tournament should start
         if (tournament.status === 'upcoming' && now >= startDate) {
-          console.log(`🏆 🚀 Auto-starting tournament: ${tournament.name}`);
+          logger.info(`🏆 🚀 Auto-starting tournament: ${tournament.name}`);
           await this.tournamentManager.startTournament(tournament.id);
         }
 
         // Check if tournament should end
         if (tournament.status === 'active' && now >= endDate) {
-          console.log(`🏆 🏁 Auto-ending tournament: ${tournament.name}`);
+          logger.info(`🏆 🏁 Auto-ending tournament: ${tournament.name}`);
           await this.tournamentManager.endTournament(tournament.id);
         }
       }
 
     } catch (error) {
-      console.error('🏆 ❌ Error checking tournament statuses:', error);
+      logger.error('🏆 ❌ Error checking tournament statuses:', error);
     }
   }
 
@@ -224,12 +225,12 @@ class TournamentScheduler {
       const result = await this.db.query(query);
       
       for (const tournament of result.rows) {
-        console.log(`🏆 🚀 Starting tournament: ${tournament.name}`);
+        logger.info(`🏆 🚀 Starting tournament: ${tournament.name}`);
         await this.tournamentManager.startTournament(tournament.id);
       }
 
     } catch (error) {
-      console.error('🏆 ❌ Error checking tournament starts:', error);
+      logger.error('🏆 ❌ Error checking tournament starts:', error);
     }
   }
 
@@ -247,18 +248,18 @@ class TournamentScheduler {
       const result = await this.db.query(query);
       
       for (const tournament of result.rows) {
-        console.log(`🏆 🏁 Ending tournament: ${tournament.name}`);
+        logger.info(`🏆 🏁 Ending tournament: ${tournament.name}`);
         await this.tournamentManager.endTournament(tournament.id);
       }
 
     } catch (error) {
-      console.error('🏆 ❌ Error checking tournament ends:', error);
+      logger.error('🏆 ❌ Error checking tournament ends:', error);
     }
   }
 
   async _cleanupOldTournaments() {
     try {
-      console.log('🏆 🧹 Cleaning up old tournament data...');
+      logger.info('🏆 🧹 Cleaning up old tournament data...');
 
       // Archive tournaments older than 3 months
       const archiveQuery = `
@@ -271,7 +272,7 @@ class TournamentScheduler {
       const archiveResult = await this.db.query(archiveQuery);
       
       if (archiveResult.rowCount > 0) {
-        console.log(`🏆 📦 Archived ${archiveResult.rowCount} old tournaments`);
+        logger.info(`🏆 📦 Archived ${archiveResult.rowCount} old tournaments`);
       }
 
       // Delete very old tournament events (older than 1 year)
@@ -283,7 +284,7 @@ class TournamentScheduler {
       const deleteEventsResult = await this.db.query(deleteEventsQuery);
       
       if (deleteEventsResult.rowCount > 0) {
-        console.log(`🏆 🗑️ Deleted ${deleteEventsResult.rowCount} old tournament events`);
+        logger.info(`🏆 🗑️ Deleted ${deleteEventsResult.rowCount} old tournament events`);
       }
 
       // Delete old leaderboard snapshots (keep only final ones for ended tournaments)
@@ -296,13 +297,13 @@ class TournamentScheduler {
       const deleteSnapshotsResult = await this.db.query(deleteSnapshotsQuery);
       
       if (deleteSnapshotsResult.rowCount > 0) {
-        console.log(`🏆 🗑️ Deleted ${deleteSnapshotsResult.rowCount} old leaderboard snapshots`);
+        logger.info(`🏆 🗑️ Deleted ${deleteSnapshotsResult.rowCount} old leaderboard snapshots`);
       }
 
-      console.log('🏆 ✅ Tournament cleanup completed');
+      logger.info('🏆 ✅ Tournament cleanup completed');
 
     } catch (error) {
-      console.error('🏆 ❌ Error during tournament cleanup:', error);
+      logger.error('🏆 ❌ Error during tournament cleanup:', error);
     }
   }
 
@@ -327,7 +328,7 @@ class TournamentScheduler {
    */
   async emergencyEndAllActiveTournaments() {
     try {
-      console.log('🏆 🚨 EMERGENCY: Ending all active tournaments...');
+      logger.info('🏆 🚨 EMERGENCY: Ending all active tournaments...');
 
       const query = `
         SELECT id, name
@@ -338,22 +339,22 @@ class TournamentScheduler {
       const result = await this.db.query(query);
       
       for (const tournament of result.rows) {
-        console.log(`🏆 🚨 Emergency ending: ${tournament.name}`);
+        logger.info(`🏆 🚨 Emergency ending: ${tournament.name}`);
         await this.tournamentManager.endTournament(tournament.id);
       }
 
-      console.log(`🏆 🚨 Emergency ended ${result.rows.length} tournaments`);
+      logger.info(`🏆 🚨 Emergency ended ${result.rows.length} tournaments`);
       return { success: true, count: result.rows.length };
 
     } catch (error) {
-      console.error('🏆 ❌ Error in emergency tournament end:', error);
+      logger.error('🏆 ❌ Error in emergency tournament end:', error);
       return { success: false, error: error.message };
     }
   }
 
   async emergencyCreateTournament(options = {}) {
     try {
-      console.log('🏆 🚨 EMERGENCY: Creating tournament immediately...');
+      logger.info('🏆 🚨 EMERGENCY: Creating tournament immediately...');
       
       const result = await this.tournamentManager.createWeeklyTournament({
         ...options,
@@ -363,13 +364,13 @@ class TournamentScheduler {
       if (result.success) {
         // Start the tournament immediately
         await this.tournamentManager.startTournament(result.tournament.id);
-        console.log(`🏆 🚨 Emergency tournament created and started: ${result.tournament.name}`);
+        logger.info(`🏆 🚨 Emergency tournament created and started: ${result.tournament.name}`);
       }
 
       return result;
 
     } catch (error) {
-      console.error('🏆 ❌ Error in emergency tournament creation:', error);
+      logger.error('🏆 ❌ Error in emergency tournament creation:', error);
       return { success: false, error: error.message };
     }
   }

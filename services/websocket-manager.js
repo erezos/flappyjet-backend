@@ -6,6 +6,7 @@
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const logger = require('../utils/logger');
 
 class WebSocketManager {
   constructor(server, leaderboardService) {
@@ -26,7 +27,7 @@ class WebSocketManager {
   }
 
   initialize() {
-    console.log('🌐 Initializing WebSocket Manager...');
+    logger.info('🌐 Initializing WebSocket Manager...');
     
     this.wss = new WebSocket.Server({
       server: this.server,
@@ -42,7 +43,7 @@ class WebSocketManager {
       this.cleanupStaleConnections();
     }, 30000); // Every 30 seconds
 
-    console.log('🌐 ✅ WebSocket Manager initialized');
+    logger.info('🌐 ✅ WebSocket Manager initialized');
   }
 
   /**
@@ -54,7 +55,7 @@ class WebSocketManager {
       const token = url.searchParams.get('token');
       
       if (!token) {
-        console.log('🌐 ❌ WebSocket connection rejected: No token provided');
+        logger.info('🌐 ❌ WebSocket connection rejected: No token provided');
         return false;
       }
 
@@ -62,7 +63,7 @@ class WebSocketManager {
       info.req.user = decoded;
       return true;
     } catch (error) {
-      console.log('🌐 ❌ WebSocket connection rejected: Invalid token');
+      logger.info('🌐 ❌ WebSocket connection rejected: Invalid token');
       return false;
     }
   }
@@ -74,7 +75,7 @@ class WebSocketManager {
     const clientId = uuidv4();
     const userId = req.user.userId || req.user.id;
     
-    console.log(`🌐 ✅ New WebSocket connection: ${clientId} (User: ${userId})`);
+    logger.info(`🌐 ✅ New WebSocket connection: ${clientId} (User: ${userId})`);
     
     // Store client information
     this.clients.set(clientId, {
@@ -125,7 +126,7 @@ class WebSocketManager {
       this.stats.messagesReceived++;
       
       const message = JSON.parse(data.toString());
-      console.log(`🌐 📨 Message from ${clientId}:`, message.type);
+      logger.info(`🌐 📨 Message from ${clientId}:`, message.type);
 
       switch (message.type) {
         case 'subscribe':
@@ -150,7 +151,7 @@ class WebSocketManager {
           });
       }
     } catch (error) {
-      console.error(`🌐 ❌ Error handling message from ${clientId}:`, error);
+      logger.error(`🌐 ❌ Error handling message from ${clientId}:`, error);
       this.stats.errors++;
       this.sendToClient(clientId, {
         type: 'error',
@@ -176,7 +177,7 @@ class WebSocketManager {
     this.rooms.get(roomId).add(clientId);
     client.subscriptions.add(roomId);
 
-    console.log(`🌐 📡 Client ${clientId} subscribed to ${roomId}`);
+    logger.info(`🌐 📡 Client ${clientId} subscribed to ${roomId}`);
 
     this.sendToClient(clientId, {
       type: 'subscribed',
@@ -207,7 +208,7 @@ class WebSocketManager {
     }
     client.subscriptions.delete(roomId);
 
-    console.log(`🌐 📡 Client ${clientId} unsubscribed from ${roomId}`);
+    logger.info(`🌐 📡 Client ${clientId} unsubscribed from ${roomId}`);
 
     this.sendToClient(clientId, {
       type: 'unsubscribed',
@@ -261,7 +262,7 @@ class WebSocketManager {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error(`🌐 ❌ Error fetching leaderboard for ${clientId}:`, error);
+      logger.error(`🌐 ❌ Error fetching leaderboard for ${clientId}:`, error);
       this.sendToClient(clientId, {
         type: 'error',
         error: 'Failed to fetch leaderboard data',
@@ -289,7 +290,7 @@ class WebSocketManager {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error(`🌐 ❌ Error fetching player rank for ${clientId}:`, error);
+      logger.error(`🌐 ❌ Error fetching player rank for ${clientId}:`, error);
       this.sendToClient(clientId, {
         type: 'error',
         error: 'Failed to fetch player rank data',
@@ -318,7 +319,7 @@ class WebSocketManager {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error(`🌐 ❌ Error sending initial leaderboard data to ${clientId}:`, error);
+      logger.error(`🌐 ❌ Error sending initial leaderboard data to ${clientId}:`, error);
     }
   }
 
@@ -326,7 +327,7 @@ class WebSocketManager {
    * Handle client disconnection
    */
   handleDisconnection(clientId) {
-    console.log(`🌐 ❌ Client disconnected: ${clientId}`);
+    logger.info(`🌐 ❌ Client disconnected: ${clientId}`);
     
     const client = this.clients.get(clientId);
     if (client) {
@@ -349,7 +350,7 @@ class WebSocketManager {
    * Handle client errors
    */
   handleClientError(clientId, error) {
-    console.error(`🌐 ❌ Client error for ${clientId}:`, error);
+    logger.error(`🌐 ❌ Client error for ${clientId}:`, error);
     this.stats.errors++;
   }
 
@@ -357,7 +358,7 @@ class WebSocketManager {
    * Handle WebSocket server errors
    */
   handleError(error) {
-    console.error('🌐 ❌ WebSocket Server error:', error);
+    logger.error('🌐 ❌ WebSocket Server error:', error);
     this.stats.errors++;
   }
 
@@ -372,7 +373,7 @@ class WebSocketManager {
         this.stats.messagesSent++;
         return true;
       } catch (error) {
-        console.error(`🌐 ❌ Error sending message to ${clientId}:`, error);
+        logger.error(`🌐 ❌ Error sending message to ${clientId}:`, error);
         this.stats.errors++;
         return false;
       }
@@ -394,7 +395,7 @@ class WebSocketManager {
       }
     });
 
-    console.log(`🌐 📡 Broadcasted to ${sentCount}/${room.size} clients in ${roomId}`);
+    logger.info(`🌐 📡 Broadcasted to ${sentCount}/${room.size} clients in ${roomId}`);
     return sentCount;
   }
 
@@ -463,7 +464,7 @@ class WebSocketManager {
 
     this.clients.forEach((client, clientId) => {
       if (now - client.lastPing > staleThreshold) {
-        console.log(`🌐 🧹 Cleaning up stale connection: ${clientId}`);
+        logger.info(`🌐 🧹 Cleaning up stale connection: ${clientId}`);
         client.ws.terminate();
         this.handleDisconnection(clientId);
       }
@@ -506,7 +507,7 @@ class WebSocketManager {
       const hasActiveConnections = Array.from(this.clients.values()).some(c => c.userId === playerId);
       
       if (!hasActiveConnections) {
-        console.log(`🌐 📤 No active connections for player ${playerId}`);
+        logger.info(`🌐 📤 No active connections for player ${playerId}`);
         return;
       }
 
@@ -524,9 +525,9 @@ class WebSocketManager {
       });
 
       const totalPlayerConnections = Array.from(this.clients.values()).filter(c => c.userId === playerId).length;
-      console.log(`🌐 📤 Notified player ${playerId}: ${successCount}/${totalPlayerConnections} connections`);
+      logger.info(`🌐 📤 Notified player ${playerId}: ${successCount}/${totalPlayerConnections} connections`);
     } catch (error) {
-      console.error(`🌐 ❌ Error in notifyPlayer:`, error);
+      logger.error(`🌐 ❌ Error in notifyPlayer:`, error);
       this.stats.errors++;
     }
   }
@@ -535,7 +536,7 @@ class WebSocketManager {
    * Shutdown WebSocket server
    */
   shutdown() {
-    console.log('🌐 🛑 Shutting down WebSocket Manager...');
+    logger.info('🌐 🛑 Shutting down WebSocket Manager...');
     
     // Close all client connections
     this.clients.forEach((client, clientId) => {
@@ -545,7 +546,7 @@ class WebSocketManager {
     // Close WebSocket server
     if (this.wss) {
       this.wss.close(() => {
-        console.log('🌐 ✅ WebSocket Manager shutdown complete');
+        logger.info('🌐 ✅ WebSocket Manager shutdown complete');
       });
     }
   }

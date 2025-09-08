@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
@@ -124,7 +125,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Score submission error:', error);
+      logger.error('Score submission error:', error);
       res.status(500).json({ error: 'Failed to submit score' });
     }
   });
@@ -190,7 +191,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Leaderboard fetch error:', error);
+      logger.error('Leaderboard fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch leaderboard' });
     }
   });
@@ -289,7 +290,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Player rank fetch error:', error);
+      logger.error('Player rank fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch player rank' });
     }
   });
@@ -358,7 +359,7 @@ module.exports = (db) => {
       }
 
     } catch (error) {
-      console.error('Achievement check error:', error);
+      logger.error('Achievement check error:', error);
     }
   }
 
@@ -430,7 +431,7 @@ module.exports = (db) => {
       `, [playerId]);
 
     } catch (error) {
-      console.error('Missions progress update error:', error);
+      logger.error('Missions progress update error:', error);
     }
   }
 

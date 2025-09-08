@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const Joi = require('joi');
+const logger = require('../utils/logger');
 
 module.exports = (db) => {
   const router = express.Router();
@@ -137,7 +138,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Registration error:', error);
+      logger.error('Registration error:', error);
       res.status(500).json({ error: 'Registration failed' });
     }
   });
@@ -200,7 +201,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
       res.status(500).json({ error: 'Login failed' });
     }
   });
@@ -236,7 +237,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Token refresh error:', error);
+      logger.error('Token refresh error:', error);
       res.status(500).json({ error: 'Token refresh failed' });
     }
   });
@@ -268,7 +269,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Profile fetch error:', error);
+      logger.error('Profile fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch profile' });
     }
   });
@@ -288,7 +289,7 @@ module.exports = (db) => {
         );
       }
     } catch (error) {
-      console.error('Error granting starter achievements:', error);
+      logger.error('Error granting starter achievements:', error);
     }
   }
 

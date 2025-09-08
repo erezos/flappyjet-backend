@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   /// 🏅 Get all achievements
@@ -34,7 +35,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Achievements fetch error:', error);
+      logger.error('Achievements fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch achievements' });
     }
   });
@@ -91,7 +92,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Player achievements fetch error:', error);
+      logger.error('Player achievements fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch player achievements' });
     }
   });
@@ -174,7 +175,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Achievement unlock error:', error);
+      logger.error('Achievement unlock error:', error);
       res.status(500).json({ error: 'Failed to unlock achievement' });
     }
   });
@@ -228,7 +229,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Achievement stats error:', error);
+      logger.error('Achievement stats error:', error);
       res.status(500).json({ error: 'Failed to fetch achievement statistics' });
     }
   });

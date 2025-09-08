@@ -5,6 +5,7 @@
 
 const { v4: uuidv4, validate: isValidUUID } = require('uuid');
 const { ValidationException, NetworkException } = require('../utils/exceptions');
+const logger = require('../utils/logger');
 
 class TournamentManager {
   constructor({ db, cacheManager, prizeManager, wsManager }) {
@@ -96,7 +97,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error creating weekly tournament:', error);
+      logger.error('Error creating weekly tournament:', error);
       return {
         success: false,
         error: 'Failed to create tournament: ' + error.message
@@ -112,7 +113,7 @@ class TournamentManager {
       const { playerId, playerName } = playerData;
 
       // Debug logging
-      console.log('🏆 Tournament registration debug:', {
+      logger.info('🏆 Tournament registration debug:', {
         tournamentId,
         playerId,
         playerName,
@@ -232,7 +233,7 @@ class TournamentManager {
         };
       }
 
-      console.error('Error registering player for tournament:', error);
+      logger.error('Error registering player for tournament:', error);
       return {
         success: false,
         error: 'Registration failed: ' + error.message
@@ -340,7 +341,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error submitting tournament score:', error);
+      logger.error('Error submitting tournament score:', error);
       return {
         success: false,
         error: 'Score submission failed: ' + error.message
@@ -410,7 +411,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error starting tournament:', error);
+      logger.error('Error starting tournament:', error);
       return {
         success: false,
         error: 'Failed to start tournament: ' + error.message
@@ -524,7 +525,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error ending tournament:', error);
+      logger.error('Error ending tournament:', error);
       return {
         success: false,
         error: 'Failed to end tournament: ' + error.message
@@ -573,7 +574,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error getting current tournament:', error);
+      logger.error('Error getting current tournament:', error);
       return {
         success: false,
         error: 'Database error: ' + error.message
@@ -617,7 +618,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error getting tournament leaderboard:', error);
+      logger.error('Error getting tournament leaderboard:', error);
       return {
         success: false,
         error: 'Failed to get leaderboard: ' + error.message
@@ -675,7 +676,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error getting player tournament stats:', error);
+      logger.error('Error getting player tournament stats:', error);
       return {
         success: false,
         error: 'Failed to get player stats: ' + error.message
@@ -878,7 +879,7 @@ class TournamentManager {
       };
 
     } catch (error) {
-      console.error('Error in handleTournamentSession:', error);
+      logger.error('Error in handleTournamentSession:', error);
       return {
         success: false,
         error: 'Tournament session failed'
@@ -898,7 +899,7 @@ class TournamentManager {
       const result = await this.db.query(query, [tournamentId, playerId]);
       return result.rows[0] || null;
     } catch (error) {
-      console.error('Error getting player registration:', error);
+      logger.error('Error getting player registration:', error);
       return null;
     }
   }
@@ -915,7 +916,7 @@ class TournamentManager {
       const result = await this.db.query(query, [tournamentId]);
       return result.rows[0] || null;
     } catch (error) {
-      console.error('Error getting tournament by ID:', error);
+      logger.error('Error getting tournament by ID:', error);
       return null;
     }
   }

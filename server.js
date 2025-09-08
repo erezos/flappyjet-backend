@@ -2,6 +2,7 @@
 /// Production-ready Node.js backend for mobile game
 
 const express = require('express');
+const logger = require('./utils/logger');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -52,35 +53,38 @@ try {
   // Test database connection and auto-migrate
   db.connect()
     .then(async () => {
-      console.log('🐘 PostgreSQL connected successfully');
+      logger.info('🐘 PostgreSQL connected successfully', { 
+        host: db.options.host, 
+        database: db.options.database 
+      });
       
       // Check if tournament tables exist, if not, run migration
       try {
         await db.query('SELECT 1 FROM tournaments LIMIT 1');
-        console.log('🏆 Tournament tables already exist');
+        logger.info('🏆 Tournament tables already exist');
       } catch (error) {
         if (error.code === '42P01') { // Table does not exist
-          console.log('🏗️ Tournament tables not found, running auto-migration...');
+          logger.info('🏗️ Tournament tables not found, running auto-migration...');
           try {
             const { runMigration } = require('./scripts/migrate-tournament-schema');
             await runMigration(db);
-            console.log('🏗️ ✅ Auto-migration completed successfully');
+            logger.info('🏗️ ✅ Auto-migration completed successfully');
           } catch (migrationError) {
-            console.error('🏗️ ❌ Auto-migration failed:', migrationError);
-            console.log('🚂 ⚠️ Continuing without tournament tables...');
+            logger.error('🏗️ ❌ Auto-migration failed', migrationError);
+            logger.warn('🚂 ⚠️ Continuing without tournament tables...');
           }
         } else {
-          console.error('🏆 ❌ Error checking tournament tables:', error);
+          logger.error('🏆 ❌ Error checking tournament tables:', error);
         }
       }
     })
     .catch(err => {
-      console.error('🐘 ❌ Database connection error:', err);
-      console.log('🚂 ⚠️ Continuing without database for health check...');
+      logger.error('🐘 ❌ Database connection error:', err);
+      logger.info('🚂 ⚠️ Continuing without database for health check...');
     });
 } catch (error) {
-  console.error('🐘 ❌ Database initialization error:', error);
-  console.log('🚂 ⚠️ Continuing without database for health check...');
+  logger.error('🐘 ❌ Database initialization error:', error);
+  logger.info('🚂 ⚠️ Continuing without database for health check...');
 }
 
 // Initialize services
@@ -95,46 +99,46 @@ let cacheManager = null;
 // Initialize services only if database is available
 if (db) {
   try {
-    console.log('🔧 Starting service initialization...');
+    logger.info('🔧 Starting service initialization...');
     
     // Initialize monitoring service
     try {
       monitoringService = new MonitoringService(db);
-      console.log('📊 ✅ Monitoring Service initialized');
+      logger.info('📊 ✅ Monitoring Service initialized');
     } catch (error) {
-      console.error('📊 ❌ Monitoring Service failed:', error.message);
+      logger.error('📊 ❌ Monitoring Service failed:', error.message);
     }
     
     // Initialize enhanced leaderboard service for WebSocket integration
     try {
       enhancedLeaderboardService = new EnhancedLeaderboardService(db);
-      console.log('🏆 ✅ Enhanced Leaderboard Service initialized');
+      logger.info('🏆 ✅ Enhanced Leaderboard Service initialized');
     } catch (error) {
-      console.error('🏆 ❌ Enhanced Leaderboard Service failed:', error.message);
+      logger.error('🏆 ❌ Enhanced Leaderboard Service failed:', error.message);
     }
     
     // Initialize WebSocket Manager
     try {
       wsManager = new WebSocketManager(server, enhancedLeaderboardService);
-      console.log('🌐 ✅ WebSocket Manager initialized');
+      logger.info('🌐 ✅ WebSocket Manager initialized');
     } catch (error) {
-      console.error('🌐 ❌ WebSocket Manager failed:', error.message);
+      logger.error('🌐 ❌ WebSocket Manager failed:', error.message);
     }
     
     // Initialize Cache Manager
     try {
       cacheManager = new SimpleCacheManager();
-      console.log('💾 ✅ Cache Manager initialized');
+      logger.info('💾 ✅ Cache Manager initialized');
     } catch (error) {
-      console.error('💾 ❌ Cache Manager failed:', error.message);
+      logger.error('💾 ❌ Cache Manager failed:', error.message);
     }
     
     // Initialize Prize Manager
     try {
       prizeManager = new PrizeManager({ db, wsManager });
-      console.log('🏆 ✅ Prize Manager initialized');
+      logger.info('🏆 ✅ Prize Manager initialized');
     } catch (error) {
-      console.error('🏆 ❌ Prize Manager failed:', error.message);
+      logger.error('🏆 ❌ Prize Manager failed:', error.message);
     }
     
     // Initialize Tournament Manager
@@ -145,9 +149,9 @@ if (db) {
         prizeManager, 
         wsManager 
       });
-      console.log('🏆 ✅ Tournament Manager initialized');
+      logger.info('🏆 ✅ Tournament Manager initialized');
     } catch (error) {
-      console.error('🏆 ❌ Tournament Manager failed:', error.message);
+      logger.error('🏆 ❌ Tournament Manager failed:', error.message);
     }
     
     // Initialize Tournament Scheduler
@@ -158,19 +162,19 @@ if (db) {
         wsManager 
       });
       tournamentScheduler.start();
-      console.log('🏆 ✅ Tournament Scheduler started');
+      logger.info('🏆 ✅ Tournament Scheduler started');
     } catch (error) {
-      console.error('🏆 ❌ Tournament Scheduler failed:', error.message);
+      logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
     }
     
-    console.log('🔧 ✅ Service initialization completed');
+    logger.info('🔧 ✅ Service initialization completed');
     
   } catch (error) {
-    console.error('🚂 ❌ Service initialization failed:', error);
-    console.log('🚂 ⚠️ Continuing with available services...');
+    logger.error('🚂 ❌ Service initialization failed:', error);
+    logger.info('🚂 ⚠️ Continuing with available services...');
   }
 } else {
-  console.log('🚂 ⚠️ Database not available, running in minimal mode');
+  logger.info('🚂 ⚠️ Database not available, running in minimal mode');
 }
 
 // Middleware
@@ -207,7 +211,7 @@ app.use(rateLimitMiddleware);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  console.log('🏥 Health check requested');
+  logger.info('🏥 Health check requested');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -247,7 +251,7 @@ if (db) {
   app.use('/api/purchase', purchaseRoutes(db));
   app.use('/api/analytics', analyticsRoutes(db));
   app.use('/api/admin', adminRoutes(db));
-  console.log('🚂 ✅ All API routes initialized');
+  logger.info('🚂 ✅ All API routes initialized');
 } else {
   // Minimal routes for health check
   app.get('/api/*', (req, res) => {
@@ -256,7 +260,7 @@ if (db) {
       path: req.originalUrl 
     });
   });
-  console.log('🚂 ⚠️ API routes disabled - database not available');
+  logger.info('🚂 ⚠️ API routes disabled - database not available');
 }
 
 // Root endpoint
@@ -282,7 +286,7 @@ app.get('/', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('🚨 Server Error:', err);
+  logger.error('🚨 Server Error:', err);
   
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'Invalid JSON payload' });
@@ -308,7 +312,7 @@ app.use('*', (req, res) => {
 // Scheduled tasks
 // Reset daily missions at midnight UTC
 cron.schedule('0 0 * * *', async () => {
-  console.log('🎯 Running daily missions reset...');
+  logger.info('🎯 Running daily missions reset...');
   try {
     await db.query(`
       UPDATE player_missions 
@@ -316,29 +320,29 @@ cron.schedule('0 0 * * *', async () => {
       WHERE mission_type IN ('daily_play', 'daily_score', 'daily_streak')
       AND DATE(created_at) < CURRENT_DATE
     `);
-    console.log('🎯 ✅ Daily missions reset completed');
+    logger.info('🎯 ✅ Daily missions reset completed');
   } catch (error) {
-    console.error('🎯 ❌ Daily missions reset failed:', error);
+    logger.error('🎯 ❌ Daily missions reset failed:', error);
   }
 });
 
 // Cleanup old analytics data (keep 90 days)
 cron.schedule('0 2 * * 0', async () => {
-  console.log('🧹 Running weekly cleanup...');
+  logger.info('🧹 Running weekly cleanup...');
   try {
     await db.query(`
       DELETE FROM analytics_events 
       WHERE created_at < NOW() - INTERVAL '90 days'
     `);
-    console.log('🧹 ✅ Weekly cleanup completed');
+    logger.info('🧹 ✅ Weekly cleanup completed');
   } catch (error) {
-    console.error('🧹 ❌ Weekly cleanup failed:', error);
+    logger.error('🧹 ❌ Weekly cleanup failed:', error);
   }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('🚂 Received SIGTERM, shutting down gracefully...');
+  logger.info('🚂 Received SIGTERM, shutting down gracefully...');
   
   // Stop Tournament Scheduler
   if (tournamentScheduler) {
@@ -357,13 +361,13 @@ process.on('SIGTERM', async () => {
   
   // Close HTTP server
   server.close(() => {
-    console.log('🚂 ✅ Server shutdown complete');
+    logger.info('🚂 ✅ Server shutdown complete');
     process.exit(0);
   });
 });
 
 process.on('SIGINT', async () => {
-  console.log('🚂 Received SIGINT, shutting down gracefully...');
+  logger.info('🚂 Received SIGINT, shutting down gracefully...');
   
   // Stop Tournament Scheduler
   if (tournamentScheduler) {
@@ -382,7 +386,7 @@ process.on('SIGINT', async () => {
   
   // Close HTTP server
   server.close(() => {
-    console.log('🚂 ✅ Server shutdown complete');
+    logger.info('🚂 ✅ Server shutdown complete');
     process.exit(0);
   });
 });
@@ -390,25 +394,25 @@ process.on('SIGINT', async () => {
 // Start server with error handling
 try {
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
-    console.log(`🚀 Railway deployment ready!`);
+    logger.info(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
+    logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+    logger.info(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
+    logger.info(`🚀 Railway deployment ready!`);
   });
 
   server.on('error', (error) => {
-    console.error('🚨 Server startup error:', error);
+    logger.error('🚨 Server startup error:', error);
     if (error.code === 'EADDRINUSE') {
-      console.error(`❌ Port ${PORT} is already in use`);
+      logger.error(`❌ Port ${PORT} is already in use`);
     } else if (error.code === 'EACCES') {
-      console.error(`❌ Permission denied for port ${PORT}`);
+      logger.error(`❌ Permission denied for port ${PORT}`);
     }
     process.exit(1);
   });
 
 } catch (error) {
-  console.error('🚨 Fatal server error:', error);
+  logger.error('🚨 Fatal server error:', error);
   process.exit(1);
 }
 

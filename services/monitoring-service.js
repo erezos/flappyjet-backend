@@ -5,6 +5,7 @@
 
 const os = require('os');
 const { performance } = require('perf_hooks');
+const logger = require('../utils/logger');
 
 class MonitoringService {
   constructor(db, redis = null) {
@@ -64,7 +65,7 @@ class MonitoringService {
    * Initialize monitoring service
    */
   initialize() {
-    console.log('📊 Initializing Monitoring Service...');
+    logger.info('📊 Initializing Monitoring Service...');
     
     // Start system metrics collection
     this.startSystemMetricsCollection();
@@ -77,7 +78,7 @@ class MonitoringService {
       this.startCacheMetricsCollection();
     }
     
-    console.log('📊 ✅ Monitoring Service initialized');
+    logger.info('📊 ✅ Monitoring Service initialized');
   }
 
   /**
@@ -144,7 +145,7 @@ class MonitoringService {
       this.metrics.system.loadAverage = os.loadavg();
       
     } catch (error) {
-      console.error('📊 ❌ Error collecting system metrics:', error);
+      logger.error('📊 ❌ Error collecting system metrics:', error);
     }
   }
 
@@ -177,7 +178,7 @@ class MonitoringService {
       }
       
     } catch (error) {
-      console.error('📊 ❌ Error collecting database metrics:', error);
+      logger.error('📊 ❌ Error collecting database metrics:', error);
     }
   }
 
@@ -205,7 +206,7 @@ class MonitoringService {
       this.metrics.cache.operations = total;
       
     } catch (error) {
-      console.error('📊 ❌ Error collecting cache metrics:', error);
+      logger.error('📊 ❌ Error collecting cache metrics:', error);
     }
   }
 
@@ -338,7 +339,7 @@ class MonitoringService {
         websocket: metrics.websocket
       };
     } catch (error) {
-      console.error('📊 ❌ Error generating performance report:', error);
+      logger.error('📊 ❌ Error generating performance report:', error);
       return {
         error: 'Failed to generate performance report',
         timestamp: new Date().toISOString()
@@ -506,13 +507,13 @@ class MonitoringService {
    * Shutdown monitoring service
    */
   shutdown() {
-    console.log('📊 🛑 Shutting down Monitoring Service...');
+    logger.info('📊 🛑 Shutting down Monitoring Service...');
     
     // Clear all intervals
     this.intervals.forEach(interval => clearInterval(interval));
     this.intervals = [];
     
-    console.log('📊 ✅ Monitoring Service shutdown complete');
+    logger.info('📊 ✅ Monitoring Service shutdown complete');
   }
 }
 

@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
@@ -72,7 +73,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Profile fetch error:', error);
+      logger.error('Profile fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch profile' });
     }
   });
@@ -131,7 +132,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Profile update error:', error);
+      logger.error('Profile update error:', error);
       res.status(500).json({ error: 'Failed to update profile' });
     }
   });
@@ -189,7 +190,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Stats fetch error:', error);
+      logger.error('Stats fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch statistics' });
     }
   });
@@ -226,7 +227,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Sync error:', error);
+      logger.error('Sync error:', error);
       res.status(500).json({ error: 'Failed to sync player data' });
     }
   });

@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
@@ -63,7 +64,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Daily missions fetch error:', error);
+      logger.error('Daily missions fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch daily missions' });
     }
   });
@@ -133,7 +134,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Mission progress update error:', error);
+      logger.error('Mission progress update error:', error);
       res.status(500).json({ error: 'Failed to update mission progress' });
     }
   });
@@ -170,7 +171,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Mission refresh error:', error);
+      logger.error('Mission refresh error:', error);
       res.status(500).json({ error: 'Failed to refresh missions' });
     }
   });
@@ -235,10 +236,10 @@ module.exports = (db) => {
         ]);
       }
 
-      console.log(`Generated ${missions.length} daily missions for player ${playerId}`);
+      logger.info(`Generated ${missions.length} daily missions for player ${playerId}`);
 
     } catch (error) {
-      console.error('Mission generation error:', error);
+      logger.error('Mission generation error:', error);
       throw error;
     }
   }

@@ -4,6 +4,7 @@
  */
 
 const { v4: uuidv4 } = require('uuid');
+const logger = require('../utils/logger');
 
 class PrizeManager {
   constructor({ db, wsManager }) {
@@ -75,7 +76,7 @@ class PrizeManager {
       };
 
     } catch (error) {
-      console.error('Error distributing prizes:', error);
+      logger.error('Error distributing prizes:', error);
       return {
         success: false,
         error: 'Prize distribution failed: ' + error.message
@@ -135,7 +136,7 @@ class PrizeManager {
       };
 
     } catch (error) {
-      console.error('Error crediting player account:', error);
+      logger.error('Error crediting player account:', error);
       return {
         success: false,
         error: 'Failed to credit account: ' + error.message
@@ -208,7 +209,7 @@ class PrizeManager {
       };
 
     } catch (error) {
-      console.error('Error getting player prize history:', error);
+      logger.error('Error getting player prize history:', error);
       return {
         success: false,
         error: 'Failed to get prize history: ' + error.message
@@ -248,7 +249,7 @@ class PrizeManager {
       };
 
     } catch (error) {
-      console.error('Error getting tournament prize stats:', error);
+      logger.error('Error getting tournament prize stats:', error);
       return {
         success: false,
         error: 'Failed to get prize stats: ' + error.message

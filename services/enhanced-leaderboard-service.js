@@ -6,6 +6,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { AntiCheatEngine } = require('./anti-cheat-engine');
 const { CacheManager } = require('./cache-manager');
+const logger = require('../utils/logger');
 
 class EnhancedLeaderboardService {
   constructor(database, redis) {
@@ -63,7 +64,7 @@ class EnhancedLeaderboardService {
       };
 
     } catch (error) {
-      console.error('🚂 ❌ Score submission failed:', error.message);
+      logger.error('🚂 ❌ Score submission failed:', error.message);
       return {
         success: false,
         error: error.message
@@ -168,7 +169,7 @@ class EnhancedLeaderboardService {
       return response;
 
     } catch (error) {
-      console.error('🚂 ❌ Failed to fetch global leaderboard:', error.message);
+      logger.error('🚂 ❌ Failed to fetch global leaderboard:', error.message);
       return {
         success: false,
         error: error.message
@@ -257,7 +258,7 @@ class EnhancedLeaderboardService {
       };
 
     } catch (error) {
-      console.error('🚂 ❌ Failed to fetch player context:', error.message);
+      logger.error('🚂 ❌ Failed to fetch player context:', error.message);
       return {
         success: false,
         error: error.message
@@ -286,7 +287,7 @@ class EnhancedLeaderboardService {
       return stats;
 
     } catch (error) {
-      console.error('🚂 ❌ Failed to fetch leaderboard stats:', error.message);
+      logger.error('🚂 ❌ Failed to fetch leaderboard stats:', error.message);
       return {
         success: false,
         error: error.message

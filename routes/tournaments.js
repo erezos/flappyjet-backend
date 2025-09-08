@@ -11,6 +11,7 @@ const router = express.Router();
 // Middleware
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const { tournamentRateLimit } = require('../middleware/rate-limit');
+const logger = require('../utils/logger');
 
 /**
  * Get current active tournament
@@ -39,7 +40,7 @@ router.get('/current',
       });
 
     } catch (error) {
-      console.error('Error getting current tournament:', error);
+      logger.error('Error getting current tournament:', error);
       res.status(500).json({
         success: false,
         error: 'Internal server error'
@@ -73,11 +74,11 @@ router.post('/session',
         });
       }
 
-      const { tournamentId = 'current', action, score, gameData } = req.body;
+      const { tournamentId = 'current', action, score, gameData, playerName: requestPlayerName } = req.body;
       const playerId = req.user.playerId;
       
-      // Get player name from JWT token (now properly included)
-      let playerName = req.user.username || 'Anonymous';
+      // Use player name from request body if provided, otherwise fall back to JWT token
+      let playerName = requestPlayerName || req.user.username || 'Anonymous';
       
       // Fallback to generating pilot name if still anonymous
       if (playerName === 'Anonymous' && playerId) {
@@ -104,7 +105,7 @@ router.post('/session',
       res.json(result);
 
     } catch (error) {
-      console.error('Error handling tournament session:', error);
+      logger.error('Error handling tournament session:', error);
       res.status(500).json({
         success: false,
         error: 'Tournament session failed'
@@ -159,7 +160,7 @@ router.post('/:tournamentId/register',
       });
 
     } catch (error) {
-      console.error('Error registering for tournament:', error);
+      logger.error('Error registering for tournament:', error);
       res.status(500).json({
         success: false,
         error: 'Registration failed'
@@ -219,7 +220,7 @@ router.post('/:tournamentId/scores',
       });
 
     } catch (error) {
-      console.error('Error submitting tournament score:', error);
+      logger.error('Error submitting tournament score:', error);
       res.status(500).json({
         success: false,
         error: 'Score submission failed'
@@ -278,7 +279,7 @@ router.get('/:tournamentId/leaderboard',
       });
 
     } catch (error) {
-      console.error('Error getting tournament leaderboard:', error);
+      logger.error('Error getting tournament leaderboard:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to get leaderboard'
@@ -334,7 +335,7 @@ router.get('/player/:playerId/stats',
       });
 
     } catch (error) {
-      console.error('Error getting player tournament stats:', error);
+      logger.error('Error getting player tournament stats:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to get player stats'
@@ -392,7 +393,7 @@ router.get('/player/:playerId/prizes',
       });
 
     } catch (error) {
-      console.error('Error getting player prize history:', error);
+      logger.error('Error getting player prize history:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to get prize history'
@@ -456,7 +457,7 @@ router.post('/create-weekly',
       });
 
     } catch (error) {
-      console.error('Error creating weekly tournament:', error);
+      logger.error('Error creating weekly tournament:', error);
       res.status(500).json({
         success: false,
         error: 'Tournament creation failed'
@@ -512,7 +513,7 @@ router.post('/:tournamentId/start',
       });
 
     } catch (error) {
-      console.error('Error starting tournament:', error);
+      logger.error('Error starting tournament:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to start tournament'
@@ -570,7 +571,7 @@ router.post('/:tournamentId/end',
       });
 
     } catch (error) {
-      console.error('Error ending tournament:', error);
+      logger.error('Error ending tournament:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to end tournament'
@@ -625,7 +626,7 @@ router.get('/:tournamentId/prize-stats',
       });
 
     } catch (error) {
-      console.error('Error getting tournament prize stats:', error);
+      logger.error('Error getting tournament prize stats:', error);
       res.status(500).json({
         success: false,
         error: 'Failed to get prize stats'

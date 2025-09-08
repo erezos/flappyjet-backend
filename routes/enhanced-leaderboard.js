@@ -27,7 +27,7 @@ try {
     lazyConnect: true,
   });
 } catch (error) {
-  console.warn('🔴 Redis connection failed, running without cache:', error.message);
+  logger.warn('🔴 Redis connection failed, running without cache:', error.message);
 }
 
 // Initialize services
@@ -55,6 +55,7 @@ const authenticateToken = (req, res, next) => {
 
   try {
     const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
@@ -189,7 +190,7 @@ router.post('/submit', authenticateToken, validateScoreSubmission, async (req, r
       res.status(statusCode).json(result);
     }
   } catch (error) {
-    console.error('🚂 ❌ Enhanced score submission error:', error);
+    logger.error('🚂 ❌ Enhanced score submission error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error during score submission'
@@ -228,7 +229,7 @@ router.get('/global', validateQueryParams, async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('🚂 ❌ Enhanced global leaderboard error:', error);
+    logger.error('🚂 ❌ Enhanced global leaderboard error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching leaderboard'
@@ -263,7 +264,7 @@ router.get('/player/:playerId', authenticateToken, validatePlayerId, async (req,
       res.status(statusCode).json(result);
     }
   } catch (error) {
-    console.error('🚂 ❌ Enhanced player context error:', error);
+    logger.error('🚂 ❌ Enhanced player context error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching player context'
@@ -300,7 +301,7 @@ router.get('/stats', validateQueryParams, async (req, res) => {
       res.status(500).json(result);
     }
   } catch (error) {
-    console.error('🚂 ❌ Enhanced leaderboard stats error:', error);
+    logger.error('🚂 ❌ Enhanced leaderboard stats error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching statistics'
@@ -327,7 +328,7 @@ router.get('/anti-cheat/stats', authenticateToken, async (req, res) => {
     
     res.json(result);
   } catch (error) {
-    console.error('🚂 ❌ Anti-cheat stats error:', error);
+    logger.error('🚂 ❌ Anti-cheat stats error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching anti-cheat statistics'
@@ -356,7 +357,7 @@ router.get('/player/:playerId/cheat-history', authenticateToken, validatePlayerI
     
     res.json(result);
   } catch (error) {
-    console.error('🚂 ❌ Player cheat history error:', error);
+    logger.error('🚂 ❌ Player cheat history error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching cheat history'
@@ -395,7 +396,7 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
       healthCheck
     });
   } catch (error) {
-    console.error('🚂 ❌ Cache stats error:', error);
+    logger.error('🚂 ❌ Cache stats error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching cache statistics'
@@ -431,7 +432,7 @@ router.post('/cache/clear', authenticateToken, async (req, res) => {
       message: `Cleared ${cleared} cache entries`
     });
   } catch (error) {
-    console.error('🚂 ❌ Cache clear error:', error);
+    logger.error('🚂 ❌ Cache clear error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error clearing cache'
@@ -474,7 +475,7 @@ router.get('/websocket/stats', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('🚂 ❌ WebSocket stats error:', error);
+    logger.error('🚂 ❌ WebSocket stats error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching WebSocket statistics'
@@ -528,7 +529,7 @@ router.post('/websocket/broadcast', authenticateToken, async (req, res) => {
       message: `Broadcasted to ${sentCount} clients`
     });
   } catch (error) {
-    console.error('🚂 ❌ WebSocket broadcast error:', error);
+    logger.error('🚂 ❌ WebSocket broadcast error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error broadcasting message'
@@ -568,7 +569,7 @@ router.get('/metrics', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('🚂 ❌ Metrics error:', error);
+    logger.error('🚂 ❌ Metrics error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching metrics'
@@ -608,7 +609,7 @@ router.get('/performance', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('🚂 ❌ Performance report error:', error);
+    logger.error('🚂 ❌ Performance report error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error generating performance report'
@@ -649,7 +650,7 @@ router.get('/alerts', authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('🚂 ❌ Alerts error:', error);
+    logger.error('🚂 ❌ Alerts error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error fetching alerts'
@@ -693,7 +694,7 @@ router.get('/health', async (req, res) => {
     const statusCode = health.status === 'healthy' ? 200 : 503;
     res.status(statusCode).json(health);
   } catch (error) {
-    console.error('🚂 ❌ Health check error:', error);
+    logger.error('🚂 ❌ Health check error:', error);
     res.status(503).json({
       status: 'unhealthy',
       error: error.message,

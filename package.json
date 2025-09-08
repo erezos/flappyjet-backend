@@ -43,6 +43,7 @@
     "rate-limiter-flexible": "^2.4.2",
     "redis": "^4.6.12",
     "uuid": "^9.0.1",
+    "winston": "^3.17.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
@@ -57,7 +58,6 @@
     "jest-html-reporters": "^3.1.5",
     "nock": "^13.5.0",
     "nodemon": "^3.0.2",
-
     "supertest": "^6.3.3"
   },
   "engines": {

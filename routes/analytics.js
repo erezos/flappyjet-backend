@@ -7,6 +7,7 @@ module.exports = (db) => {
   
   // Import auth middleware
   const authRoutes = require('./auth')(db);
+const logger = require('../utils/logger');
   const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
@@ -40,7 +41,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Analytics event error:', error);
+      logger.error('Analytics event error:', error);
       res.status(500).json({ error: 'Failed to track event' });
     }
   });
@@ -90,7 +91,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Player analytics error:', error);
+      logger.error('Player analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch player analytics' });
     }
   });
@@ -169,7 +170,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Global analytics error:', error);
+      logger.error('Global analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch global analytics' });
     }
   });
@@ -240,7 +241,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Gameplay analytics error:', error);
+      logger.error('Gameplay analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch gameplay analytics' });
     }
   });
@@ -290,7 +291,7 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      console.error('Monetization analytics error:', error);
+      logger.error('Monetization analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch monetization analytics' });
     }
   });
