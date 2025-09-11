@@ -275,6 +275,9 @@ class TournamentManager {
       const participant = participantResult.rows[0];
       const isNewBest = score > participant.best_score;
 
+      // 🚨 CRITICAL FIX: Define currentPlayerName outside the score check scope
+      const currentPlayerName = playerName || participant.player_name;
+
       // Update participant's best score if this is better
       if (isNewBest) {
         const updateQuery = `
@@ -286,8 +289,7 @@ class TournamentManager {
         
         await this.db.query(updateQuery, [score, tournamentId, playerId]);
 
-        // Create leaderboard snapshot with current player name (if provided) or fallback to stored name
-        const currentPlayerName = playerName || participant.player_name;
+        // Create leaderboard snapshot with current player name
         await this._createLeaderboardSnapshot(tournamentId, playerId, currentPlayerName, score);
 
         // Clear leaderboard cache
@@ -338,7 +340,8 @@ class TournamentManager {
         score: score,
         previousBest: participant.best_score,
         rank: rank,
-        totalGames: participant.total_games + 1
+        totalGames: participant.total_games + 1,
+        playerName: currentPlayerName
       };
 
     } catch (error) {
