@@ -224,24 +224,31 @@ const logger = require('../utils/logger');
 /// 🏪 Product catalog and item granting
 function getItemsForProduct(productId) {
   const products = {
-    // Gem packs
+    // 💎 Gem packs - Aligned with Google Play Console
     'gems_pack_small': { gems: 100 },
     'gems_pack_medium': { gems: 500, bonusGems: 50 },
     'gems_pack_large': { gems: 1000, bonusGems: 200 },
     'gems_pack_mega': { gems: 2500, bonusGems: 750 },
     
-    // Heart booster
+    // ⚡ Heart boosters - Complete lineup
     'heart_booster_24h': { heartBoosterHours: 24 },
+    'heart_booster_48h': { heartBoosterHours: 48 },
+    'heart_booster_72h': { heartBoosterHours: 72 },
     
-    // Coin packs
+    // 🚁 Premium jet skins
+    'jet_golden_falcon': { jetSkin: 'golden_falcon' },
+    'jet_stealth_dragon': { jetSkin: 'stealth_dragon' },
+    'jet_phoenix_flame': { jetSkin: 'phoenix_flame' },
+    
+    // 🎁 Convenience packs
+    'hearts_instant_refill': { hearts: 3 },
+    'starter_bundle': { gems: 200, coins: 1000, hearts: 5, heartBoosterHours: 24 },
+    
+    // Legacy support (keep for backward compatibility)
     'coins_pack_small': { coins: 1000 },
     'coins_pack_large': { coins: 5000, bonusCoins: 1000 },
-    
-    // Jet skins
     'jet_skin_golden_falcon': { jetSkin: 'golden_falcon' },
     'jet_skin_diamond_elite': { jetSkin: 'diamond_elite' },
-    
-    // Premium bundles
     'starter_pack': { gems: 200, coins: 2000, heartBoosterHours: 48 },
     'mega_bundle': { gems: 1000, coins: 10000, jetSkin: 'premium_bundle_jet' }
   };
@@ -266,6 +273,12 @@ async function grantItemsToPlayer(playerId, items, db) {
     const totalCoins = (items.coins || 0) + (items.bonusCoins || 0);
     updates.push(`current_coins = current_coins + $${++paramCount}`);
     values.push(totalCoins);
+  }
+
+  // Grant hearts (instant refill)
+  if (items.hearts) {
+    updates.push(`current_hearts = LEAST(current_hearts + $${++paramCount}, max_hearts)`);
+    values.push(items.hearts);
   }
 
   // Grant heart booster
