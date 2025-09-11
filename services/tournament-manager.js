@@ -246,7 +246,7 @@ class TournamentManager {
    */
   async submitScore(tournamentId, scoreData) {
     try {
-      const { playerId, score, gameData = {} } = scoreData;
+      const { playerId, score, gameData = {}, playerName = null } = scoreData;
 
       // Validate inputs
       if (!isValidUUID(tournamentId) || !playerId || score < 0) {
@@ -286,8 +286,9 @@ class TournamentManager {
         
         await this.db.query(updateQuery, [score, tournamentId, playerId]);
 
-        // Create leaderboard snapshot
-        await this._createLeaderboardSnapshot(tournamentId, playerId, participant.player_name, score);
+        // Create leaderboard snapshot with current player name (if provided) or fallback to stored name
+        const currentPlayerName = playerName || participant.player_name;
+        await this._createLeaderboardSnapshot(tournamentId, playerId, currentPlayerName, score);
 
         // Clear leaderboard cache
         await this.cache.delete(this.CACHE_KEYS.TOURNAMENT_LEADERBOARD(tournamentId));
@@ -324,7 +325,7 @@ class TournamentManager {
           leaderboard: leaderboard,
           updatedPlayer: {
             playerId: playerId,
-            playerName: participant.player_name,
+            playerName: currentPlayerName,
             score: score,
             rank: rank
           }
@@ -821,10 +822,26 @@ class TournamentManager {
       // Step 4: Handle score submission if requested
       let scoreSubmissionResult = null;
       if (action === 'submit_score' && score !== undefined) {
+        // 🚨 CRITICAL FIX: Update player name in tournament participants before score submission
+        if (playerName && playerRegistration) {
+          try {
+            await this.db.query(
+              `UPDATE tournament_participants 
+               SET player_name = $1 
+               WHERE tournament_id = $2 AND player_id = $3`,
+              [playerName, actualTournamentId, playerId]
+            );
+            logger.info(`🏆 Updated tournament player name: ${playerId} -> ${playerName}`);
+          } catch (error) {
+            logger.error('Failed to update tournament player name:', error);
+          }
+        }
+
         const submitResult = await this.submitScore(actualTournamentId, {
           playerId,
           score,
-          gameData
+          gameData,
+          playerName // 🚨 CRITICAL: Pass current player name to submitScore
         });
         
         if (submitResult.success) {
