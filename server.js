@@ -20,6 +20,7 @@ const TournamentManager = require('./services/tournament-manager');
 const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
 const SimpleCacheManager = require('./services/simple-cache-manager');
+const SmartNotificationScheduler = require('./services/smart-notification-scheduler');
 require('dotenv').config();
 
 // Import route modules
@@ -33,6 +34,7 @@ const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
 const adminRoutes = require('./routes/admin');
+const fcmRoutes = require('./routes/fcm');
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -163,6 +165,11 @@ if (db) {
       });
       tournamentScheduler.start();
       logger.info('🏆 ✅ Tournament Scheduler started');
+
+      // Initialize Smart Notification Scheduler for FCM
+      const notificationScheduler = new SmartNotificationScheduler(db);
+      notificationScheduler.start();
+      logger.info('🔥 ✅ Smart Notification Scheduler started');
     } catch (error) {
       logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
     }
@@ -251,6 +258,7 @@ if (db) {
   app.use('/api/purchase', purchaseRoutes(db));
   app.use('/api/analytics', analyticsRoutes(db));
   app.use('/api/admin', adminRoutes(db));
+  app.use('/api/fcm', fcmRoutes(db));
   logger.info('🚂 ✅ All API routes initialized');
 } else {
   // Minimal routes for health check
