@@ -17,7 +17,7 @@ module.exports = (db) => {
   });
 
   // Middleware to authenticate JWT tokens
-  const authenticateToken = require('../middleware/auth');
+  const { authenticateToken } = require('../middleware/auth');
 
 /**
  * Register FCM token for push notifications
