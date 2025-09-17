@@ -299,7 +299,7 @@ class TournamentManager {
         const updateQuery = `
           UPDATE tournament_participants 
           SET total_games = total_games + 1
-          WHERE tournament_id = $2 AND player_id = $3
+          WHERE tournament_id = $1 AND player_id = $2
         `;
         
         await this.db.query(updateQuery, [tournamentId, playerId]);
