@@ -21,6 +21,10 @@
     "migrate:tournaments": "node scripts/migrate-tournament-schema.js",
     "setup-dashboard": "node scripts/setup-dashboard.js",
     "setup-dashboard:production": "NODE_ENV=production node scripts/setup-dashboard.js",
+    "refresh-dashboard": "node scripts/refresh-dashboard-views.js",
+    "refresh-dashboard:production": "NODE_ENV=production node scripts/refresh-dashboard-views.js",
+    "test-dashboard": "node scripts/test-dashboard.js",
+    "test-dashboard:production": "NODE_ENV=production node scripts/test-dashboard.js",
     "seed": "node scripts/seed.js",
     "seed:production": "NODE_ENV=production node scripts/seed.js",
     "lint": "eslint .",
@@ -62,7 +66,7 @@
     "jest-html-reporters": "^3.1.5",
     "nock": "^13.5.0",
     "nodemon": "^3.0.2",
-    "supertest": "^6.3.4"
+    "supertest": "^6.3.3"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -355,6 +355,18 @@ cron.schedule('0 2 * * 0', async () => {
   }
 });
 
+// Dashboard views refresh (twice daily: 6 AM and 6 PM UTC)
+cron.schedule('0 6,18 * * *', async () => {
+  logger.info('📊 Running dashboard views refresh...');
+  try {
+    const { refreshDashboardViews } = require('./scripts/refresh-dashboard-views');
+    await refreshDashboardViews();
+    logger.info('📊 ✅ Dashboard views refresh completed');
+  } catch (error) {
+    logger.error('📊 ❌ Dashboard views refresh failed:', error);
+  }
+});
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('🚂 Received SIGTERM, shutting down gracefully...');
