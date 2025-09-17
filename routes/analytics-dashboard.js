@@ -45,20 +45,20 @@ router.get('/kpi-summary', authenticateDashboard, async (req, res) => {
       SELECT 
         date,
         daily_active_users,
-        daily_revenue,
-        daily_purchases,
+        gaming_users,
+        monetizing_users,
+        total_revenue_usd as daily_revenue,
         paying_users,
-        avg_purchase_value,
-        avg_games_per_session,
-        avg_session_duration,
-        high_engagement_rate,
-        daily_crashes,
-        crash_affected_users,
-        ad_completion_rate,
-        ads_shown,
+        total_purchases as daily_purchases,
+        total_sessions,
+        avg_sessions_per_user,
+        completion_rate_percent,
+        total_crashes as daily_crashes,
+        crash_rate_percent,
+        ad_conversion_rate,
+        iap_conversion_rate,
         arpu,
-        arppu,
-        conversion_rate
+        arppu
       FROM daily_kpi_summary 
       WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
       ORDER BY date DESC
