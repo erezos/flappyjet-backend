@@ -35,6 +35,7 @@ const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
 const adminRoutes = require('./routes/admin');
 const fcmRoutes = require('./routes/fcm');
+const analyticsDashboardRoutes = require('./routes/analytics-dashboard');
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -256,9 +257,15 @@ if (db) {
   app.use('/api/missions', missionsRoutes(db));
   app.use('/api/achievements', achievementsRoutes(db));
   app.use('/api/purchase', purchaseRoutes(db));
-  app.use('/api/analytics', analyticsRoutes(db));
-  app.use('/api/admin', adminRoutes(db));
-  app.use('/api/fcm', fcmRoutes(db));
+app.use('/api/analytics', analyticsRoutes(db));
+app.use('/api/admin', adminRoutes(db));
+app.use('/api/fcm', fcmRoutes(db));
+
+// Analytics Dashboard Routes
+app.use('/api/analytics', analyticsDashboardRoutes);
+
+// Serve static dashboard files
+app.use('/analytics', express.static('analytics'));
   logger.info('🚂 ✅ All API routes initialized');
 } else {
   // Minimal routes for health check

@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlappyJet Pro - Daily KPI Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .refresh-info {
+            background: rgba(255,255,255,0.1);
+            padding: 10px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: white;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .kpi-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+
+        .kpi-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .kpi-icon {
+            font-size: 2rem;
+            margin-right: 15px;
+        }
+
+        .kpi-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .kpi-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .kpi-change {
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .kpi-change.positive {
+            color: #27ae60;
+        }
+
+        .kpi-change.negative {
+            color: #e74c3c;
+        }
+
+        .kpi-change.neutral {
+            color: #7f8c8d;
+        }
+
+        .chart-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .chart-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-bottom: 20px;
+        }
+
+        .chart-container.large {
+            height: 400px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metric-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .kpi-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .kpi-card {
+                padding: 20px;
+            }
+
+            .kpi-value {
+                font-size: 2rem;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+
+            .chart-container.large {
+                height: 300px;
+            }
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚁 FlappyJet Pro Analytics</h1>
+            <p>Daily KPI Dashboard - Real-time Business Intelligence</p>
+        </div>
+
+        <div class="refresh-info">
+            <span id="lastRefresh">Loading...</span> • Updates twice daily at 6 AM & 6 PM UTC
+        </div>
+
+        <div id="loading" class="loading">
+            <div>📊 Loading dashboard data...</div>
+        </div>
+
+        <div id="error" class="error" style="display: none;">
+            <div>❌ Failed to load data. Please try again later.</div>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <!-- KPI Cards -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">👥</div>
+                        <div class="kpi-title">Daily Active Users</div>
+                    </div>
+                    <div class="kpi-value" id="dauValue">-</div>
+                    <div class="kpi-change" id="dauChange">
+                        <span>vs yesterday</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">💰</div>
+                        <div class="kpi-title">Daily Revenue</div>
+                    </div>
+                    <div class="kpi-value" id="revenueValue">-</div>
+                    <div class="kpi-change" id="revenueChange">
+                        <span>vs yesterday</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🔄</div>
+                        <div class="kpi-title">Day 1 Retention</div>
+                    </div>
+                    <div class="kpi-value" id="retentionValue">-</div>
+                    <div class="kpi-change" id="retentionChange">
+                        <span>7-day average</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">💥</div>
+                        <div class="kpi-title">Crash Rate</div>
+                    </div>
+                    <div class="kpi-value" id="crashValue">-</div>
+                    <div class="kpi-change" id="crashChange">
+                        <span>crashes per 1000 sessions</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🎮</div>
+                        <div class="kpi-title">Avg Games/Session</div>
+                    </div>
+                    <div class="kpi-value" id="engagementValue">-</div>
+                    <div class="kpi-change" id="engagementChange">
+                        <span>user engagement quality</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">📺</div>
+                        <div class="kpi-title">Ad Completion Rate</div>
+                    </div>
+                    <div class="kpi-value" id="adValue">-</div>
+                    <div class="kpi-change" id="adChange">
+                        <span>monetization efficiency</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="chart-section">
+                <div class="chart-title">📈 Daily Active Users & Revenue Trend (30 Days)</div>
+                <div class="chart-container large">
+                    <canvas id="dauRevenueChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-title">🔄 Retention Cohort Analysis</div>
+                <div class="chart-container">
+                    <canvas id="retentionChart"></canvas>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">Avg Day 1 Retention</div>
+                        <div class="metric-value" id="avgDay1Retention">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Avg Day 7 Retention</div>
+                        <div class="metric-value" id="avgDay7Retention">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Avg Day 30 Retention</div>
+                        <div class="metric-value" id="avgDay30Retention">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-title">💰 Monetization Performance</div>
+                <div class="chart-container">
+                    <canvas id="monetizationChart"></canvas>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">ARPU (30d avg)</div>
+                        <div class="metric-value" id="avgArpu">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">ARPPU (30d avg)</div>
+                        <div class="metric-value" id="avgArppu">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Conversion Rate</div>
+                        <div class="metric-value" id="avgConversion">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-title">📱 Platform Performance</div>
+                <div class="chart-container">
+                    <canvas id="platformChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>FlappyJet Pro Analytics Dashboard • Built with ❤️ for data-driven game development</p>
+            <p>Data refreshed twice daily • Last update: <span id="footerRefresh">-</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Dashboard configuration
+        const API_BASE_URL = '/api/analytics';
+        let charts = {};
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardData();
+            setInterval(checkForUpdates, 300000); // Check for updates every 5 minutes
+        });
+
+        // Load all dashboard data
+        async function loadDashboardData() {
+            try {
+                showLoading(true);
+                
+                const [kpiData, trendsData, retentionData, monetizationData, platformData] = await Promise.all([
+                    fetchData('/kpi-summary'),
+                    fetchData('/trends'),
+                    fetchData('/retention'),
+                    fetchData('/monetization'),
+                    fetchData('/platform')
+                ]);
+
+                updateKPICards(kpiData);
+                createDAURevenueChart(trendsData);
+                createRetentionChart(retentionData);
+                createMonetizationChart(monetizationData);
+                createPlatformChart(platformData);
+
+                updateLastRefresh();
+                showDashboard();
+                
+            } catch (error) {
+                console.error('Failed to load dashboard:', error);
+                showError();
+            }
+        }
+
+        // Fetch data from API
+        async function fetchData(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return await response.json();
+        }
+
+        // Update KPI cards with latest data
+        function updateKPICards(data) {
+            if (!data || data.length === 0) return;
+
+            const latest = data[0];
+            const previous = data[1] || {};
+
+            // DAU
+            document.getElementById('dauValue').textContent = formatNumber(latest.daily_active_users || 0);
+            updateChangeIndicator('dauChange', latest.daily_active_users, previous.daily_active_users);
+
+            // Revenue
+            document.getElementById('revenueValue').textContent = formatCurrency(latest.daily_revenue || 0);
+            updateChangeIndicator('revenueChange', latest.daily_revenue, previous.daily_revenue, true);
+
+            // Retention
+            document.getElementById('retentionValue').textContent = formatPercent(latest.day1_retention_avg || 0);
+            updateChangeIndicator('retentionChange', latest.day1_retention_avg, previous.day1_retention_avg);
+
+            // Crash Rate
+            const crashRate = latest.daily_active_users > 0 ? 
+                (latest.daily_crashes / latest.daily_active_users * 1000) : 0;
+            document.getElementById('crashValue').textContent = formatNumber(crashRate, 1);
+            
+            // Engagement
+            document.getElementById('engagementValue').textContent = formatNumber(latest.avg_games_per_session || 0, 1);
+            
+            // Ad Performance
+            document.getElementById('adValue').textContent = formatPercent(latest.ad_completion_rate || 0);
+        }
+
+        // Create DAU & Revenue trend chart
+        function createDAURevenueChart(data) {
+            const ctx = document.getElementById('dauRevenueChart').getContext('2d');
+            
+            if (charts.dauRevenue) {
+                charts.dauRevenue.destroy();
+            }
+
+            const dates = data.map(d => formatDate(d.date));
+            const dauData = data.map(d => d.daily_active_users || 0);
+            const revenueData = data.map(d => d.daily_revenue || 0);
+
+            charts.dauRevenue = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Daily Active Users',
+                        data: dauData,
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Daily Revenue ($)',
+                        data: revenueData,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Daily Active Users' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Revenue ($)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: false }
+                    }
+                }
+            });
+        }
+
+        // Create retention chart
+        function createRetentionChart(data) {
+            const ctx = document.getElementById('retentionChart').getContext('2d');
+            
+            if (charts.retention) {
+                charts.retention.destroy();
+            }
+
+            const dates = data.map(d => formatDate(d.install_date));
+            const day1Data = data.map(d => d.day1_retention_rate || 0);
+            const day7Data = data.map(d => d.day7_retention_rate || 0);
+            const day30Data = data.map(d => d.day30_retention_rate || 0);
+
+            // Update average retention metrics
+            document.getElementById('avgDay1Retention').textContent = 
+                formatPercent(calculateAverage(day1Data));
+            document.getElementById('avgDay7Retention').textContent = 
+                formatPercent(calculateAverage(day7Data));
+            document.getElementById('avgDay30Retention').textContent = 
+                formatPercent(calculateAverage(day30Data));
+
+            charts.retention = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Day 1 Retention',
+                        data: day1Data,
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)'
+                    }, {
+                        label: 'Day 7 Retention',
+                        data: day7Data,
+                        borderColor: '#f39c12',
+                        backgroundColor: 'rgba(243, 156, 18, 0.1)'
+                    }, {
+                        label: 'Day 30 Retention',
+                        data: day30Data,
+                        borderColor: '#9b59b6',
+                        backgroundColor: 'rgba(155, 89, 182, 0.1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: { display: true, text: 'Retention Rate (%)' }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' }
+                    }
+                }
+            });
+        }
+
+        // Create monetization chart
+        function createMonetizationChart(data) {
+            const ctx = document.getElementById('monetizationChart').getContext('2d');
+            
+            if (charts.monetization) {
+                charts.monetization.destroy();
+            }
+
+            const dates = data.map(d => formatDate(d.date));
+            const arpuData = data.map(d => d.arpu || 0);
+            const conversionData = data.map(d => d.conversion_rate || 0);
+
+            // Update average metrics
+            document.getElementById('avgArpu').textContent = 
+                formatCurrency(calculateAverage(arpuData));
+            document.getElementById('avgArppu').textContent = 
+                formatCurrency(calculateAverage(data.map(d => d.arppu || 0)));
+            document.getElementById('avgConversion').textContent = 
+                formatPercent(calculateAverage(conversionData));
+
+            charts.monetization = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'ARPU ($)',
+                        data: arpuData,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Conversion Rate (%)',
+                        data: conversionData,
+                        borderColor: '#f39c12',
+                        backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'ARPU ($)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Conversion Rate (%)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' }
+                    }
+                }
+            });
+        }
+
+        // Create platform comparison chart
+        function createPlatformChart(data) {
+            const ctx = document.getElementById('platformChart').getContext('2d');
+            
+            if (charts.platform) {
+                charts.platform.destroy();
+            }
+
+            const dates = data.map(d => formatDate(d.date));
+            const androidData = data.map(d => d.android_users || 0);
+            const iosData = data.map(d => d.ios_users || 0);
+
+            charts.platform = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Android Users',
+                        data: androidData,
+                        backgroundColor: '#2ecc71'
+                    }, {
+                        label: 'iOS Users',
+                        data: iosData,
+                        backgroundColor: '#3498db'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true },
+                        y: { 
+                            stacked: true,
+                            title: { display: true, text: 'Daily Active Users' }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' }
+                    }
+                }
+            });
+        }
+
+        // Utility functions
+        function updateChangeIndicator(elementId, current, previous, isCurrency = false) {
+            const element = document.getElementById(elementId);
+            if (!previous || previous === 0) {
+                element.className = 'kpi-change neutral';
+                element.innerHTML = '<span>No previous data</span>';
+                return;
+            }
+
+            const change = ((current - previous) / previous) * 100;
+            const changeText = change > 0 ? '+' : '';
+            const changeValue = isCurrency ? 
+                formatCurrency(current - previous) : 
+                formatPercent(Math.abs(change));
+
+            if (change > 0) {
+                element.className = 'kpi-change positive';
+                element.innerHTML = `<span>↗ ${changeText}${changeValue} vs yesterday</span>`;
+            } else if (change < 0) {
+                element.className = 'kpi-change negative';
+                element.innerHTML = `<span>↘ ${changeValue} vs yesterday</span>`;
+            } else {
+                element.className = 'kpi-change neutral';
+                element.innerHTML = '<span>→ No change vs yesterday</span>';
+            }
+        }
+
+        function formatNumber(num, decimals = 0) {
+            if (num === null || num === undefined) return '-';
+            return Number(num).toLocaleString('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            });
+        }
+
+        function formatCurrency(num) {
+            if (num === null || num === undefined) return '$0';
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2
+            }).format(num);
+        }
+
+        function formatPercent(num) {
+            if (num === null || num === undefined) return '0%';
+            return `${Number(num).toFixed(1)}%`;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function calculateAverage(array) {
+            if (!array || array.length === 0) return 0;
+            const sum = array.reduce((a, b) => a + (b || 0), 0);
+            return sum / array.length;
+        }
+
+        function updateLastRefresh() {
+            const now = new Date();
+            const timeString = now.toLocaleString('en-US', {
+                timeZone: 'UTC',
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+            
+            document.getElementById('lastRefresh').textContent = `Last updated: ${timeString}`;
+            document.getElementById('footerRefresh').textContent = timeString;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showError() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+
+        function showDashboard() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function checkForUpdates() {
+            // Placeholder for real-time update checking
+            // Could implement WebSocket or polling for live updates
+            console.log('Checking for dashboard updates...');
+        }
+    </script>
+</body>
+</html>
