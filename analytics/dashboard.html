@@ -378,6 +378,24 @@
         // Dashboard configuration
         const API_BASE_URL = '/api/analytics';
         let charts = {};
+        
+        // Get API key from URL parameter or prompt user
+        function getApiKey() {
+            const urlParams = new URLSearchParams(window.location.search);
+            let apiKey = urlParams.get('key');
+            
+            if (!apiKey) {
+                apiKey = prompt('Please enter your API key to access the dashboard:');
+                if (apiKey) {
+                    // Update URL with API key for future refreshes
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('key', apiKey);
+                    window.history.replaceState({}, '', newUrl);
+                }
+            }
+            
+            return apiKey;
+        }
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
@@ -415,8 +433,26 @@
 
         // Fetch data from API
         async function fetchData(endpoint) {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`);
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                throw new Error('API key is required');
+            }
+            
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                headers: {
+                    'X-API-Key': apiKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
             if (!response.ok) {
+                if (response.status === 401) {
+                    // Clear invalid API key and prompt again
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.delete('key');
+                    window.history.replaceState({}, '', newUrl);
+                    throw new Error('Invalid API key. Please refresh and try again.');
+                }
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             return await response.json();
