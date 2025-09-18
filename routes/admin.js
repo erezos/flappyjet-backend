@@ -5,13 +5,10 @@
 
 const express = require('express');
 const { Pool } = require('pg');
-const router = express.Router();
 
-// Database connection
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+// Export a function that takes the database instance
+module.exports = function(db) {
+  const router = express.Router();
 
 /**
  * Emergency database schema fix endpoint
@@ -156,4 +153,5 @@ router.get('/fix-schema', async (req, res) => {
   }
 });
 
-module.exports = router;
+  return router;
+};
