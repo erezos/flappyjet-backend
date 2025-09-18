@@ -27,9 +27,32 @@ const tournamentRateLimiter = new RateLimiterMemory({
 });
 
 /**
- * Default rate limiting middleware
+ * Configurable rate limiting middleware factory
+ * @param {string} name - Name identifier for the rate limiter
+ * @param {number} duration - Duration in seconds
+ * @param {number} points - Number of allowed requests
  */
-const rateLimitMiddleware = (req, res, next) => {
+const rateLimitMiddleware = (name, duration = 60, points = 100) => {
+  const limiter = new RateLimiterMemory({
+    keyGenerator: (req) => `${name}:${req.ip}`,
+    points: points,
+    duration: duration,
+  });
+
+  return (req, res, next) => {
+    limiter.consume(req.ip)
+      .then(() => next())
+      .catch(() => res.status(429).json({ 
+        error: 'Too many requests',
+        message: `Rate limit exceeded for ${name}. Please try again later.`
+      }));
+  };
+};
+
+/**
+ * Default rate limiting middleware (for backward compatibility)
+ */
+const defaultRateLimit = (req, res, next) => {
   defaultRateLimiter.consume(req.ip)
     .then(() => next())
     .catch(() => res.status(429).json({ 
@@ -64,6 +87,7 @@ const tournamentRateLimit = (req, res, next) => {
 
 module.exports = {
   rateLimitMiddleware,
+  defaultRateLimit,
   strictRateLimit,
   tournamentRateLimit
 };
