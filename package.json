@@ -19,6 +19,8 @@
     "migrate": "node scripts/migrate.js",
     "migrate:production": "NODE_ENV=production node scripts/migrate.js",
     "migrate:tournaments": "node scripts/migrate-tournament-schema.js",
+    "fix-schema": "node scripts/fix-schema.js",
+    "fix-schema:production": "NODE_ENV=production node scripts/fix-schema.js",
     "setup-dashboard": "node scripts/setup-dashboard.js",
     "setup-dashboard:production": "NODE_ENV=production node scripts/setup-dashboard.js",
     "refresh-dashboard": "node scripts/refresh-dashboard-views.js",
