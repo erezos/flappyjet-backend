@@ -1,300 +1,410 @@
-/// 📊 Analytics Routes - Event tracking and metrics
+// 📊 Analytics Routes - Comprehensive User Analytics API
+// Handles all user analytics tracking and reporting
+
 const express = require('express');
-const Joi = require('joi');
-
-module.exports = (db) => {
   const router = express.Router();
-  
-  // Import auth middleware
-  const authRoutes = require('./auth')(db);
-const logger = require('../utils/logger');
-  const authenticateToken = authRoutes.authenticateToken;
+const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 
-  // Validation schemas
-  const trackEventSchema = Joi.object({
-    eventName: Joi.string().required().max(100),
-    eventCategory: Joi.string().required().max(50),
-    parameters: Joi.object().optional(),
-    sessionId: Joi.string().max(100).optional()
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
+// Middleware to verify JWT token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Access token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, error: 'Invalid token' });
+    }
+    req.user = user;
+    next();
   });
+};
 
-  /// 📊 Track analytics event
-  router.post('/event', authenticateToken, async (req, res) => {
-    try {
-      const { error, value } = trackEventSchema.validate(req.body);
-      if (error) {
-        return res.status(400).json({ error: error.details[0].message });
+// POST /api/analytics/event - Submit analytics event
+router.post('/event', async (req, res) => {
+  try {
+    const { event_name, event_data } = req.body;
+    
+    // Allow anonymous analytics events for some events
+    const anonymousEvents = ['app_start', 'app_crash', 'performance_metrics'];
+    const isAnonymous = anonymousEvents.includes(event_name);
+    
+    let playerId = null;
+    if (!isAnonymous) {
+      // Try to get player ID from token
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+      
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+          playerId = decoded.playerId;
+        } catch (err) {
+          // Token invalid, but continue with anonymous event
+          console.log('Invalid token for analytics event, continuing anonymously');
+        }
       }
-
-      const { eventName, eventCategory, parameters, sessionId } = value;
+    }
 
       // Insert analytics event
-      await db.query(`
-        INSERT INTO analytics_events (
-          player_id, event_name, event_category, parameters, session_id
-        ) VALUES ($1, $2, $3, $4, $5)
-      `, [req.playerId, eventName, eventCategory, JSON.stringify(parameters || {}), sessionId]);
+    const query = `
+      INSERT INTO analytics_events (player_id, event_name, event_data, platform, app_version, created_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING id
+    `;
+    
+    const values = [
+      playerId,
+      event_name,
+      event_data || {},
+      req.headers['x-platform'] || 'unknown',
+      req.headers['x-app-version'] || '1.0.0'
+    ];
+
+    const result = await pool.query(query, values);
+
+    // If this is a user analytics sync event, update the user_analytics table
+    if (event_name === 'user_analytics_sync' && playerId && event_data) {
+      await updateUserAnalytics(playerId, event_data);
+    }
 
       res.json({
         success: true,
-        message: 'Event tracked successfully'
+      event_id: result.rows[0].id,
+      message: 'Analytics event recorded'
       });
 
     } catch (error) {
-      logger.error('Analytics event error:', error);
-      res.status(500).json({ error: 'Failed to track event' });
-    }
-  });
+    console.error('Analytics event error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to record analytics event'
+    });
+  }
+});
 
-  /// 📈 Get player analytics
-  router.get('/player', authenticateToken, async (req, res) => {
-    try {
-      const days = Math.min(parseInt(req.query.days) || 7, 30);
-      
-      // Get event summary for player
-      const eventSummary = await db.query(`
-        SELECT 
-          event_category,
-          event_name,
-          COUNT(*) as event_count,
-          DATE(created_at) as event_date
-        FROM analytics_events
-        WHERE player_id = $1 
-          AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY event_category, event_name, DATE(created_at)
-        ORDER BY event_date DESC, event_count DESC
-      `, [req.playerId]);
+// POST /api/analytics/user-sync - Sync comprehensive user analytics
+router.post('/user-sync', authenticateToken, async (req, res) => {
+  try {
+    const playerId = req.user.playerId;
+    const analyticsData = req.body;
 
-      // Get session data
-      const sessionData = await db.query(`
-        SELECT 
-          session_id,
-          COUNT(*) as events_in_session,
-          MIN(created_at) as session_start,
-          MAX(created_at) as session_end
-        FROM analytics_events
-        WHERE player_id = $1 
-          AND session_id IS NOT NULL
-          AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY session_id
-        ORDER BY session_start DESC
-        LIMIT 20
-      `, [req.playerId]);
+    await updateUserAnalytics(playerId, analyticsData);
 
       res.json({
         success: true,
-        analytics: {
-          eventSummary: eventSummary.rows,
-          sessions: sessionData.rows,
-          period: `${days} days`
-        }
+      message: 'User analytics synced successfully'
       });
 
     } catch (error) {
-      logger.error('Player analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch player analytics' });
-    }
-  });
+    console.error('User analytics sync error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to sync user analytics'
+    });
+  }
+});
 
-  /// 📊 Get global analytics (admin)
-  router.get('/global', async (req, res) => {
-    try {
-      const days = Math.min(parseInt(req.query.days) || 7, 30);
+// GET /api/analytics/user - Get user analytics data
+router.get('/user', authenticateToken, async (req, res) => {
+  try {
+    const playerId = req.user.playerId;
 
-      // Daily active users
-      const dauStats = await db.query(`
-        SELECT 
-          DATE(created_at) as date,
-          COUNT(DISTINCT player_id) as daily_active_users
-        FROM analytics_events
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-      `);
+    const query = `
+      SELECT * FROM user_analytics 
+      WHERE player_id = $1
+    `;
 
-      // Top events
-      const topEvents = await db.query(`
-        SELECT 
-          event_name,
-          event_category,
-          COUNT(*) as event_count,
-          COUNT(DISTINCT player_id) as unique_players
-        FROM analytics_events
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY event_name, event_category
-        ORDER BY event_count DESC
-        LIMIT 20
-      `);
+    const result = await pool.query(query, [playerId]);
 
-      // Retention metrics
-      const retentionStats = await db.query(`
-        WITH first_seen AS (
-          SELECT 
-            player_id,
-            MIN(DATE(created_at)) as first_date
-          FROM analytics_events
-          GROUP BY player_id
-        ),
-        retention_cohorts AS (
-          SELECT 
-            fs.first_date,
-            COUNT(DISTINCT fs.player_id) as cohort_size,
-            COUNT(DISTINCT CASE WHEN ae.created_at >= fs.first_date + INTERVAL '1 day' 
-                                   AND ae.created_at < fs.first_date + INTERVAL '2 days' 
-                              THEN ae.player_id END) as day1_retained,
-            COUNT(DISTINCT CASE WHEN ae.created_at >= fs.first_date + INTERVAL '7 days' 
-                                   AND ae.created_at < fs.first_date + INTERVAL '8 days' 
-                              THEN ae.player_id END) as day7_retained
-          FROM first_seen fs
-          LEFT JOIN analytics_events ae ON fs.player_id = ae.player_id
-          WHERE fs.first_date >= CURRENT_DATE - INTERVAL '${days} days'
-          GROUP BY fs.first_date
-        )
-        SELECT 
-          first_date,
-          cohort_size,
-          CASE WHEN cohort_size > 0 THEN (day1_retained::float / cohort_size * 100) ELSE 0 END as day1_retention_rate,
-          CASE WHEN cohort_size > 0 THEN (day7_retained::float / cohort_size * 100) ELSE 0 END as day7_retention_rate
-        FROM retention_cohorts
-        ORDER BY first_date DESC
-      `);
-
-      res.json({
+    if (result.rows.length === 0) {
+      return res.json({
         success: true,
-        analytics: {
-          dailyActiveUsers: dauStats.rows,
-          topEvents: topEvents.rows,
-          retentionStats: retentionStats.rows,
-          period: `${days} days`
-        }
+        analytics: null,
+        message: 'No analytics data found'
+      });
+    }
+
+    res.json({
+      success: true,
+      analytics: result.rows[0]
       });
 
     } catch (error) {
-      logger.error('Global analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch global analytics' });
-    }
-  });
+    console.error('Get user analytics error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get user analytics'
+    });
+  }
+});
 
-  /// 🎮 Get gameplay analytics
-  router.get('/gameplay', async (req, res) => {
-    try {
-      const days = Math.min(parseInt(req.query.days) || 7, 30);
-
-      // Score distribution
-      const scoreDistribution = await db.query(`
-        SELECT 
-          CASE 
-            WHEN score < 10 THEN '0-9'
-            WHEN score < 25 THEN '10-24'
-            WHEN score < 50 THEN '25-49'
-            WHEN score < 100 THEN '50-99'
-            ELSE '100+'
-          END as score_range,
-          COUNT(*) as game_count,
-          COUNT(DISTINCT player_id) as unique_players
-        FROM scores
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY score_range
-        ORDER BY 
-          CASE score_range
-            WHEN '0-9' THEN 1
-            WHEN '10-24' THEN 2
-            WHEN '25-49' THEN 3
-            WHEN '50-99' THEN 4
-            WHEN '100+' THEN 5
-          END
-      `);
-
-      // Average session metrics
-      const sessionMetrics = await db.query(`
-        SELECT 
-          AVG(score) as avg_score,
-          AVG(survival_time) as avg_survival_time,
-          AVG(game_duration) as avg_game_duration,
-          COUNT(*) as total_games,
-          COUNT(DISTINCT player_id) as unique_players
-        FROM scores
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-      `);
-
-      // Popular skins
-      const skinUsage = await db.query(`
-        SELECT 
-          skin_used,
-          COUNT(*) as usage_count,
-          AVG(score) as avg_score_with_skin
-        FROM scores
-        WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY skin_used
-        ORDER BY usage_count DESC
+// GET /api/analytics/summary - Get analytics summary (admin only)
+router.get('/summary', async (req, res) => {
+  try {
+    // Basic analytics summary (no auth required for now, but should be restricted in production)
+    const queries = {
+      totalUsers: 'SELECT COUNT(*) as count FROM user_analytics',
+      activeToday: `
+        SELECT COUNT(*) as count FROM user_analytics 
+        WHERE last_session_date >= CURRENT_DATE
+      `,
+      totalRevenue: 'SELECT SUM(total_spent_usd) as total FROM user_analytics',
+      totalGames: 'SELECT SUM(number_of_games) as total FROM user_analytics',
+      averageSession: 'SELECT AVG(number_of_sessions) as avg FROM user_analytics',
+      topCountries: `
+        SELECT country_code, COUNT(*) as users 
+        FROM user_analytics 
+        GROUP BY country_code 
+        ORDER BY users DESC 
         LIMIT 10
-      `);
+      `,
+      platformDistribution: `
+        SELECT platform, COUNT(*) as users 
+        FROM user_analytics 
+        GROUP BY platform
+      `
+    };
+
+    const results = {};
+    for (const [key, query] of Object.entries(queries)) {
+      const result = await pool.query(query);
+      results[key] = result.rows;
+    }
 
       res.json({
         success: true,
-        gameplayAnalytics: {
-          scoreDistribution: scoreDistribution.rows,
-          sessionMetrics: sessionMetrics.rows[0],
-          skinUsage: skinUsage.rows,
-          period: `${days} days`
-        }
+      summary: results
       });
 
     } catch (error) {
-      logger.error('Gameplay analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch gameplay analytics' });
+    console.error('Analytics summary error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get analytics summary'
+    });
+  }
+});
+
+// GET /api/analytics/cohorts - Get cohort analysis
+router.get('/cohorts', async (req, res) => {
+  try {
+    const { period = 'week' } = req.query;
+    
+    let groupBy;
+    switch (period) {
+      case 'month':
+        groupBy = 'install_month';
+        break;
+      case 'quarter':
+        groupBy = 'install_quarter';
+        break;
+      default:
+        groupBy = 'install_week';
     }
-  });
 
-  /// 💰 Get monetization analytics
-  router.get('/monetization', async (req, res) => {
-    try {
-      const days = Math.min(parseInt(req.query.days) || 7, 30);
-
-      // Revenue metrics
-      const revenueMetrics = await db.query(`
+    const query = `
         SELECT 
-          DATE(created_at) as date,
-          COUNT(*) as purchases,
-          SUM(amount_usd) as daily_revenue,
-          COUNT(DISTINCT player_id) as paying_players,
-          AVG(amount_usd) as avg_purchase_amount
-        FROM purchases
-        WHERE status = 'completed'
-          AND created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-      `);
+        ${groupBy} as cohort_period,
+        COUNT(*) as cohort_size,
+        AVG(ltv_day_1) as avg_ltv_day_1,
+        AVG(ltv_day_7) as avg_ltv_day_7,
+        AVG(ltv_day_30) as avg_ltv_day_30,
+        AVG(ltv_day_90) as avg_ltv_day_90,
+        AVG(CASE WHEN retention_day_1 THEN 1.0 ELSE 0.0 END) as retention_day_1,
+        AVG(CASE WHEN retention_day_7 THEN 1.0 ELSE 0.0 END) as retention_day_7,
+        AVG(CASE WHEN retention_day_30 THEN 1.0 ELSE 0.0 END) as retention_day_30,
+        AVG(CASE WHEN retention_day_90 THEN 1.0 ELSE 0.0 END) as retention_day_90
+      FROM user_cohorts
+      WHERE ${groupBy} >= CURRENT_DATE - INTERVAL '1 year'
+      GROUP BY ${groupBy}
+      ORDER BY ${groupBy} DESC
+      LIMIT 52
+    `;
 
-      // Conversion funnel
-      const conversionFunnel = await db.query(`
+    const result = await pool.query(query);
+
+    res.json({
+      success: true,
+      cohorts: result.rows,
+      period: period
+    });
+
+  } catch (error) {
+    console.error('Cohort analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get cohort analysis'
+    });
+  }
+});
+
+// GET /api/analytics/segments - Get user segments
+router.get('/segments', async (req, res) => {
+  try {
+    const query = `
         SELECT 
-          COUNT(DISTINCT ae.player_id) as players_with_events,
-          COUNT(DISTINCT p.player_id) as paying_players,
-          CASE WHEN COUNT(DISTINCT ae.player_id) > 0 
-               THEN (COUNT(DISTINCT p.player_id)::float / COUNT(DISTINCT ae.player_id) * 100)
-               ELSE 0 END as conversion_rate
-        FROM analytics_events ae
-        LEFT JOIN purchases p ON ae.player_id = p.player_id 
-          AND p.status = 'completed'
-          AND p.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        WHERE ae.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-      `);
+        spending_segment,
+        engagement_segment,
+        skill_segment,
+        COUNT(*) as user_count,
+        AVG(total_spent_usd) as avg_spending,
+        AVG(number_of_sessions) as avg_sessions,
+        AVG(high_score) as avg_high_score
+      FROM user_segments
+      GROUP BY spending_segment, engagement_segment, skill_segment
+      ORDER BY user_count DESC
+    `;
+
+    const result = await pool.query(query);
 
       res.json({
         success: true,
-        monetizationAnalytics: {
-          dailyRevenue: revenueMetrics.rows,
-          conversionMetrics: conversionFunnel.rows[0],
-          period: `${days} days`
-        }
+      segments: result.rows
+    });
+
+  } catch (error) {
+    console.error('User segments error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get user segments'
+    });
+  }
+});
+
+// POST /api/analytics/refresh-views - Refresh materialized views
+router.post('/refresh-views', async (req, res) => {
+  try {
+    await pool.query('SELECT refresh_analytics_views()');
+
+    res.json({
+      success: true,
+      message: 'Analytics views refreshed successfully'
       });
 
     } catch (error) {
-      logger.error('Monetization analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch monetization analytics' });
-    }
-  });
+    console.error('Refresh views error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to refresh analytics views'
+    });
+  }
+});
 
-  return router;
-};
+// Helper function to update user analytics
+async function updateUserAnalytics(playerId, analyticsData) {
+  const query = `
+    INSERT INTO user_analytics (
+      player_id, install_date, number_of_sessions, total_play_time_seconds,
+      last_session_date, session_streak, number_of_games, best_streak,
+      high_score, total_score, average_score, daily_missions_completed,
+      achievements_completed, total_achievement_points, number_of_purchases,
+      total_spent_usd, number_of_continues_used, total_gems_spent,
+      total_coins_spent, jets_owned, owned_jet_ids, current_jet_id,
+      skins_owned, device_model, os_version, platform, country_code,
+      timezone, app_version, ad_watch_count, share_count,
+      rate_us_prompt_shown, has_rated_app, crash_count, last_crash_date,
+      feature_usage, level_completion_times, tutorial_completed,
+      preferred_play_times, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+      $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+      $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, NOW()
+    )
+    ON CONFLICT (player_id) DO UPDATE SET
+      number_of_sessions = EXCLUDED.number_of_sessions,
+      total_play_time_seconds = EXCLUDED.total_play_time_seconds,
+      last_session_date = EXCLUDED.last_session_date,
+      session_streak = EXCLUDED.session_streak,
+      number_of_games = EXCLUDED.number_of_games,
+      best_streak = EXCLUDED.best_streak,
+      high_score = EXCLUDED.high_score,
+      total_score = EXCLUDED.total_score,
+      average_score = EXCLUDED.average_score,
+      daily_missions_completed = EXCLUDED.daily_missions_completed,
+      achievements_completed = EXCLUDED.achievements_completed,
+      total_achievement_points = EXCLUDED.total_achievement_points,
+      number_of_purchases = EXCLUDED.number_of_purchases,
+      total_spent_usd = EXCLUDED.total_spent_usd,
+      number_of_continues_used = EXCLUDED.number_of_continues_used,
+      total_gems_spent = EXCLUDED.total_gems_spent,
+      total_coins_spent = EXCLUDED.total_coins_spent,
+      jets_owned = EXCLUDED.jets_owned,
+      owned_jet_ids = EXCLUDED.owned_jet_ids,
+      current_jet_id = EXCLUDED.current_jet_id,
+      skins_owned = EXCLUDED.skins_owned,
+      device_model = EXCLUDED.device_model,
+      os_version = EXCLUDED.os_version,
+      platform = EXCLUDED.platform,
+      country_code = EXCLUDED.country_code,
+      timezone = EXCLUDED.timezone,
+      app_version = EXCLUDED.app_version,
+      ad_watch_count = EXCLUDED.ad_watch_count,
+      share_count = EXCLUDED.share_count,
+      rate_us_prompt_shown = EXCLUDED.rate_us_prompt_shown,
+      has_rated_app = EXCLUDED.has_rated_app,
+      crash_count = EXCLUDED.crash_count,
+      last_crash_date = EXCLUDED.last_crash_date,
+      feature_usage = EXCLUDED.feature_usage,
+      level_completion_times = EXCLUDED.level_completion_times,
+      tutorial_completed = EXCLUDED.tutorial_completed,
+      preferred_play_times = EXCLUDED.preferred_play_times,
+      updated_at = NOW()
+  `;
+
+  const values = [
+    playerId,
+    new Date(analyticsData.installDate || Date.now()),
+    analyticsData.numberOfSessions || 0,
+    analyticsData.totalPlayTimeSeconds || 0,
+    new Date(analyticsData.lastSessionDate || Date.now()),
+    analyticsData.sessionStreak || 0,
+    analyticsData.numberOfGames || 0,
+    analyticsData.bestStreak || 0,
+    analyticsData.highScore || 0,
+    analyticsData.totalScore || 0,
+    analyticsData.averageScore || 0,
+    analyticsData.dailyMissionsCompleted || 0,
+    analyticsData.achievementsCompleted || 0,
+    analyticsData.totalAchievementPoints || 0,
+    analyticsData.numberOfPurchases || 0,
+    analyticsData.totalSpentUSD || 0,
+    analyticsData.numberOfContinuesUsed || 0,
+    analyticsData.totalGemsSpent || 0,
+    analyticsData.totalCoinsSpent || 0,
+    analyticsData.jetsOwned || 1,
+    analyticsData.ownedJetIds || ['sky_jet'],
+    analyticsData.currentJetId || 'sky_jet',
+    analyticsData.skinsOwned || 1,
+    analyticsData.deviceModel || 'unknown',
+    analyticsData.osVersion || 'unknown',
+    analyticsData.platform || 'unknown',
+    analyticsData.countryCode || 'US',
+    analyticsData.timezone || 'UTC',
+    analyticsData.appVersion || '1.0.0',
+    analyticsData.adWatchCount || 0,
+    analyticsData.shareCount || 0,
+    analyticsData.rateUsPromptShown || 0,
+    analyticsData.hasRatedApp || false,
+    analyticsData.crashCount || 0,
+    analyticsData.lastCrashDate ? new Date(analyticsData.lastCrashDate) : new Date(0),
+    JSON.stringify(analyticsData.featureUsage || {}),
+    JSON.stringify(analyticsData.levelCompletionTimes || {}),
+    analyticsData.tutorialCompleted || 0,
+    analyticsData.preferredPlayTimes || []
+  ];
+
+  await pool.query(query, values);
+}
+
+module.exports = router;

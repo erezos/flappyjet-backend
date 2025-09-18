@@ -308,6 +308,39 @@
                         <span>monetization efficiency</span>
                     </div>
                 </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🏆</div>
+                        <div class="kpi-title">Tournament Participants</div>
+                    </div>
+                    <div class="kpi-value" id="tournamentParticipantsValue">-</div>
+                    <div class="kpi-change" id="tournamentParticipantsChange">
+                        <span>daily tournament engagement</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">🎯</div>
+                        <div class="kpi-title">Tournament Completion</div>
+                    </div>
+                    <div class="kpi-value" id="tournamentCompletionValue">-</div>
+                    <div class="kpi-change" id="tournamentCompletionChange">
+                        <span>completion rate</span>
+                    </div>
+                </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-header">
+                        <div class="kpi-icon">💎</div>
+                        <div class="kpi-title">Tournament ROI</div>
+                    </div>
+                    <div class="kpi-value" id="tournamentROIValue">-</div>
+                    <div class="kpi-change" id="tournamentROIChange">
+                        <span>revenue vs prize costs</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Charts Section -->
@@ -366,6 +399,31 @@
                     <canvas id="platformChart"></canvas>
                 </div>
             </div>
+
+            <div class="chart-section">
+                <div class="chart-title">🏆 Tournament Performance Trends</div>
+                <div class="chart-container">
+                    <canvas id="tournamentChart"></canvas>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <div class="metric-label">Avg Participation Rate</div>
+                        <div class="metric-value" id="avgTournamentParticipation">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Avg Completion Rate</div>
+                        <div class="metric-value" id="avgTournamentCompletion">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Tournament Revenue</div>
+                        <div class="metric-value" id="totalTournamentRevenue">-</div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">Tournaments Run</div>
+                        <div class="metric-value" id="totalTournamentsRun">-</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="footer">
@@ -408,19 +466,21 @@
             try {
                 showLoading(true);
                 
-                const [kpiData, trendsData, retentionData, monetizationData, platformData] = await Promise.all([
+                const [kpiData, trendsData, retentionData, monetizationData, platformData, tournamentData] = await Promise.all([
                     fetchData('/kpi-summary'),
                     fetchData('/trends'),
                     fetchData('/retention'),
                     fetchData('/monetization'),
-                    fetchData('/platform')
+                    fetchData('/platform'),
+                    fetchData('/tournaments')
                 ]);
 
-                updateKPICards(kpiData);
+                updateKPICards(kpiData, tournamentData);
                 createDAURevenueChart(trendsData);
                 createRetentionChart(retentionData);
                 createMonetizationChart(monetizationData);
                 createPlatformChart(platformData);
+                createTournamentChart(tournamentData);
 
                 updateLastRefresh();
                 showDashboard();
@@ -459,7 +519,7 @@
         }
 
         // Update KPI cards with latest data
-        function updateKPICards(data) {
+        function updateKPICards(data, tournamentData) {
             if (!data || data.length === 0) return;
 
             const latest = data[0];
@@ -487,6 +547,35 @@
             
             // Ad Performance
             document.getElementById('adValue').textContent = formatPercent(latest.ad_completion_rate || 0);
+
+            // Tournament KPIs
+            if (tournamentData && tournamentData.kpi_data && tournamentData.kpi_data.length > 0) {
+                const latestTournament = tournamentData.kpi_data[0];
+                const previousTournament = tournamentData.kpi_data[1] || {};
+
+                // Tournament Participants
+                document.getElementById('tournamentParticipantsValue').textContent = 
+                    formatNumber(latestTournament.tournament_participants || 0);
+                updateChangeIndicator('tournamentParticipantsChange', 
+                    latestTournament.tournament_participants, previousTournament.tournament_participants);
+
+                // Tournament Completion Rate
+                document.getElementById('tournamentCompletionValue').textContent = 
+                    formatPercent(latestTournament.tournament_completion_rate || 0);
+                updateChangeIndicator('tournamentCompletionChange', 
+                    latestTournament.tournament_completion_rate, previousTournament.tournament_completion_rate);
+
+                // Tournament ROI
+                document.getElementById('tournamentROIValue').textContent = 
+                    formatPercent(latestTournament.tournament_roi || 0);
+                updateChangeIndicator('tournamentROIChange', 
+                    latestTournament.tournament_roi, previousTournament.tournament_roi);
+            } else {
+                // No tournament data available
+                document.getElementById('tournamentParticipantsValue').textContent = '0';
+                document.getElementById('tournamentCompletionValue').textContent = '0%';
+                document.getElementById('tournamentROIValue').textContent = '0%';
+            }
         }
 
         // Create DAU & Revenue trend chart
@@ -705,6 +794,102 @@
                     },
                     plugins: {
                         legend: { position: 'top' }
+                    }
+                }
+            });
+        }
+
+        // Create tournament performance chart
+        function createTournamentChart(data) {
+            const ctx = document.getElementById('tournamentChart').getContext('2d');
+            
+            if (charts.tournament) {
+                charts.tournament.destroy();
+            }
+
+            if (!data || !data.trends_data || data.trends_data.length === 0) {
+                // No tournament data available
+                ctx.font = '16px Arial';
+                ctx.fillStyle = '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText('No tournament data available', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                
+                // Update summary metrics with zeros
+                document.getElementById('avgTournamentParticipation').textContent = '0%';
+                document.getElementById('avgTournamentCompletion').textContent = '0%';
+                document.getElementById('totalTournamentRevenue').textContent = '$0';
+                document.getElementById('totalTournamentsRun').textContent = '0';
+                return;
+            }
+
+            const dates = data.trends_data.map(d => formatDate(d.date));
+            const participantsData = data.trends_data.map(d => d.tournament_participants || 0);
+            const revenueData = data.trends_data.map(d => d.tournament_revenue || 0);
+            const completionData = data.trends_data.map(d => d.tournament_completion_rate || 0);
+
+            // Update summary metrics
+            if (data.summary_stats) {
+                document.getElementById('avgTournamentParticipation').textContent = 
+                    formatPercent(data.summary_stats.avg_participation_rate || 0);
+                document.getElementById('avgTournamentCompletion').textContent = 
+                    formatPercent(data.summary_stats.avg_completion_rate || 0);
+                document.getElementById('totalTournamentRevenue').textContent = 
+                    formatCurrency(data.summary_stats.total_tournament_revenue || 0);
+                document.getElementById('totalTournamentsRun').textContent = 
+                    formatNumber(data.summary_stats.total_tournaments_run || 0);
+            }
+
+            charts.tournament = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Tournament Participants',
+                        data: participantsData,
+                        borderColor: '#f39c12',
+                        backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Tournament Revenue ($)',
+                        data: revenueData,
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        yAxisID: 'y1'
+                    }, {
+                        label: 'Completion Rate (%)',
+                        data: completionData,
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                        yAxisID: 'y2'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Participants' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Revenue ($)' },
+                            grid: { drawOnChartArea: false }
+                        },
+                        y2: {
+                            type: 'linear',
+                            display: false,
+                            min: 0,
+                            max: 100
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: false }
                     }
                 }
             });

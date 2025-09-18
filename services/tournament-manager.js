@@ -940,6 +940,63 @@ class TournamentManager {
       return null;
     }
   }
+
+  /**
+   * Update player nickname across all tournament records
+   */
+  async updatePlayerNickname(playerId, newNickname) {
+    try {
+      if (!playerId || !newNickname) {
+        return {
+          success: false,
+          error: 'Player ID and nickname required'
+        };
+      }
+
+      // Update tournament participants
+      const updateParticipantsQuery = `
+        UPDATE tournament_participants 
+        SET player_name = $1
+        WHERE player_id = $2
+        RETURNING tournament_id
+      `;
+
+      const participantsResult = await this.db.query(updateParticipantsQuery, [newNickname, playerId]);
+
+      // Update tournament leaderboards
+      const updateLeaderboardsQuery = `
+        UPDATE tournament_leaderboards 
+        SET player_name = $1
+        WHERE player_id = $2
+        RETURNING tournament_id
+      `;
+
+      await this.db.query(updateLeaderboardsQuery, [newNickname, playerId]);
+
+      // Clear relevant caches for affected tournaments
+      const affectedTournaments = [...new Set(participantsResult.rows.map(row => row.tournament_id))];
+      for (const tournamentId of affectedTournaments) {
+        await this.cache.delete(this.CACHE_KEYS.TOURNAMENT_LEADERBOARD(tournamentId));
+        await this.cache.delete(this.CACHE_KEYS.TOURNAMENT_PARTICIPANTS(tournamentId));
+      }
+
+      // Clear player stats cache
+      await this.cache.delete(this.CACHE_KEYS.PLAYER_STATS(playerId));
+
+      return {
+        success: true,
+        message: `Updated nickname in ${affectedTournaments.length} tournaments`,
+        affectedTournaments: affectedTournaments.length
+      };
+
+    } catch (error) {
+      console.error('Error updating player nickname in tournaments:', error);
+      return {
+        success: false,
+        error: 'Failed to update nickname in tournaments: ' + error.message
+      };
+    }
+  }
 }
 
 module.exports = TournamentManager;

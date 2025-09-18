@@ -148,6 +148,62 @@ class SimpleCacheManager {
 
     return expiredKeys.length;
   }
+
+  /**
+   * Get cache statistics for monitoring
+   */
+  getStats() {
+    const now = Date.now();
+    let expiredCount = 0;
+    let totalSize = 0;
+
+    for (const [key, entry] of this.cache) {
+      if (entry.expiresAt && now > entry.expiresAt) {
+        expiredCount++;
+      }
+      totalSize += JSON.stringify(entry).length;
+    }
+
+    return {
+      totalKeys: this.cache.size,
+      expiredKeys: expiredCount,
+      activeKeys: this.cache.size - expiredCount,
+      memoryUsage: this._estimateMemoryUsage(),
+      hitRate: this._calculateHitRate()
+    };
+  }
+
+  /**
+   * Calculate cache hit rate (simplified)
+   */
+  _calculateHitRate() {
+    // This is a simplified implementation
+    // In production, you'd want to track hits/misses over time
+    return {
+      note: 'Hit rate tracking requires additional instrumentation',
+      totalEntries: this.cache.size
+    };
+  }
+
+  /**
+   * Bulk delete by pattern
+   */
+  async deletePattern(pattern) {
+    const regex = new RegExp(pattern);
+    const keysToDelete = [];
+
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) {
+        keysToDelete.push(key);
+      }
+    }
+
+    for (const key of keysToDelete) {
+      this.delete(key);
+    }
+
+    return keysToDelete.length;
+  }
 }
 
 module.exports = SimpleCacheManager;

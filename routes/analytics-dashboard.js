@@ -355,8 +355,8 @@ router.get('/health', async (req, res) => {
         recent_days_available: freshnessCheck.rows[0]?.recent_days || 0
       },
       api_info: {
-        version: '1.0.0',
-        endpoints: ['/kpi-summary', '/trends', '/retention', '/monetization', '/platform'],
+        version: '1.1.0',
+        endpoints: ['/kpi-summary', '/trends', '/retention', '/monetization', '/platform', '/tournaments'],
         authentication: 'API Key required'
       }
     });
@@ -377,12 +377,13 @@ router.get('/health', async (req, res) => {
  */
 router.post('/refresh', authenticateDashboard, async (req, res) => {
   try {
-    // Call the refresh function
+    // Call the refresh functions
     await db.query('SELECT refresh_daily_kpi_views()');
+    await db.query('SELECT refresh_tournament_analytics_views()');
     
     res.json({
       success: true,
-      message: 'Dashboard data refreshed successfully',
+      message: 'Dashboard data refreshed successfully (including tournament analytics)',
       timestamp: new Date().toISOString()
     });
     
@@ -409,6 +410,114 @@ router.use((error, req, res, next) => {
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
+});
+
+/**
+ * GET /api/analytics/tournaments
+ * Tournament-specific analytics data
+ */
+router.get('/tournaments', authenticateDashboard, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    
+    // Tournament KPI Summary
+    const kpiQuery = `
+      SELECT 
+        date,
+        tournament_participants,
+        tournament_completion_rate,
+        tournament_revenue,
+        tournament_roi,
+        tournament_participation_rate,
+        tournament_day1_retention,
+        tournament_day7_retention,
+        active_tournaments,
+        total_prizes_distributed,
+        tournament_score_multiplier
+      FROM daily_kpi_summary_enhanced 
+      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND tournament_participants > 0  -- Only days with tournament activity
+      ORDER BY date DESC
+      LIMIT ${days}
+    `;
+    
+    const kpiResult = await db.query(kpiQuery);
+    
+    // Tournament Trends for Charts
+    const trendsQuery = `
+      SELECT 
+        date,
+        tournament_participants,
+        tournament_revenue,
+        tournament_completion_rate,
+        tournament_participation_rate,
+        active_tournaments
+      FROM daily_kpi_summary_enhanced
+      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+        AND tournament_participants > 0
+      ORDER BY date ASC  -- Ascending for chart display
+    `;
+    
+    const trendsResult = await db.query(trendsQuery);
+    
+    // Tournament Performance Summary (Recent Tournaments)
+    const performanceQuery = `
+      SELECT 
+        tournament_name,
+        tournament_type,
+        start_date,
+        end_date,
+        status,
+        total_participants,
+        participation_rate,
+        avg_score,
+        winning_score,
+        total_prizes_awarded,
+        estimated_revenue_impact
+      FROM tournament_performance_summary
+      WHERE start_date >= CURRENT_DATE - INTERVAL '${days} days'
+      ORDER BY start_date DESC
+      LIMIT 10
+    `;
+    
+    const performanceResult = await db.query(performanceQuery);
+    
+    // Calculate summary statistics
+    const summaryStats = {
+      total_tournament_participants: kpiResult.rows.reduce((sum, row) => sum + (row.tournament_participants || 0), 0),
+      avg_completion_rate: kpiResult.rows.length > 0 ? 
+        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_completion_rate || 0), 0) / kpiResult.rows.length : 0,
+      total_tournament_revenue: kpiResult.rows.reduce((sum, row) => sum + (row.tournament_revenue || 0), 0),
+      avg_tournament_roi: kpiResult.rows.length > 0 ? 
+        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_roi || 0), 0) / kpiResult.rows.length : 0,
+      avg_participation_rate: kpiResult.rows.length > 0 ? 
+        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_participation_rate || 0), 0) / kpiResult.rows.length : 0,
+      total_tournaments_run: performanceResult.rows.length
+    };
+    
+    res.json({
+      success: true,
+      period: `${days} days`,
+      kpi_data: kpiResult.rows.map(row => ({
+        ...row,
+        tournament_revenue: parseFloat(row.tournament_revenue || 0),
+        tournament_roi: parseFloat(row.tournament_roi || 0),
+        tournament_participation_rate: parseFloat(row.tournament_participation_rate || 0),
+        tournament_completion_rate: parseFloat(row.tournament_completion_rate || 0)
+      })),
+      trends_data: trendsResult.rows,
+      tournament_performance: performanceResult.rows,
+      summary_stats: summaryStats
+    });
+    
+  } catch (error) {
+    console.error('Tournament Analytics Error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch tournament analytics',
+      message: error.message 
+    });
+  }
 });
 
 module.exports = router;

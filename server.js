@@ -21,6 +21,7 @@ const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
 const SimpleCacheManager = require('./services/simple-cache-manager');
 const SmartNotificationScheduler = require('./services/smart-notification-scheduler');
+const LeaderboardManager = require('./services/leaderboard-manager');
 require('dotenv').config();
 
 // Import route modules
@@ -48,9 +49,15 @@ try {
   db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    max: 20, // Maximum number of connections in the pool
+    min: 2,  // Minimum number of connections to maintain
+    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
+    connectionTimeoutMillis: 2000, // Timeout for getting a connection
+    acquireTimeoutMillis: 60000, // Timeout for acquiring a connection
+    createTimeoutMillis: 3000, // Timeout for creating a connection
+    destroyTimeoutMillis: 5000, // Timeout for destroying a connection
+    reapIntervalMillis: 1000, // How often to check for idle connections
+    createRetryIntervalMillis: 200, // Retry interval for failed connections
   });
 
   // Test database connection and auto-migrate
@@ -98,6 +105,7 @@ let tournamentManager = null;
 let prizeManager = null;
 let tournamentScheduler = null;
 let cacheManager = null;
+let leaderboardManager = null;
 
 // Initialize services only if database is available
 if (db) {
@@ -134,6 +142,14 @@ if (db) {
       logger.info('💾 ✅ Cache Manager initialized');
     } catch (error) {
       logger.error('💾 ❌ Cache Manager failed:', error.message);
+    }
+    
+    // Initialize Leaderboard Manager
+    try {
+      leaderboardManager = new LeaderboardManager({ db, cacheManager });
+      logger.info('🏆 ✅ Leaderboard Manager initialized');
+    } catch (error) {
+      logger.error('🏆 ❌ Leaderboard Manager failed:', error.message);
     }
     
     // Initialize Prize Manager
@@ -246,6 +262,7 @@ app.locals.monitoringService = monitoringService;
 app.locals.tournamentManager = tournamentManager;
 app.locals.prizeManager = prizeManager;
 app.locals.tournamentScheduler = tournamentScheduler;
+app.locals.leaderboardManager = leaderboardManager;
 
 // API Routes (only if database is available)
 if (db) {
