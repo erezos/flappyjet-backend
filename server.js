@@ -34,7 +34,7 @@ const missionsRoutes = require('./routes/missions');
 const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
-const adminRoutes = require('./routes/admin');
+// const adminRoutes = require('./routes/admin'); // Removed - temporary fix completed
 const fcmRoutes = require('./routes/fcm');
 const analyticsDashboardRoutes = require('./routes/analytics-dashboard');
 
@@ -275,7 +275,7 @@ if (db) {
   app.use('/api/achievements', achievementsRoutes(db));
   app.use('/api/purchase', purchaseRoutes(db));
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/admin', adminRoutes(db));
+// app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));
 
 // Analytics Dashboard Routes
