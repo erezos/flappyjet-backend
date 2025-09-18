@@ -292,7 +292,7 @@ class LeaderboardManager {
   /**
    * Submit a new score
    */
-  async submitScore({ playerId, playerName, score, gameData = {}, jetSkin = 'jets/green_lightning.png', theme = 'sky' }) {
+  async submitScore({ playerId, playerName, score, gameData = {}, jetSkin = 'jets/green_lightning.png', theme = 'sky', deviceId = null }) {
     try {
       // Validate inputs
       if (!playerId || !playerName || score < 0) {
@@ -316,8 +316,8 @@ class LeaderboardManager {
 
       // Update or create player record
       const upsertPlayerQuery = `
-        INSERT INTO players (player_id, player_name, best_score, total_games, jet_skin, theme)
-        VALUES ($1, $2, $3, 1, $4, $5)
+        INSERT INTO players (player_id, player_name, best_score, total_games, jet_skin, theme, device_id)
+        VALUES ($1, $2, $3, 1, $4, $5, $6)
         ON CONFLICT (player_id) 
         DO UPDATE SET 
           player_name = EXCLUDED.player_name,
@@ -325,12 +325,13 @@ class LeaderboardManager {
           total_games = players.total_games + 1,
           jet_skin = EXCLUDED.jet_skin,
           theme = EXCLUDED.theme,
+          device_id = COALESCE(EXCLUDED.device_id, players.device_id),
           updated_at = NOW()
         RETURNING best_score, (best_score = $3) as is_new_best
       `;
 
       const playerResult = await this.db.query(upsertPlayerQuery, [
-        playerId, playerName, score, jetSkin, theme
+        playerId, playerName, score, jetSkin, theme, deviceId
       ]);
 
       const isNewBest = playerResult.rows[0].is_new_best;

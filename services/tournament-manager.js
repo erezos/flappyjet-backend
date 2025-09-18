@@ -866,7 +866,8 @@ class TournamentManager {
                 score,
                 gameData: gameData || {},
                 jetSkin: gameData?.jetSkin || 'jets/sky_jet.png',
-                theme: gameData?.theme || 'Sky Rookie'
+                theme: gameData?.theme || 'Sky Rookie',
+                deviceId: gameData?.deviceId || null
               });
               
               if (globalLeaderboardResult.success) {
