@@ -138,7 +138,7 @@ module.exports = (db) => {
       const player = await db.query(
         `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
-                heart_booster_expiry, created_at, last_active_at
+                heart_booster_expiry, auto_refill_expiry, created_at, last_active_at
          FROM players WHERE id = $1`,
         [playerId]
       );
@@ -157,7 +157,9 @@ module.exports = (db) => {
         player: {
           ...playerData,
           heartBoosterActive: playerData.heart_booster_expiry && 
-                            new Date(playerData.heart_booster_expiry) > new Date()
+                            new Date(playerData.heart_booster_expiry) > new Date(),
+          autoRefillActive: playerData.auto_refill_expiry && 
+                          new Date(playerData.auto_refill_expiry) > new Date()
         }
       });
 
@@ -262,6 +264,183 @@ module.exports = (db) => {
       }
     }
   );
+
+  /**
+   * 🔄 Activate Auto-Refill Booster
+   * POST /api/player/activate-auto-refill
+   */
+  router.post('/activate-auto-refill',
+    authenticateToken,
+    [
+      body('durationHours')
+        .isInt({ min: 1, max: 168 }) // 1 hour to 1 week max
+        .withMessage('Duration must be between 1 and 168 hours'),
+    ],
+    async (req, res) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid duration',
+            details: errors.array()
+          });
+        }
+
+        const playerId = req.user.playerId;
+        const { durationHours } = req.body;
+
+        // Calculate expiry time
+        const now = new Date();
+        const expiryTime = new Date(now.getTime() + (durationHours * 60 * 60 * 1000));
+
+        // Check if player already has active auto-refill
+        const existingPlayer = await db.query(
+          'SELECT auto_refill_expiry FROM players WHERE id = $1',
+          [playerId]
+        );
+
+        if (existingPlayer.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            error: 'Player not found'
+          });
+        }
+
+        const currentExpiry = existingPlayer.rows[0].auto_refill_expiry;
+        let finalExpiryTime = expiryTime;
+
+        // If already active, extend from current expiry
+        if (currentExpiry && new Date(currentExpiry) > now) {
+          finalExpiryTime = new Date(new Date(currentExpiry).getTime() + (durationHours * 60 * 60 * 1000));
+          logger.info(`🔄 Extending auto-refill for player ${playerId}: ${durationHours}h (new expiry: ${finalExpiryTime})`);
+        } else {
+          logger.info(`🔄 Activating auto-refill for player ${playerId}: ${durationHours}h`);
+        }
+
+        // Update player with new auto-refill expiry
+        await db.query(
+          'UPDATE players SET auto_refill_expiry = $1, last_active_at = NOW() WHERE id = $2',
+          [finalExpiryTime, playerId]
+        );
+
+        // Log analytics event
+        await db.query(
+          `INSERT INTO analytics_events (player_id, event_type, event_data, created_at)
+           VALUES ($1, 'auto_refill_activated', $2, NOW())`,
+          [playerId, JSON.stringify({ 
+            durationHours, 
+            expiryTime: finalExpiryTime,
+            wasExtension: currentExpiry && new Date(currentExpiry) > now
+          })]
+        );
+
+        res.json({
+          success: true,
+          message: 'Auto-refill booster activated',
+          expiryTime: finalExpiryTime,
+          durationHours
+        });
+
+      } catch (error) {
+        logger.error('Error activating auto-refill:', error);
+        res.status(500).json({
+          success: false,
+          error: 'Failed to activate auto-refill booster'
+        });
+      }
+    }
+  );
+
+  /**
+   * 🔄 Check and Trigger Auto-Refill
+   * POST /api/player/check-auto-refill
+   */
+  router.post('/check-auto-refill', authenticateToken, async (req, res) => {
+    try {
+      const playerId = req.user.playerId;
+
+      // Get player's current state
+      const player = await db.query(
+        `SELECT current_hearts, auto_refill_expiry, heart_booster_expiry 
+         FROM players WHERE id = $1`,
+        [playerId]
+      );
+
+      if (player.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Player not found'
+        });
+      }
+
+      const playerData = player.rows[0];
+      const now = new Date();
+      
+      // Check if auto-refill is active
+      const autoRefillActive = playerData.auto_refill_expiry && 
+                              new Date(playerData.auto_refill_expiry) > now;
+
+      if (!autoRefillActive) {
+        return res.json({
+          success: true,
+          autoRefillTriggered: false,
+          reason: 'Auto-refill not active'
+        });
+      }
+
+      // Determine max hearts (3 normal, 6 with heart booster)
+      const heartBoosterActive = playerData.heart_booster_expiry && 
+                                new Date(playerData.heart_booster_expiry) > now;
+      const maxHearts = heartBoosterActive ? 6 : 3;
+
+      // Check if hearts need refilling
+      if (playerData.current_hearts >= maxHearts) {
+        return res.json({
+          success: true,
+          autoRefillTriggered: false,
+          reason: 'Hearts already at maximum',
+          currentHearts: playerData.current_hearts,
+          maxHearts
+        });
+      }
+
+      // Refill hearts to maximum
+      await db.query(
+        'UPDATE players SET current_hearts = $1, last_active_at = NOW() WHERE id = $2',
+        [maxHearts, playerId]
+      );
+
+      // Log analytics event
+      await db.query(
+        `INSERT INTO analytics_events (player_id, event_type, event_data, created_at)
+         VALUES ($1, 'auto_refill_triggered', $2, NOW())`,
+        [playerId, JSON.stringify({ 
+          heartsAdded: maxHearts - playerData.current_hearts,
+          previousHearts: playerData.current_hearts,
+          newHearts: maxHearts,
+          heartBoosterActive
+        })]
+      );
+
+      logger.info(`🔄 Auto-refill triggered for player ${playerId}: ${playerData.current_hearts} → ${maxHearts} hearts`);
+
+      res.json({
+        success: true,
+        autoRefillTriggered: true,
+        previousHearts: playerData.current_hearts,
+        newHearts: maxHearts,
+        heartsAdded: maxHearts - playerData.current_hearts
+      });
+
+    } catch (error) {
+      logger.error('Error checking auto-refill:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to check auto-refill'
+      });
+    }
+  });
 
   /**
    * 🛡️ Advanced profanity checking with multiple techniques
