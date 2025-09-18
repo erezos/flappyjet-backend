@@ -274,12 +274,12 @@ if (db) {
   app.use('/api/missions', missionsRoutes(db));
   app.use('/api/achievements', achievementsRoutes(db));
   app.use('/api/purchase', purchaseRoutes(db));
-app.use('/api/analytics', analyticsRoutes(db));
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes(db));
 app.use('/api/fcm', fcmRoutes(db));
 
 // Analytics Dashboard Routes
-app.use('/api/analytics', analyticsDashboardRoutes);
+app.use('/api/analytics/dashboard', analyticsDashboardRoutes);
 
 // Serve static dashboard files
 app.use('/analytics', express.static('analytics'));
