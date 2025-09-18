@@ -119,6 +119,10 @@ class SmartNotificationScheduler {
     try {
       logger.info('🕐 Processing hearts refilled notifications...');
 
+      // Temporarily disabled - column doesn't exist in production yet
+      logger.info('🕐 Hearts notifications temporarily disabled - schema migration needed');
+      return;
+
       // Get Android users who need heart refill notifications
       const query = `
         SELECT 
