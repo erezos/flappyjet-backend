@@ -124,17 +124,15 @@ class SmartNotificationScheduler {
         SELECT 
           ft.token, 
           ft.player_id,
-          p.player_name,
+          p.nickname,
           p.timezone,
-          p.hearts,
-          p.last_heart_refill,
-          p.notification_preferences
+          p.current_hearts,
+          p.hearts_last_regen
         FROM fcm_tokens ft 
         JOIN players p ON ft.player_id = p.id 
         WHERE ft.platform = 'android' 
-        AND p.hearts < 3 
-        AND p.last_heart_refill < NOW() - INTERVAL '30 minutes'
-        AND (p.notification_preferences->>'hearts')::boolean = true
+        AND p.current_hearts < 3 
+        AND p.hearts_last_regen < NOW() - INTERVAL '30 minutes'
         AND ft.token IS NOT NULL
       `;
 
@@ -320,10 +318,10 @@ class SmartNotificationScheduler {
     try {
       // Get upcoming tournaments
       const tournamentQuery = `
-        SELECT id, name, start_time, end_time 
+        SELECT id, name, start_date, end_date 
         FROM tournaments 
-        WHERE start_time > NOW() 
-        AND start_time < NOW() + INTERVAL '1 hour'
+        WHERE start_date > NOW() 
+        AND start_date < NOW() + INTERVAL '1 hour'
         AND status = 'scheduled'
       `;
 
@@ -332,11 +330,10 @@ class SmartNotificationScheduler {
       for (const tournament of tournaments.rows) {
         // Get Android users who haven't been notified about this tournament
         const usersQuery = `
-          SELECT ft.token, ft.player_id, p.timezone, p.notification_preferences
+          SELECT ft.token, ft.player_id, p.timezone, p.nickname
           FROM fcm_tokens ft 
           JOIN players p ON ft.player_id = p.id 
           WHERE ft.platform = 'android'
-          AND (p.notification_preferences->>'tournaments')::boolean = true
           AND NOT EXISTS (
             SELECT 1 FROM notification_history nh 
             WHERE nh.player_id = p.id 
