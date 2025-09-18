@@ -242,13 +242,14 @@ module.exports = (db) => {
     }
   });
 
-  /// 👤 Get current player profile
+  /// 👤 Get current player profile with inventory
   router.get('/profile', authenticateToken, async (req, res) => {
     try {
       const player = await db.query(
         `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
-                heart_booster_expiry, created_at, last_active_at, platform
+                heart_booster_expiry, created_at, last_active_at, platform,
+                total_coins_earned, total_gems_earned
          FROM players WHERE id = $1`,
         [req.playerId]
       );
@@ -257,6 +258,13 @@ module.exports = (db) => {
         return res.status(404).json({ error: 'Player not found' });
       }
 
+      // Get player inventory
+      const inventory = await db.query(
+        `SELECT item_type, item_id, quantity, equipped, acquired_at, acquired_method
+         FROM player_inventory WHERE player_id = $1`,
+        [req.playerId]
+      );
+
       const playerData = player.rows[0];
 
       res.json({
@@ -264,7 +272,8 @@ module.exports = (db) => {
         player: {
           ...playerData,
           heartBoosterActive: playerData.heart_booster_expiry && 
-                            new Date(playerData.heart_booster_expiry) > new Date()
+                            new Date(playerData.heart_booster_expiry) > new Date(),
+          inventory: inventory.rows
         }
       });
 
