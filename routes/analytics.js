@@ -58,17 +58,15 @@ router.post('/event', async (req, res) => {
 
       // Insert analytics event
     const query = `
-      INSERT INTO analytics_events (player_id, event_name, event_data, platform, app_version, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      INSERT INTO analytics_events (player_id, event_name, parameters, created_at)
+      VALUES ($1, $2, $3, NOW())
       RETURNING id
     `;
     
     const values = [
       playerId,
       event_name,
-      event_data || {},
-      req.headers['x-platform'] || 'unknown',
-      req.headers['x-app-version'] || '1.0.0'
+      event_data || {}
     ];
 
     const result = await pool.query(query, values);
