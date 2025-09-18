@@ -166,7 +166,8 @@ if (db) {
         db, 
         cacheManager, 
         prizeManager, 
-        wsManager 
+        wsManager,
+        leaderboardManager // Add leaderboard manager for unified score submission
       });
       logger.info('🏆 ✅ Tournament Manager initialized');
     } catch (error) {

@@ -8,11 +8,12 @@ const { ValidationException, NetworkException } = require('../utils/exceptions')
 const logger = require('../utils/logger');
 
 class TournamentManager {
-  constructor({ db, cacheManager, prizeManager, wsManager }) {
+  constructor({ db, cacheManager, prizeManager, wsManager, leaderboardManager }) {
     this.db = db;
     this.cache = cacheManager;
     this.prizeManager = prizeManager;
     this.wsManager = wsManager;
+    this.leaderboardManager = leaderboardManager;
     
     // Cache keys
     this.CACHE_KEYS = {
@@ -855,6 +856,41 @@ class TournamentManager {
             previousBest: submitResult.previousBest,
             rankImprovement: submitResult.previousRank ? (submitResult.previousRank - submitResult.rank) : 0
           };
+          
+          // 🚀 NEW: Also update global leaderboard with the same score data
+          if (this.leaderboardManager) {
+            try {
+              const globalLeaderboardResult = await this.leaderboardManager.submitScore({
+                playerId,
+                playerName,
+                score,
+                gameData: gameData || {},
+                jetSkin: gameData?.jetSkin || 'jets/sky_jet.png',
+                theme: gameData?.theme || 'Sky Rookie'
+              });
+              
+              if (globalLeaderboardResult.success) {
+                logger.info(`🌍 ✅ Global leaderboard updated: Player ${playerName} (${playerId}) scored ${score}`);
+                scoreSubmissionResult.globalLeaderboard = {
+                  updated: true,
+                  newBest: globalLeaderboardResult.newBest,
+                  globalRank: globalLeaderboardResult.globalRank
+                };
+              } else {
+                logger.warn(`🌍 ⚠️ Global leaderboard update failed: ${globalLeaderboardResult.error}`);
+                scoreSubmissionResult.globalLeaderboard = {
+                  updated: false,
+                  error: globalLeaderboardResult.error
+                };
+              }
+            } catch (error) {
+              logger.error('🌍 ❌ Error updating global leaderboard:', error);
+              scoreSubmissionResult.globalLeaderboard = {
+                updated: false,
+                error: 'Global leaderboard update failed'
+              };
+            }
+          }
           
           // Refresh player registration to get updated stats
           playerRegistration = await this._getPlayerRegistration(actualTournamentId, playerId);
