@@ -268,7 +268,7 @@ app.locals.leaderboardManager = leaderboardManager;
 if (db) {
   app.use('/api/auth', authRoutes(db));
   app.use('/api/player', playerRoutes(db));
-  app.use('/api/leaderboard', leaderboardRoutes(db));
+  app.use('/api/leaderboard', leaderboardRoutes);
   app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
   app.use('/api/tournaments', tournamentRoutes);
   app.use('/api/missions', missionsRoutes(db));

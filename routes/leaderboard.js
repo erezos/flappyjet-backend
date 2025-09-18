@@ -6,7 +6,14 @@
 const express = require('express');
 const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4, validate: isValidUUID } = require('uuid');
+const { Pool } = require('pg');
 const router = express.Router();
+
+// Database connection
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
 
 // Middleware
 const { authenticateToken } = require('../middleware/auth');
