@@ -46,6 +46,7 @@ const authenticateToken = (req, res, next) => {
       id: decoded.playerId,
       playerId: decoded.playerId,
       username: decoded.username || 'Anonymous',
+      playerName: decoded.username || 'Anonymous', // Add playerName for leaderboard compatibility
       deviceId: decoded.deviceId,
       iat: decoded.iat,
       exp: decoded.exp
@@ -87,6 +88,7 @@ const optionalAuth = (req, res, next) => {
       id: decoded.playerId,
       playerId: decoded.playerId,
       username: decoded.username || 'Anonymous',
+      playerName: decoded.username || 'Anonymous', // Add playerName for leaderboard compatibility
       deviceId: decoded.deviceId,
       iat: decoded.iat,
       exp: decoded.exp
