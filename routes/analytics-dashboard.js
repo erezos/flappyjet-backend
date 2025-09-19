@@ -160,9 +160,9 @@ router.get('/retention', authenticateDashboard, async (req, res) => {
         install_date,
         cohort_size,
         day_1_retained,
-        day_1_retention_rate,
+        day1_retention_rate,
         day_7_retained,
-        day_7_retention_rate,
+        day7_retention_rate,
         day_30_retained,
         day_30_retention_rate
       FROM retention_cohorts 
@@ -175,8 +175,8 @@ router.get('/retention', authenticateDashboard, async (req, res) => {
     
     // Calculate overall averages
     const avgRetention = {
-      day1: result.rows.reduce((sum, row) => sum + (row.day_1_retention_rate || 0), 0) / result.rows.length || 0,
-      day7: result.rows.reduce((sum, row) => sum + (row.day_7_retention_rate || 0), 0) / result.rows.length || 0,
+      day1: result.rows.reduce((sum, row) => sum + (row.day1_retention_rate || 0), 0) / result.rows.length || 0,
+      day7: result.rows.reduce((sum, row) => sum + (row.day7_retention_rate || 0), 0) / result.rows.length || 0,
       day30: result.rows.reduce((sum, row) => sum + (row.day_30_retention_rate || 0), 0) / result.rows.length || 0
     };
     
