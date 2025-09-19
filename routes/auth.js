@@ -14,7 +14,7 @@ module.exports = (db) => {
 
   // Validation schemas
   const registerSchema = Joi.object({
-    deviceId: Joi.string().required().min(10).max(255),
+    deviceId: Joi.string().required().min(3).max(255),
     nickname: Joi.string().min(1).max(50).default('Pilot'),
     platform: Joi.string().valid('ios', 'android', 'web').default('unknown'),
     appVersion: Joi.string().max(20).default('1.0.0'),
@@ -23,7 +23,7 @@ module.exports = (db) => {
   });
 
   const loginSchema = Joi.object({
-    deviceId: Joi.string().required().min(10).max(255),
+    deviceId: Joi.string().required().min(3).max(255),
     platform: Joi.string().valid('ios', 'android', 'web').default('unknown'),
     appVersion: Joi.string().max(20).default('1.0.0')
   });
