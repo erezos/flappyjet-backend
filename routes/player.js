@@ -353,6 +353,100 @@ module.exports = (db) => {
   );
 
   /**
+   * 💰 Sync Currency from Client (for conflict resolution)
+   * PUT /api/player/sync-currency
+   */
+  router.put('/sync-currency',
+    authenticateToken,
+    [
+      body('coins')
+        .isInt({ min: 0, max: 999999999 })
+        .withMessage('Invalid coins amount'),
+      body('gems')
+        .isInt({ min: 0, max: 999999999 })
+        .withMessage('Invalid gems amount'),
+      body('syncReason')
+        .optional()
+        .isString()
+        .withMessage('Invalid sync reason'),
+    ],
+    async (req, res) => {
+      try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid currency values',
+            details: errors.array()
+          });
+        }
+
+        const playerId = req.user.playerId;
+        const { coins, gems, syncReason } = req.body;
+
+        // Get current backend values for comparison
+        const currentPlayer = await db.query(
+          'SELECT current_coins, current_gems FROM players WHERE id = $1',
+          [playerId]
+        );
+
+        if (currentPlayer.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            error: 'Player not found'
+          });
+        }
+
+        const currentData = currentPlayer.rows[0];
+        
+        // Only update if client values are higher (conflict resolution)
+        const finalCoins = Math.max(currentData.current_coins || 0, coins);
+        const finalGems = Math.max(currentData.current_gems || 0, gems);
+
+        // Update player currency
+        await db.query(
+          `UPDATE players 
+           SET current_coins = $1, current_gems = $2, last_active_at = NOW()
+           WHERE id = $3`,
+          [finalCoins, finalGems, playerId]
+        );
+
+        // Log the sync event for analytics
+        await db.query(
+          `INSERT INTO analytics_events (player_id, event_type, event_data, created_at)
+           VALUES ($1, 'currency_sync', $2, NOW())`,
+          [playerId, JSON.stringify({
+            syncReason: syncReason || 'manual',
+            clientCoins: coins,
+            clientGems: gems,
+            backendCoins: currentData.current_coins,
+            backendGems: currentData.current_gems,
+            finalCoins,
+            finalGems
+          })]
+        );
+
+        logger.info(`💰 Currency synced for player ${playerId}: ${currentData.current_coins}→${finalCoins} coins, ${currentData.current_gems}→${finalGems} gems (reason: ${syncReason})`);
+
+        res.json({
+          success: true,
+          message: 'Currency synchronized',
+          finalCoins,
+          finalGems,
+          wasUpdated: finalCoins !== currentData.current_coins || finalGems !== currentData.current_gems
+        });
+
+      } catch (error) {
+        logger.error('Error syncing currency:', error);
+        res.status(500).json({
+          success: false,
+          error: 'Failed to sync currency'
+        });
+      }
+    }
+  );
+
+  /**
    * 🔄 Check and Trigger Auto-Refill
    * POST /api/player/check-auto-refill
    */
