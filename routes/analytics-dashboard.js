@@ -433,8 +433,8 @@ router.get('/tournaments', authenticateDashboard, async (req, res) => {
         0 as tournament_completion_rate,
         0 as tournament_roi,
         0 as tournament_participation_rate,
-        day_1_retention_rate as tournament_day1_retention,
-        day_7_retention_rate as tournament_day7_retention,
+        day1_retention_rate as tournament_day1_retention,
+        day7_retention_rate as tournament_day7_retention,
         0 as active_tournaments,
         0 as total_prizes_distributed,
         1.0 as tournament_score_multiplier
