@@ -70,10 +70,10 @@ router.get('/kpi-summary', authenticateDashboard, async (req, res) => {
     // Add calculated metrics
     const data = result.rows.map(row => ({
       ...row,
-      crash_rate_per_1000: row.daily_active_users > 0 ? 
-        (row.daily_crashes / row.daily_active_users * 1000) : 0,
-      revenue_per_dau: row.daily_active_users > 0 ? 
-        (row.daily_revenue / row.daily_active_users) : 0
+      crash_rate_per_1000: parseInt(row.daily_active_users) > 0 ? 
+        (parseInt(row.daily_crashes) / parseInt(row.daily_active_users) * 1000) : 0,
+      revenue_per_dau: parseInt(row.daily_active_users) > 0 ? 
+        (parseFloat(row.daily_revenue) / parseInt(row.daily_active_users)) : 0
     }));
     
     res.json({
@@ -111,8 +111,8 @@ router.get('/trends', authenticateDashboard, async (req, res) => {
         date,
         daily_active_users,
         gaming_users,
-        android_users,
-        ios_users,
+        COALESCE(android_users, 0) as android_users,
+        COALESCE(ios_users, 0) as ios_users,
         daily_revenue,
         daily_purchases,
         paying_users,
@@ -120,7 +120,7 @@ router.get('/trends', authenticateDashboard, async (req, res) => {
         conversion_rate
       FROM daily_kpi_summary 
       WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-        AND daily_active_users > 0  -- Only include days with actual activity
+        AND CAST(daily_active_users AS INTEGER) > 0  -- Only include days with actual activity
       ORDER BY date ASC  -- Ascending for chart display
     `;
     
@@ -268,23 +268,23 @@ router.get('/platform', authenticateDashboard, async (req, res) => {
     const query = `
       SELECT 
         date,
-        android_users,
-        ios_users,
+        COALESCE(android_users, 0) as android_users,
+        COALESCE(ios_users, 0) as ios_users,
         daily_active_users,
         -- Calculate platform percentages
         CASE 
-          WHEN daily_active_users > 0 
-          THEN ROUND(android_users::numeric / daily_active_users * 100, 1)
+          WHEN CAST(daily_active_users AS INTEGER) > 0 
+          THEN ROUND(COALESCE(android_users, 0)::numeric / CAST(daily_active_users AS INTEGER) * 100, 1)
           ELSE 0 
         END as android_percentage,
         CASE 
-          WHEN daily_active_users > 0 
-          THEN ROUND(ios_users::numeric / daily_active_users * 100, 1)
+          WHEN CAST(daily_active_users AS INTEGER) > 0 
+          THEN ROUND(COALESCE(ios_users, 0)::numeric / CAST(daily_active_users AS INTEGER) * 100, 1)
           ELSE 0 
         END as ios_percentage
-      FROM daily_active_users 
+      FROM daily_kpi_summary 
       WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-        AND daily_active_users > 0
+        AND CAST(daily_active_users AS INTEGER) > 0
       ORDER BY date ASC
     `;
     
@@ -377,13 +377,12 @@ router.get('/health', async (req, res) => {
  */
 router.post('/refresh', authenticateDashboard, async (req, res) => {
   try {
-    // Call the refresh functions
+    // Call the refresh function
     await db.query('SELECT refresh_daily_kpi_views()');
-    await db.query('SELECT refresh_tournament_analytics_views()');
     
     res.json({
       success: true,
-      message: 'Dashboard data refreshed successfully (including tournament analytics)',
+      message: 'Dashboard data refreshed successfully',
       timestamp: new Date().toISOString()
     });
     

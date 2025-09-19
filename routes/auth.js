@@ -67,6 +67,26 @@ module.exports = (db) => {
 
       const { deviceId, nickname, platform, appVersion, countryCode, timezone } = value;
 
+      // 🌍 Enhanced country detection: Use client-provided country, fallback to IP-based detection
+      let detectedCountry = countryCode;
+      
+      // Only use IP detection if client didn't provide a country or sent a clearly default value
+      // We assume 'US' might be a default/hardcoded value from older app versions
+      if (!detectedCountry) {
+        // No country provided - try IP detection
+        detectedCountry = getCountryFromIP(req) || 'US';
+      } else if (countryCode === 'US') {
+        // Client sent 'US' - could be real US user or hardcoded default
+        // Try IP detection as additional validation, but keep 'US' if IP fails
+        const ipCountry = getCountryFromIP(req);
+        detectedCountry = ipCountry || 'US';
+        
+        if (ipCountry && ipCountry !== 'US') {
+          console.log(`🌍 IP-based country override: Client sent 'US' but IP suggests '${ipCountry}'`);
+        }
+      }
+      // For any other country code (FR, DE, JP, etc.), trust the client
+
       // Check if player already exists
       const existingPlayer = await db.query(
         'SELECT id, nickname, created_at FROM players WHERE device_id = $1',
@@ -93,7 +113,7 @@ module.exports = (db) => {
             country_code, timezone, created_at, last_active_at
           ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
           RETURNING id`,
-          [deviceId, nickname, platform, appVersion, countryCode, timezone]
+          [deviceId, nickname, platform, appVersion, detectedCountry, timezone]
         );
         
         playerId = newPlayer.rows[0].id;
@@ -299,6 +319,36 @@ module.exports = (db) => {
       }
     } catch (error) {
       logger.error('Error granting starter achievements:', error);
+    }
+  }
+
+  /// 🌍 Get country code from IP address
+  function getCountryFromIP(req) {
+    try {
+      // Get real IP address (handle proxies, load balancers)
+      const forwarded = req.headers['x-forwarded-for'];
+      const ip = forwarded ? forwarded.split(',')[0].trim() : req.connection.remoteAddress;
+      
+      // Basic IP-to-country mapping (simplified)
+      // In production, you'd use a service like MaxMind GeoIP or ip-api.com
+      if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+        return null; // Local/private IP
+      }
+
+      // For now, we'll use a simple heuristic based on common IP ranges
+      // This is a basic implementation - consider using a proper GeoIP service
+      logger.info(`🌍 Detecting country for IP: ${ip}`);
+      
+      // You can integrate with services like:
+      // - MaxMind GeoIP2
+      // - ip-api.com
+      // - ipinfo.io
+      // For now, return null to use client-provided country
+      
+      return null;
+    } catch (error) {
+      logger.error('Error detecting country from IP:', error);
+      return null;
     }
   }
 
