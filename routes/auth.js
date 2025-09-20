@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const Joi = require('joi');
 const logger = require('../utils/logger');
+const authAnalytics = require('../utils/auth-analytics');
 
 module.exports = (db) => {
   const router = express.Router();
@@ -59,9 +60,29 @@ module.exports = (db) => {
 
   /// 📝 Register new player or login existing
   router.post('/register', async (req, res) => {
+    const startTime = Date.now();
+    const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection.remoteAddress;
+    
     try {
       const { error, value } = registerSchema.validate(req.body);
       if (error) {
+        // Single clear log for validation failure
+        logger.warn('🔐 REGISTRATION FAILED - VALIDATION ERROR', {
+          reason: error.details[0].message,
+          clientIP,
+          deviceId: req.body.deviceId?.substring(0, 8) + '***',
+          platform: req.body.platform,
+          responseTime: Date.now() - startTime
+        });
+        
+        // Track validation failure
+        authAnalytics.trackAuthFailure({
+          clientIP,
+          endpoint: '/auth/register',
+          reason: 'validation_failed',
+          userAgent: req.get('User-Agent')
+        });
+        
         return res.status(400).json({ error: error.details[0].message });
       }
 
@@ -99,6 +120,7 @@ module.exports = (db) => {
       if (existingPlayer.rows.length > 0) {
         // Existing player - update last active
         playerId = existingPlayer.rows[0].id;
+        
         await db.query(
           `UPDATE players 
            SET last_active_at = NOW(), platform = $2, app_version = $3
@@ -145,6 +167,38 @@ module.exports = (db) => {
         [playerId]
       );
 
+      // Single clear log for registration success
+      if (isNewPlayer) {
+        logger.info('🔐 NEW USER REGISTERED', {
+          playerId,
+          nickname,
+          platform,
+          clientIP,
+          deviceId: deviceId.substring(0, 8) + '***',
+          responseTime: Date.now() - startTime
+        });
+      } else {
+        logger.info('🔐 EXISTING USER LOGIN VIA REGISTER', {
+          playerId,
+          nickname,
+          platform,
+          clientIP,
+          deviceId: deviceId.substring(0, 8) + '***',
+          responseTime: Date.now() - startTime
+        });
+      }
+
+      // Track registration analytics
+      authAnalytics.trackRegistration({
+        playerId,
+        clientIP,
+        platform,
+        isNewPlayer,
+        deviceId,
+        nickname,
+        appVersion
+      });
+
       res.json({
         success: true,
         isNewPlayer,
@@ -158,16 +212,32 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      logger.error('Registration error:', error);
+      logger.error('🔐 REGISTRATION ERROR', {
+        error: error.message,
+        clientIP,
+        deviceId: req.body.deviceId?.substring(0, 8) + '***',
+        platform: req.body.platform,
+        responseTime: Date.now() - startTime
+      });
       res.status(500).json({ error: 'Registration failed' });
     }
   });
 
   /// 🔑 Login existing player
   router.post('/login', async (req, res) => {
+    const startTime = Date.now();
+    const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection.remoteAddress;
+    
     try {
       const { error, value } = loginSchema.validate(req.body);
       if (error) {
+        logger.warn('🔐 LOGIN FAILED - VALIDATION ERROR', {
+          reason: error.details[0].message,
+          clientIP,
+          deviceId: req.body.deviceId?.substring(0, 8) + '***',
+          platform: req.body.platform,
+          responseTime: Date.now() - startTime
+        });
         return res.status(400).json({ error: error.details[0].message });
       }
 
@@ -183,6 +253,24 @@ module.exports = (db) => {
       );
 
       if (player.rows.length === 0) {
+        logger.warn('🔐 LOGIN FAILED - PLAYER NOT FOUND', {
+          clientIP,
+          deviceId: deviceId.substring(0, 8) + '***',
+          platform,
+          responseTime: Date.now() - startTime
+        });
+        
+        // Track login failure
+        authAnalytics.trackLogin({
+          playerId: null,
+          clientIP,
+          platform,
+          success: false,
+          reason: 'player_not_found',
+          deviceId,
+          appVersion
+        });
+        
         return res.status(404).json({ error: 'Player not found. Please register first.' });
       }
 
@@ -190,11 +278,53 @@ module.exports = (db) => {
 
       // Check if player is banned
       if (playerData.is_banned) {
+        logger.warn('🔐 LOGIN FAILED - PLAYER BANNED', {
+          playerId: playerData.id,
+          nickname: playerData.nickname,
+          banReason: playerData.ban_reason,
+          clientIP,
+          deviceId: deviceId.substring(0, 8) + '***',
+          platform,
+          responseTime: Date.now() - startTime
+        });
+        
+        // Track banned login attempt
+        authAnalytics.trackLogin({
+          playerId: playerData.id,
+          clientIP,
+          platform,
+          success: false,
+          reason: 'player_banned',
+          deviceId,
+          appVersion
+        });
+        
         return res.status(403).json({ 
           error: 'Account banned', 
           reason: playerData.ban_reason 
         });
       }
+
+      // Single clear log for successful login
+      logger.info('🔐 EXISTING USER LOGIN SUCCESS', {
+        playerId: playerData.id,
+        nickname: playerData.nickname,
+        platform,
+        clientIP,
+        deviceId: deviceId.substring(0, 8) + '***',
+        responseTime: Date.now() - startTime
+      });
+
+      // Track login analytics
+      authAnalytics.trackLogin({
+        playerId: playerData.id,
+        clientIP,
+        platform,
+        success: true,
+        deviceId,
+        nickname: playerData.nickname,
+        appVersion
+      });
 
       // Update last active and platform info
       await db.query(
@@ -221,14 +351,24 @@ module.exports = (db) => {
       });
 
     } catch (error) {
-      logger.error('Login error:', error);
+      logger.error('🔐 LOGIN ERROR', {
+        error: error.message,
+        clientIP,
+        deviceId: req.body.deviceId?.substring(0, 8) + '***',
+        platform: req.body.platform,
+        responseTime: Date.now() - startTime
+      });
       res.status(500).json({ error: 'Login failed' });
     }
   });
 
   /// 🔄 Refresh token
   router.post('/refresh', authenticateToken, async (req, res) => {
+    const startTime = Date.now();
+    const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection.remoteAddress;
+    
     try {
+
       // Verify player still exists and is not banned
       const player = await db.query(
         'SELECT id, is_banned FROM players WHERE id = $1',
@@ -236,6 +376,13 @@ module.exports = (db) => {
       );
 
       if (player.rows.length === 0 || player.rows[0].is_banned) {
+        logger.warn('🔐 TOKEN REFRESH FAILED - INVALID PLAYER', {
+          playerId: req.playerId,
+          clientIP,
+          playerExists: player.rows.length > 0,
+          isBanned: player.rows[0]?.is_banned,
+          responseTime: Date.now() - startTime
+        });
         return res.status(403).json({ error: 'Invalid player or account banned' });
       }
 
@@ -251,13 +398,26 @@ module.exports = (db) => {
         deviceId: playerData.rows[0]?.device_id
       });
 
+      // Only log token refresh in debug mode to avoid spam
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug('🔐 TOKEN REFRESH SUCCESS', {
+          playerId: req.playerId,
+          responseTime: Date.now() - startTime
+        });
+      }
+
       res.json({
         success: true,
         token
       });
 
     } catch (error) {
-      logger.error('Token refresh error:', error);
+      logger.error('🔐 TOKEN REFRESH ERROR', {
+        error: error.message,
+        playerId: req.playerId,
+        clientIP,
+        responseTime: Date.now() - startTime
+      });
       res.status(500).json({ error: 'Token refresh failed' });
     }
   });
@@ -351,6 +511,47 @@ module.exports = (db) => {
       return null;
     }
   }
+
+  /// 📊 Get authentication analytics (admin only)
+  router.get('/analytics', async (req, res) => {
+    try {
+      // Simple admin check - in production, use proper admin middleware
+      const adminKey = req.headers['x-admin-key'];
+      if (adminKey !== process.env.ADMIN_KEY && adminKey !== 'flappyjet-admin-dev') {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const report = authAnalytics.generateReport();
+      
+      res.json({
+        success: true,
+        analytics: report
+      });
+
+    } catch (error) {
+      logger.error('🔐 AUTH ANALYTICS ERROR', error);
+      res.status(500).json({ error: 'Failed to get authentication analytics' });
+    }
+  });
+
+  /// 📊 Get daily authentication summary
+  router.get('/daily-summary', async (req, res) => {
+    try {
+      const dailyStats = authAnalytics.getDailyStats();
+      const sessionStats = authAnalytics.getSessionStats();
+      
+      res.json({
+        success: true,
+        daily: dailyStats,
+        sessions: sessionStats,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      logger.error('🔐 DAILY SUMMARY ERROR', error);
+      res.status(500).json({ error: 'Failed to get daily summary' });
+    }
+  });
 
   // Export the authenticateToken middleware for use in other routes
   router.authenticateToken = authenticateToken;

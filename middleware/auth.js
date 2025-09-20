@@ -6,6 +6,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const authAnalytics = require('../utils/auth-analytics');
 
 /**
  * JWT Secret - In production, this should be in environment variables
@@ -20,19 +21,53 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.connection.remoteAddress;
 
   if (!token) {
-    return res.status(401).json({
-      success: false,
-      error: 'Access token required',
-      code: 'AUTH_TOKEN_MISSING'
-    });
+      logger.warn('🔐 AUTH FAILED - NO TOKEN', {
+        clientIP,
+        userAgent: req.get('User-Agent'),
+        endpoint: req.originalUrl,
+        method: req.method,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Track authentication failure
+      authAnalytics.trackAuthFailure({
+        clientIP,
+        endpoint: req.originalUrl,
+        reason: 'no_token',
+        userAgent: req.get('User-Agent')
+      });
+      
+      return res.status(401).json({
+        success: false,
+        error: 'Access token required',
+        code: 'AUTH_TOKEN_MISSING'
+      });
   }
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) {
-      logger.info('🔐 JWT Verification Error:', err.name, err.message);
-      logger.info('🔐 Token (first 50 chars):', token.substring(0, 50));
+      logger.warn('🔐 AUTH FAILED - INVALID TOKEN', {
+        clientIP,
+        userAgent: req.get('User-Agent'),
+        endpoint: req.originalUrl,
+        method: req.method,
+        errorType: err.name,
+        errorMessage: err.message,
+        tokenPreview: token.substring(0, 20) + '...',
+        timestamp: new Date().toISOString()
+      });
+      
+      // Track authentication failure
+      authAnalytics.trackAuthFailure({
+        clientIP,
+        endpoint: req.originalUrl,
+        reason: 'invalid_token',
+        userAgent: req.get('User-Agent')
+      });
+      
       return res.status(403).json({
         success: false,
         error: 'Invalid or expired token',
@@ -52,12 +87,14 @@ const authenticateToken = (req, res, next) => {
       exp: decoded.exp
     };
 
-    // Debug logging
-    logger.info('🔐 Auth middleware debug:', {
-      decodedPlayerId: decoded.playerId,
-      reqUserPlayerId: req.user.playerId,
-      tokenValid: true
-    });
+    // Only log auth success in debug mode to avoid spam
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug('🔐 AUTH SUCCESS', {
+        playerId: decoded.playerId,
+        endpoint: req.originalUrl,
+        method: req.method
+      });
+    }
 
     next();
   });
