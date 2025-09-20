@@ -56,16 +56,20 @@ router.post('/event', async (req, res) => {
       }
     }
 
+    // Determine event category based on event name
+    const eventCategory = getEventCategory(event_name);
+
       // Insert analytics event
     const query = `
-      INSERT INTO analytics_events (player_id, event_name, parameters, created_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO analytics_events (player_id, event_name, event_category, parameters, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
       RETURNING id
     `;
     
     const values = [
       playerId,
       event_name,
+      eventCategory,
       event_data || {}
     ];
 
@@ -87,6 +91,126 @@ router.post('/event', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to record analytics event'
+    });
+  }
+});
+
+// POST /api/analytics/batch - Submit multiple analytics events (Smart Analytics)
+router.post('/batch', async (req, res) => {
+  try {
+    const { events } = req.body;
+    
+    if (!events || !Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Events array required'
+      });
+    }
+
+    // Limit batch size to prevent abuse
+    if (events.length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Batch size too large (max 100 events)'
+      });
+    }
+
+    const insertedEvents = [];
+    const errors = [];
+
+    // Process events in batches for better performance
+    const batchSize = 20;
+    for (let i = 0; i < events.length; i += batchSize) {
+      const batch = events.slice(i, i + batchSize);
+      
+      try {
+        // Prepare batch insert
+        const values = [];
+        const placeholders = [];
+        
+        batch.forEach((event, index) => {
+          const baseIndex = i + index;
+          const { event_name, event_data, timestamp, session_id, player_id } = event;
+          
+          // Allow anonymous analytics events for some events
+          const anonymousEvents = ['app_start', 'app_crash', 'performance_metrics', 'app_launch'];
+          const isAnonymous = anonymousEvents.includes(event_name);
+          
+          let finalPlayerId = player_id;
+          if (!isAnonymous && !finalPlayerId) {
+            // Try to get player ID from token
+            const authHeader = req.headers['authorization'];
+            const token = authHeader && authHeader.split(' ')[1];
+            
+            if (token) {
+              try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+                finalPlayerId = decoded.playerId;
+              } catch (err) {
+                // Token invalid, but continue with anonymous event
+                console.log('Invalid token for analytics batch, continuing anonymously');
+              }
+            }
+          }
+
+          const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
+          const eventCategory = getEventCategory(event_name);
+          
+          values.push(
+            finalPlayerId,
+            event_name,
+            eventCategory,
+            event_data || {},
+            eventTimestamp,
+            session_id || null
+          );
+          
+          placeholders.push(`($${baseIndex * 6 + 1}, $${baseIndex * 6 + 2}, $${baseIndex * 6 + 3}, $${baseIndex * 6 + 4}, $${baseIndex * 6 + 5}, $${baseIndex * 6 + 6})`);
+        });
+
+        const query = `
+          INSERT INTO analytics_events (player_id, event_name, event_category, parameters, created_at, session_id)
+          VALUES ${placeholders.join(', ')}
+          RETURNING id, event_name
+        `;
+
+        const result = await pool.query(query, values);
+        insertedEvents.push(...result.rows);
+
+      } catch (batchError) {
+        console.error('Batch insert error:', batchError);
+        errors.push({
+          batch_index: i,
+          error: batchError.message,
+          events_count: batch.length
+        });
+      }
+    }
+
+    // Handle special events that need additional processing
+    for (const event of events) {
+      if (event.event_name === 'user_analytics_sync' && event.player_id && event.event_data) {
+        try {
+          await updateUserAnalytics(event.player_id, event.event_data);
+        } catch (error) {
+          console.error('User analytics sync error:', error);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      inserted_count: insertedEvents.length,
+      total_events: events.length,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Processed ${insertedEvents.length}/${events.length} events`
+    });
+
+  } catch (error) {
+    console.error('Analytics batch error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process analytics batch'
     });
   }
 });
@@ -298,6 +422,44 @@ router.post('/refresh-views', async (req, res) => {
     });
   }
 });
+
+// Helper function to determine event category
+function getEventCategory(eventName) {
+  const categoryMap = {
+    // Gameplay events
+    'game_start': 'gameplay',
+    'game_end': 'gameplay',
+    'level_up': 'gameplay',
+    'mission_complete': 'gameplay',
+    'achievement_unlock': 'gameplay',
+    'tournament_event': 'gameplay',
+    'user_engagement': 'gameplay',
+    
+    // Monetization events
+    'purchase': 'monetization',
+    'iap_purchase': 'monetization',
+    'ad_event': 'monetization',
+    'rewarded_ad_reward_granted': 'monetization',
+    'rewarded_ad_reward_failed': 'monetization',
+    
+    // Retention events
+    'app_start': 'retention',
+    'app_launch': 'retention',
+    'session_start': 'retention',
+    'session_end': 'retention',
+    'social_share': 'retention',
+    'app_rating': 'retention',
+    'feature_usage': 'retention',
+    
+    // System events
+    'app_crash': 'system',
+    'performance_metric': 'system',
+    'app_error': 'system',
+    'user_analytics_sync': 'system',
+  };
+  
+  return categoryMap[eventName] || 'other';
+}
 
 // Helper function to update user analytics
 async function updateUserAnalytics(playerId, analyticsData) {
