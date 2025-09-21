@@ -176,7 +176,7 @@ class SmartNotificationScheduler {
   }
 
   /**
-   * Process daily streak reminder notifications
+   * Process daily streak reminder notifications - ENHANCED with cycle awareness
    */
   async processDailyStreakReminders() {
     try {
@@ -189,6 +189,8 @@ class SmartNotificationScheduler {
           p.player_name,
           p.timezone,
           ds.current_streak,
+          ds.current_cycle,
+          ds.cycle_reward_set,
           ds.last_claim_date,
           p.notification_preferences
         FROM fcm_tokens ft 
@@ -214,17 +216,48 @@ class SmartNotificationScheduler {
         return;
       }
 
-      const notifications = users.map(user => ({
-        token: user.token,
-        title: this.templates.daily_streak.title,
-        body: `Day ${user.current_streak} streak bonus awaiting! Don't break the chain! 🔥`,
-        data: {
-          type: 'daily_streak',
-          player_id: user.player_id,
-          streak: user.current_streak.toString(),
-        },
-        timezone: user.timezone || 'UTC',
-      }));
+      const notifications = users.map(user => {
+        const dayInCycle = user.current_streak % 7;
+        const cycleNumber = user.current_cycle;
+        const rewardSet = user.cycle_reward_set;
+        
+        let title, body;
+        
+        if (dayInCycle === 0 && user.current_streak > 0) {
+          // Day 7 - cycle completion
+          title = '🎉 Cycle Complete!';
+          body = `You've completed cycle ${cycleNumber}! Start your new cycle today!`;
+        } else if (dayInCycle === 6) {
+          // Day 7 - about to complete cycle
+          title = '🔥 Final Day!';
+          body = `Day 7 streak bonus! Complete your cycle and get amazing rewards!`;
+        } else {
+          // Regular day
+          const dayNumber = dayInCycle + 1;
+          title = '🔥 Daily Streak Bonus';
+          
+          if (rewardSet === 'new_player' && dayNumber === 2) {
+            body = `Day ${dayNumber} streak bonus! Get your Flash Strike jet today! ✈️`;
+          } else {
+            body = `Day ${dayNumber} streak bonus awaiting! Don't break the chain! 🔥`;
+          }
+        }
+        
+        return {
+          token: user.token,
+          title: title,
+          body: body,
+          data: {
+            type: 'daily_streak',
+            player_id: user.player_id,
+            streak: user.current_streak.toString(),
+            cycle: cycleNumber.toString(),
+            day_in_cycle: dayInCycle.toString(),
+            reward_set: rewardSet,
+          },
+          timezone: user.timezone || 'UTC',
+        };
+      });
 
       const results = await this.fcmService.sendBulkSmartNotifications(notifications);
       
@@ -233,7 +266,7 @@ class SmartNotificationScheduler {
         await this.logNotificationHistory(users.slice(0, results.sent), 'daily_streak');
       }
 
-      logger.info(`🕐 Streak notifications: ${results.sent} sent, ${results.scheduled} scheduled, ${results.failed} failed`);
+      logger.info(`🕐 Enhanced streak notifications: ${results.sent} sent, ${results.scheduled} scheduled, ${results.failed} failed`);
 
     } catch (error) {
       logger.error('🕐 Error processing daily streak reminders:', error);
