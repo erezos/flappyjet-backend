@@ -42,6 +42,16 @@ module.exports = (db) => {
 
       logger.info(`🎒 Syncing skin: ${skinId} for player ${playerId} (equipped: ${equipped})`);
 
+      // 🔥 CRITICAL FIX: If equipping this skin, unequip all others first
+      if (equipped) {
+        await db.query(`
+          UPDATE player_inventory 
+          SET equipped = FALSE, updated_at = NOW()
+          WHERE player_id = $1 AND item_type = 'skin' AND item_id != $2
+        `, [playerId, skinId]);
+        logger.info(`🎒 ✅ Unequipped all other skins for player ${playerId}`);
+      }
+
       // Upsert skin in player_inventory
       const result = await db.query(`
         INSERT INTO player_inventory (player_id, item_type, item_id, equipped, acquired_method)
@@ -99,6 +109,14 @@ module.exports = (db) => {
       
       try {
         await client.query('BEGIN');
+
+        // 🔥 CRITICAL FIX: First, unequip all existing skins
+        await client.query(`
+          UPDATE player_inventory 
+          SET equipped = FALSE, updated_at = NOW()
+          WHERE player_id = $1 AND item_type = 'skin'
+        `, [playerId]);
+        logger.info(`🎒 ✅ Unequipped all existing skins for player ${playerId}`);
 
         const syncedSkins = [];
         
