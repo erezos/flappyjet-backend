@@ -8,12 +8,16 @@ const logger = require('../utils/logger');
  * Handles cycle-aware streak management with proper validation
  */
 
+// Get database connection from app locals
+const getDb = (req) => req.app.locals.db;
+
 /**
  * Claim today's daily streak reward
  * POST /api/daily-streak/claim
  */
 router.post('/claim', authenticateToken, async (req, res) => {
-  const client = await req.db.getClient();
+  const db = getDb(req);
+  const client = await db.getClient();
   
   try {
     await client.query('BEGIN');
@@ -207,8 +211,9 @@ router.post('/claim', authenticateToken, async (req, res) => {
 router.get('/analytics', authenticateToken, async (req, res) => {
   try {
     const playerId = req.user.playerId;
+    const db = getDb(req);
     
-    const analytics = await req.db.query(`
+    const analytics = await db.query(`
       SELECT 
         ds.current_streak,
         ds.current_cycle,
@@ -266,8 +271,9 @@ router.get('/status', authenticateToken, async (req, res) => {
   try {
     const playerId = req.user.playerId;
     const today = new Date().toISOString().split('T')[0];
+    const db = getDb(req);
     
-    const status = await req.db.query(`
+    const status = await db.query(`
       SELECT 
         ds.current_streak,
         ds.current_cycle,
@@ -327,13 +333,14 @@ router.get('/status', authenticateToken, async (req, res) => {
 router.post('/reset', authenticateToken, async (req, res) => {
   try {
     const playerId = req.user.playerId;
+    const db = getDb(req);
     
-    await req.db.query(
+    await db.query(
       'DELETE FROM daily_streaks WHERE player_id = $1',
       [playerId]
     );
     
-    await req.db.query(
+    await db.query(
       'DELETE FROM daily_streak_cycles WHERE player_id = $1',
       [playerId]
     );

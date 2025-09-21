@@ -276,7 +276,7 @@ if (db) {
   app.use('/api/missions', missionsRoutes(db));
   app.use('/api/achievements', achievementsRoutes(db));
   app.use('/api/purchase', purchaseRoutes(db));
-  app.use('/api/daily-streak', dailyStreakRoutes(db));
+  app.use('/api/daily-streak', dailyStreakRoutes);
 app.use('/api/analytics', analyticsRoutes);
 // app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));

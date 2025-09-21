@@ -445,7 +445,23 @@ module.exports = (db) => {
         [req.playerId]
       );
 
+      // Get daily streak data
+      const dailyStreak = await db.query(
+        `SELECT current_streak, current_cycle, cycle_reward_set, 
+                total_cycles_completed, last_claim_date, cycle_start_date
+         FROM daily_streaks WHERE player_id = $1`,
+        [req.playerId]
+      );
+
       const playerData = player.rows[0];
+      const streakData = dailyStreak.rows.length > 0 ? dailyStreak.rows[0] : {
+        current_streak: 0,
+        current_cycle: 0,
+        cycle_reward_set: 'new_player',
+        total_cycles_completed: 0,
+        last_claim_date: null,
+        cycle_start_date: null
+      };
 
       res.json({
         success: true,
@@ -453,7 +469,9 @@ module.exports = (db) => {
           ...playerData,
           heartBoosterActive: playerData.heart_booster_expiry && 
                             new Date(playerData.heart_booster_expiry) > new Date(),
-          inventory: inventory.rows
+          inventory: inventory.rows,
+          // Add daily streak data
+          daily_streak: streakData
         }
       });
 
