@@ -152,6 +152,11 @@ router.post('/batch', async (req, res) => {
               }
             }
           }
+          
+          // Handle empty or invalid player IDs - use NULL for anonymous events
+          if (!finalPlayerId || finalPlayerId === '' || finalPlayerId === 'null') {
+            finalPlayerId = null;
+          }
 
           const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
           const eventCategory = getEventCategory(event_name);
