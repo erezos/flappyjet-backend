@@ -13,11 +13,15 @@ module.exports = (db) => {
 
   // 🛡️ Profanity filter word lists
   const PROFANITY_WORDS = [
-    // Basic profanity (add your comprehensive list here)
-    'badword1', 'badword2', 'inappropriate', 'offensive',
+    // Basic profanity
+    'fuck', 'shit', 'damn', 'bitch', 'ass', 'asshole', 'bastard', 'piss', 'crap',
+    'hell', 'bloody', 'fucking', 'shitty', 'damned', 'bitching', 'pissing',
+    // Stronger profanity
+    'cunt', 'whore', 'slut', 'faggot', 'nigger', 'kike', 'chink', 'spic',
     // Game-specific terms
-    'cheat', 'hack', 'exploit', 'glitch', 'spam', 'bot',
-    // Add more comprehensive lists as needed
+    'cheat', 'hack', 'exploit', 'glitch', 'spam', 'bot', 'noob', 'nub',
+    // Inappropriate content
+    'inappropriate', 'offensive', 'racist', 'sexist', 'homophobic'
   ];
 
   const RESERVED_NAMES = [
