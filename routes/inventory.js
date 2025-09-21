@@ -38,7 +38,7 @@ module.exports = (db) => {
       }
 
       const { skinId, equipped, acquiredMethod } = value;
-      const playerId = req.user.playerId;
+      const playerId = req.playerId;
 
       logger.info(`🎒 Syncing skin: ${skinId} for player ${playerId} (equipped: ${equipped})`);
 
@@ -90,7 +90,7 @@ module.exports = (db) => {
       }
 
       const { skins } = value;
-      const playerId = req.user.playerId;
+      const playerId = req.playerId;
 
       logger.info(`🎒 Batch syncing ${skins.length} skins for player ${playerId}`);
 
@@ -156,7 +156,7 @@ module.exports = (db) => {
   /// 🎒 Get player's current inventory status
   router.get('/status', authenticateToken, async (req, res) => {
     try {
-      const playerId = req.user.playerId;
+      const playerId = req.playerId;
 
       const result = await db.query(`
         SELECT item_id, equipped, acquired_method, acquired_at, updated_at
@@ -196,7 +196,7 @@ module.exports = (db) => {
   router.post('/force-sync', authenticateToken, async (req, res) => {
     try {
       const { skins } = req.body;
-      const playerId = req.user.playerId;
+      const playerId = req.playerId;
 
       if (!skins || !Array.isArray(skins)) {
         return res.status(400).json({ 
