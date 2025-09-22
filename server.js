@@ -70,11 +70,13 @@ try {
     keepAliveInitialDelayMillis: 10000,
   });
 
-  // Test database connection with retry logic
-  const connectWithRetry = async (retries = 3) => {
+  // Test database connection with retry logic - Railway Pro optimized
+  const connectWithRetry = async (retries = 5) => {
     for (let i = 0; i < retries; i++) {
       try {
+        logger.info(`🐘 Attempting database connection ${i + 1}/${retries}...`);
         const client = await db.connect();
+        
         logger.info('🐘 PostgreSQL connected successfully', { 
           host: db.options.host, 
           database: db.options.database,
@@ -103,22 +105,30 @@ try {
             logger.error('🏆 ❌ Error checking tournament tables:', error);
           }
         }
+        
+        logger.info('🐘 ✅ Database initialization completed successfully');
         return; // Success, exit retry loop
       } catch (err) {
         logger.warn(`🐘 ⚠️ Database connection attempt ${i + 1}/${retries} failed:`, err.message);
         if (i === retries - 1) {
           logger.error('🐘 ❌ All database connection attempts failed:', err);
+          logger.error('🐘 ❌ Database URL:', process.env.DATABASE_URL?.substring(0, 50) + '...');
           logger.info('🚂 ⚠️ Continuing without database for health check...');
+          // Don't set db to null - keep the pool for retry attempts
         } else {
           // Wait before retry (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+          const delay = Math.pow(2, i) * 2000; // Start with 2 seconds
+          logger.info(`🐘 ⚠️ Retrying in ${delay/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
   };
   
-  // Start connection with retry
-  connectWithRetry();
+  // Start connection with retry (non-blocking)
+  connectWithRetry().catch(err => {
+    logger.error('🐘 ❌ Database connection retry failed:', err);
+  });
   
   // Add connection pool monitoring
   db.on('error', (err) => {
@@ -133,9 +143,14 @@ try {
     logger.debug('🐘 ❌ Client removed from database pool');
   });
   
+  // Set database in app locals for health check access
+  app.locals.db = db;
+  logger.info('🐘 ✅ Database pool set in app.locals for health checks');
+  
 } catch (error) {
   logger.error('🐘 ❌ Database initialization error:', error);
   logger.info('🚂 ⚠️ Continuing without database for health check...');
+  app.locals.db = null;
 }
 
 // Initialize services
