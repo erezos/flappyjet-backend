@@ -52,49 +52,81 @@ try {
   db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 20, // Maximum number of connections in the pool
-    min: 2,  // Minimum number of connections to maintain
-    idleTimeoutMillis: 30000, // Close idle connections after 30 seconds
-    connectionTimeoutMillis: 2000, // Timeout for getting a connection
-    acquireTimeoutMillis: 60000, // Timeout for acquiring a connection
-    createTimeoutMillis: 3000, // Timeout for creating a connection
+    max: 10, // Reduced from 20 - Maximum number of connections in the pool
+    min: 1,  // Reduced from 2 - Minimum number of connections to maintain
+    idleTimeoutMillis: 10000, // Reduced from 30000 - Close idle connections after 10 seconds
+    connectionTimeoutMillis: 5000, // Increased from 2000 - Timeout for getting a connection
+    acquireTimeoutMillis: 30000, // Reduced from 60000 - Timeout for acquiring a connection
+    createTimeoutMillis: 10000, // Increased from 3000 - Timeout for creating a connection
     destroyTimeoutMillis: 5000, // Timeout for destroying a connection
-    reapIntervalMillis: 1000, // How often to check for idle connections
-    createRetryIntervalMillis: 200, // Retry interval for failed connections
+    reapIntervalMillis: 2000, // Increased from 1000 - How often to check for idle connections
+    createRetryIntervalMillis: 1000, // Increased from 200 - Retry interval for failed connections
+    allowExitOnIdle: true, // Allow pool to exit when idle
   });
 
-  // Test database connection and auto-migrate
-  db.connect()
-    .then(async () => {
-      logger.info('🐘 PostgreSQL connected successfully', { 
-        host: db.options.host, 
-        database: db.options.database 
-      });
-      
-      // Check if tournament tables exist, if not, run migration
+  // Test database connection with retry logic
+  const connectWithRetry = async (retries = 3) => {
+    for (let i = 0; i < retries; i++) {
       try {
-        await db.query('SELECT 1 FROM tournaments LIMIT 1');
-        logger.info('🏆 Tournament tables already exist');
-      } catch (error) {
-        if (error.code === '42P01') { // Table does not exist
-          logger.info('🏗️ Tournament tables not found, running auto-migration...');
-          try {
-            const { runMigration } = require('./scripts/migrate-tournament-schema');
-            await runMigration(db);
-            logger.info('🏗️ ✅ Auto-migration completed successfully');
-          } catch (migrationError) {
-            logger.error('🏗️ ❌ Auto-migration failed', migrationError);
-            logger.warn('🚂 ⚠️ Continuing without tournament tables...');
+        const client = await db.connect();
+        logger.info('🐘 PostgreSQL connected successfully', { 
+          host: db.options.host, 
+          database: db.options.database,
+          attempt: i + 1
+        });
+        
+        // Release the test connection immediately
+        client.release();
+        
+        // Check if tournament tables exist, if not, run migration
+        try {
+          await db.query('SELECT 1 FROM tournaments LIMIT 1');
+          logger.info('🏆 Tournament tables already exist');
+        } catch (error) {
+          if (error.code === '42P01') { // Table does not exist
+            logger.info('🏗️ Tournament tables not found, running auto-migration...');
+            try {
+              const { runMigration } = require('./scripts/migrate-tournament-schema');
+              await runMigration(db);
+              logger.info('🏗️ ✅ Auto-migration completed successfully');
+            } catch (migrationError) {
+              logger.error('🏗️ ❌ Auto-migration failed', migrationError);
+              logger.warn('🚂 ⚠️ Continuing without tournament tables...');
+            }
+          } else {
+            logger.error('🏆 ❌ Error checking tournament tables:', error);
           }
+        }
+        return; // Success, exit retry loop
+      } catch (err) {
+        logger.warn(`🐘 ⚠️ Database connection attempt ${i + 1}/${retries} failed:`, err.message);
+        if (i === retries - 1) {
+          logger.error('🐘 ❌ All database connection attempts failed:', err);
+          logger.info('🚂 ⚠️ Continuing without database for health check...');
         } else {
-          logger.error('🏆 ❌ Error checking tournament tables:', error);
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
         }
       }
-    })
-    .catch(err => {
-      logger.error('🐘 ❌ Database connection error:', err);
-      logger.info('🚂 ⚠️ Continuing without database for health check...');
-    });
+    }
+  };
+  
+  // Start connection with retry
+  connectWithRetry();
+  
+  // Add connection pool monitoring
+  db.on('error', (err) => {
+    logger.error('🐘 ❌ Database pool error:', err);
+  });
+  
+  db.on('connect', (client) => {
+    logger.debug('🐘 ✅ New client connected to database');
+  });
+  
+  db.on('remove', (client) => {
+    logger.debug('🐘 ❌ Client removed from database pool');
+  });
+  
 } catch (error) {
   logger.error('🐘 ❌ Database initialization error:', error);
   logger.info('🚂 ⚠️ Continuing without database for health check...');
@@ -430,9 +462,15 @@ process.on('SIGINT', async () => {
     wsManager.shutdown();
   }
   
-  // Close database connection
+  // Close database connection gracefully
   if (db) {
-    await db.end();
+    logger.info('🐘 Closing database connection pool...');
+    try {
+      await db.end();
+      logger.info('🐘 ✅ Database connection pool closed');
+    } catch (error) {
+      logger.error('🐘 ❌ Error closing database pool:', error);
+    }
   }
   
   // Close HTTP server

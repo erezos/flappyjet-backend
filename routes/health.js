@@ -13,19 +13,25 @@ router.get('/', async (req, res) => {
     // Get database connection from app locals
     const db = req.app.locals.db;
     
-    // Check database connectivity
+    // Check database connectivity with timeout
     let dbStatus = 'disconnected';
     let dbResponseTime = 0;
     
     if (db) {
       try {
         const dbStartTime = Date.now();
-        await db.query('SELECT 1');
+        // Use a timeout promise to prevent hanging
+        const queryPromise = db.query('SELECT 1');
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Database query timeout')), 5000)
+        );
+        
+        await Promise.race([queryPromise, timeoutPromise]);
         dbResponseTime = Date.now() - dbStartTime;
         dbStatus = 'connected';
       } catch (dbError) {
         dbStatus = 'error';
-        logger.error('Health check - Database error:', dbError);
+        logger.error('Health check - Database error:', dbError.message);
       }
     }
     
