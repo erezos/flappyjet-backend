@@ -20,15 +20,21 @@ router.get('/', async (req, res) => {
     if (db) {
       try {
         const dbStartTime = Date.now();
-        // Use a timeout promise to prevent hanging
-        const queryPromise = db.query('SELECT 1');
+        // Use a timeout promise to prevent hanging - Railway Pro optimized
+        const queryPromise = db.query('SELECT NOW() as current_time, version() as pg_version');
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Database query timeout')), 5000)
+          setTimeout(() => reject(new Error('Database query timeout')), 8000)
         );
         
-        await Promise.race([queryPromise, timeoutPromise]);
+        const result = await Promise.race([queryPromise, timeoutPromise]);
         dbResponseTime = Date.now() - dbStartTime;
         dbStatus = 'connected';
+        
+        // Log successful connection for monitoring
+        logger.info('🐘 Database health check successful', {
+          responseTime: dbResponseTime,
+          version: result.rows[0]?.pg_version?.substring(0, 20) || 'unknown'
+        });
       } catch (dbError) {
         dbStatus = 'error';
         logger.error('Health check - Database error:', dbError.message);

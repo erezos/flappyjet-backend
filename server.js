@@ -52,16 +52,22 @@ try {
   db = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    max: 10, // Reduced from 20 - Maximum number of connections in the pool
-    min: 1,  // Reduced from 2 - Minimum number of connections to maintain
-    idleTimeoutMillis: 10000, // Reduced from 30000 - Close idle connections after 10 seconds
-    connectionTimeoutMillis: 5000, // Increased from 2000 - Timeout for getting a connection
-    acquireTimeoutMillis: 30000, // Reduced from 60000 - Timeout for acquiring a connection
-    createTimeoutMillis: 10000, // Increased from 3000 - Timeout for creating a connection
-    destroyTimeoutMillis: 5000, // Timeout for destroying a connection
-    reapIntervalMillis: 2000, // Increased from 1000 - How often to check for idle connections
-    createRetryIntervalMillis: 1000, // Increased from 200 - Retry interval for failed connections
-    allowExitOnIdle: true, // Allow pool to exit when idle
+    
+    // Railway Pro Optimized Settings - More conservative for network stability
+    max: 5,                    // Reduced from 10 - Railway Pro handles scaling
+    min: 1,                    // Keep minimum connections
+    idleTimeoutMillis: 30000,  // Increased for Railway's network stability
+    connectionTimeoutMillis: 15000,  // Increased timeout for Railway network
+    acquireTimeoutMillis: 60000,     // Increased acquire timeout
+    createTimeoutMillis: 15000,      // Increased create timeout
+    destroyTimeoutMillis: 5000,      // Timeout for destroying a connection
+    reapIntervalMillis: 5000,        // Increased interval for stability
+    createRetryIntervalMillis: 2000, // Increased retry interval
+    
+    // Railway Pro Specific - Keep connections alive
+    allowExitOnIdle: false,    // Keep connections alive for Railway
+    keepAlive: true,           // Enable TCP keep-alive
+    keepAliveInitialDelayMillis: 10000,
   });
 
   // Test database connection with retry logic
