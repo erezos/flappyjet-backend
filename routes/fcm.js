@@ -380,10 +380,44 @@ router.post('/register-anonymous', [
 
     logger.info(`🔥 Registering anonymous FCM token for device: ${deviceId}`);
 
-    // Check if token already exists for this player (anonymous users use player_id)
+    // First, ensure the anonymous player exists in the database
+    // We need to find the actual UUID player_id for this device
+    let actualPlayerId = anonymousPlayerId;
+
+    try {
+      // Look for existing player by device_id (anonymous or authenticated)
+      const existingPlayer = await req.db.query(
+        'SELECT id FROM players WHERE device_id = $1',
+        [deviceId]
+      );
+
+      if (existingPlayer.rows.length > 0) {
+        // Use existing player
+        actualPlayerId = existingPlayer.rows[0].id;
+        logger.info(`🔥 Found existing player: ${actualPlayerId}`);
+      } else {
+        // Create new anonymous player
+        const newPlayer = await req.db.query(`
+          INSERT INTO players (device_id, nickname, platform, app_version, country_code, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+          RETURNING id
+        `, [deviceId, 'Anonymous Player', platform, appVersion || '1.5.3', 'US']);
+
+        actualPlayerId = newPlayer.rows[0].id;
+        logger.info(`🔥 Created new anonymous player: ${actualPlayerId}`);
+      }
+    } catch (error) {
+      logger.error('🔥 Failed to create/find anonymous player:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create anonymous player'
+      });
+    }
+
+    // Now register FCM token with the proper UUID player_id
     const existingToken = await req.db.query(
       'SELECT id FROM fcm_tokens WHERE player_id = $1',
-      [anonymousPlayerId]
+      [actualPlayerId]
     );
 
     if (existingToken.rows.length > 0) {
@@ -392,17 +426,17 @@ router.post('/register-anonymous', [
         UPDATE fcm_tokens
         SET fcm_token = $1, platform = $2, timezone = $3, updated_at = NOW()
         WHERE player_id = $4
-      `, [fcmToken, platform, timezone || 'UTC', anonymousPlayerId]);
+      `, [fcmToken, platform, timezone || 'UTC', actualPlayerId]);
 
-      logger.info(`🔥 Updated anonymous FCM token for player ${anonymousPlayerId}`);
+      logger.info(`🔥 Updated FCM token for player ${actualPlayerId}`);
     } else {
       // Insert new token
       await req.db.query(`
         INSERT INTO fcm_tokens (player_id, fcm_token, platform, timezone, created_at, updated_at)
         VALUES ($1, $2, $3, $4, NOW(), NOW())
-      `, [anonymousPlayerId, fcmToken, platform, timezone || 'UTC']);
+      `, [actualPlayerId, fcmToken, platform, timezone || 'UTC']);
 
-      logger.info(`🔥 Registered new anonymous FCM token for player ${anonymousPlayerId}`);
+      logger.info(`🔥 Registered new FCM token for player ${actualPlayerId}`);
     }
 
     res.json({
