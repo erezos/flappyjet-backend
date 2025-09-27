@@ -2,7 +2,9 @@
 // Handles all user analytics tracking and reporting
 
 const express = require('express');
-  const router = express.Router();
+const { body, validationResult } = require('express-validator');
+const { rateLimitMiddleware } = require('../middleware/rate-limit');
+const router = express.Router();
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 
