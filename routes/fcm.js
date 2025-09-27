@@ -3,6 +3,7 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { rateLimitMiddleware } = require('../middleware/rate-limit');
 const FCMService = require('../services/fcm-service');
 const logger = require('../utils/logger');
 
