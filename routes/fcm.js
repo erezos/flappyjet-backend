@@ -381,27 +381,27 @@ router.post('/register-anonymous', [
     logger.info(`🔥 Registering anonymous FCM token for device: ${deviceId}`);
 
     // Check if token already exists for this device
-    const existingToken = await pool.query(
+    const existingToken = await req.db.query(
       'SELECT id FROM fcm_tokens WHERE device_id = $1',
       [deviceId]
     );
 
     if (existingToken.rows.length > 0) {
       // Update existing token
-      await pool.query(`
-        UPDATE fcm_tokens 
+      await req.db.query(`
+        UPDATE fcm_tokens
         SET fcm_token = $1, platform = $2, timezone = $3, app_version = $4, updated_at = NOW()
         WHERE device_id = $5
       `, [fcmToken, platform, timezone || 'UTC', appVersion || '1.5.3', deviceId]);
-      
+
       logger.info(`🔥 Updated anonymous FCM token for device ${deviceId}`);
     } else {
       // Insert new token
-      await pool.query(`
+      await req.db.query(`
         INSERT INTO fcm_tokens (player_id, device_id, fcm_token, platform, timezone, app_version, is_anonymous, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
       `, [anonymousPlayerId, deviceId, fcmToken, platform, timezone || 'UTC', appVersion || '1.5.3']);
-      
+
       logger.info(`🔥 Registered new anonymous FCM token for device ${deviceId}`);
     }
 
