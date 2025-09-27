@@ -182,7 +182,7 @@ const logger = require('../utils/logger');
       // Get player stats for adaptive generation
       const playerStats = await db.query(`
         SELECT 
-          best_score, best_streak, total_games_played,
+          best_score, best_streak, total_games as total_games_played,
           COALESCE(
             (SELECT COUNT(*) FROM player_missions 
              WHERE player_id = $1 AND mission_type = 'change_nickname' AND completed = true), 

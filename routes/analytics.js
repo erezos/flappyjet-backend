@@ -572,4 +572,168 @@ async function updateUserAnalytics(playerId, analyticsData) {
   await pool.query(query, values);
 }
 
+/**
+ * Anonymous Analytics Event Submission
+ * POST /api/analytics/anonymous-event
+ */
+router.post('/anonymous-event', 
+  rateLimitMiddleware('anonymous_analytics', 60, 100), // Higher limit for anonymous analytics
+  [
+    body('eventName').isString().isLength({ min: 1, max: 100 }).withMessage('Event name required'),
+    body('eventCategory').optional().isString().withMessage('Event category must be a string'),
+    body('parameters').optional().isObject().withMessage('Parameters must be an object'),
+    body('sessionId').optional().isString().withMessage('Session ID must be a string'),
+    body('deviceId').isString().isLength({ min: 10, max: 255 }).withMessage('Device ID required for anonymous events'),
+    body('platform').optional().isString().withMessage('Platform must be a string'),
+    body('appVersion').optional().isString().withMessage('App version must be a string'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const {
+        eventName,
+        eventCategory = 'anonymous',
+        parameters = {},
+        sessionId,
+        deviceId,
+        platform = 'unknown',
+        appVersion = '1.0.0'
+      } = req.body;
+
+      // Create anonymous player ID
+      const anonymousPlayerId = `anon_${deviceId}`;
+
+      console.log(`📊 Anonymous analytics event: ${eventName} from ${anonymousPlayerId}`);
+
+      // Insert analytics event
+      const insertQuery = `
+        INSERT INTO analytics_events (
+          player_id, event_name, event_category, parameters, 
+          session_id, platform, app_version, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `;
+
+      await pool.query(insertQuery, [
+        anonymousPlayerId,
+        eventName,
+        eventCategory,
+        JSON.stringify(parameters),
+        sessionId,
+        platform,
+        appVersion
+      ]);
+
+      res.json({
+        success: true,
+        message: 'Anonymous analytics event recorded',
+        playerId: anonymousPlayerId
+      });
+
+    } catch (error) {
+      console.error('📊 ❌ Anonymous analytics error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to record anonymous analytics event'
+      });
+    }
+  }
+);
+
+/**
+ * Anonymous Analytics Batch Submission
+ * POST /api/analytics/anonymous-batch
+ */
+router.post('/anonymous-batch',
+  rateLimitMiddleware('anonymous_analytics_batch', 60, 20), // Lower limit for batch operations
+  [
+    body('events').isArray({ min: 1, max: 50 }).withMessage('Events array required (1-50 events)'),
+    body('deviceId').isString().isLength({ min: 10, max: 255 }).withMessage('Device ID required for anonymous events'),
+    body('sessionId').optional().isString().withMessage('Session ID must be a string'),
+    body('platform').optional().isString().withMessage('Platform must be a string'),
+    body('appVersion').optional().isString().withMessage('App version must be a string'),
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const {
+        events,
+        deviceId,
+        sessionId,
+        platform = 'unknown',
+        appVersion = '1.0.0'
+      } = req.body;
+
+      // Create anonymous player ID
+      const anonymousPlayerId = `anon_${deviceId}`;
+
+      console.log(`📊 Anonymous analytics batch: ${events.length} events from ${anonymousPlayerId}`);
+
+      // Process events in batch
+      const insertQuery = `
+        INSERT INTO analytics_events (
+          player_id, event_name, event_category, parameters, 
+          session_id, platform, app_version, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `;
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const event of events) {
+        try {
+          await pool.query(insertQuery, [
+            anonymousPlayerId,
+            event.eventName || 'unknown_event',
+            event.eventCategory || 'anonymous',
+            JSON.stringify(event.parameters || {}),
+            sessionId,
+            platform,
+            appVersion
+          ]);
+          successCount++;
+        } catch (eventError) {
+          console.error(`📊 ❌ Failed to insert event ${event.eventName}:`, eventError);
+          errorCount++;
+        }
+      }
+
+      res.json({
+        success: true,
+        message: 'Anonymous analytics batch processed',
+        playerId: anonymousPlayerId,
+        processed: {
+          total: events.length,
+          success: successCount,
+          errors: errorCount
+        }
+      });
+
+    } catch (error) {
+      console.error('📊 ❌ Anonymous analytics batch error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to process anonymous analytics batch'
+      });
+    }
+  }
+);
+
 module.exports = router;

@@ -287,7 +287,7 @@ class SmartNotificationScheduler {
           p.player_name,
           p.timezone,
           p.last_game_played,
-          p.total_games_played,
+          p.total_games as total_games_played,
           p.best_score,
           p.notification_preferences
         FROM fcm_tokens ft 

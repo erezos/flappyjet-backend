@@ -140,7 +140,7 @@ module.exports = (db) => {
       const playerId = req.user.playerId;
 
       const player = await db.query(
-        `SELECT id, nickname, best_score, best_streak, total_games_played,
+        `SELECT id, nickname, best_score, best_streak, total_games as total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
                 heart_booster_expiry, auto_refill_expiry, created_at, last_active_at
          FROM players WHERE id = $1`,

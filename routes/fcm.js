@@ -344,5 +344,80 @@ router.get('/stats', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * Register FCM token for anonymous users
+ * POST /api/fcm/register-anonymous
+ */
+router.post('/register-anonymous', [
+  rateLimitMiddleware('anonymous_fcm', 60, 10), // Lower limit for anonymous users
+  body('fcmToken').isString().isLength({ min: 100 }).withMessage('Invalid FCM token'),
+  body('deviceId').isString().isLength({ min: 10, max: 255 }).withMessage('Device ID required'),
+  body('platform').isIn(['android', 'ios']).withMessage('Platform must be android or ios'),
+  body('timezone').optional().isString().withMessage('Timezone must be a string'),
+  body('appVersion').optional().isString().withMessage('App version must be a string'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array()
+      });
+    }
+
+    const { fcmToken, deviceId, platform, timezone, appVersion } = req.body;
+    const anonymousPlayerId = `anon_${deviceId}`;
+
+    // Only register Android tokens (iOS uses local notifications)
+    if (platform !== 'android') {
+      return res.json({
+        success: true,
+        message: 'iOS uses local notifications, token not stored'
+      });
+    }
+
+    logger.info(`🔥 Registering anonymous FCM token for device: ${deviceId}`);
+
+    // Check if token already exists for this device
+    const existingToken = await pool.query(
+      'SELECT id FROM fcm_tokens WHERE device_id = $1',
+      [deviceId]
+    );
+
+    if (existingToken.rows.length > 0) {
+      // Update existing token
+      await pool.query(`
+        UPDATE fcm_tokens 
+        SET fcm_token = $1, platform = $2, timezone = $3, app_version = $4, updated_at = NOW()
+        WHERE device_id = $5
+      `, [fcmToken, platform, timezone || 'UTC', appVersion || '1.5.3', deviceId]);
+      
+      logger.info(`🔥 Updated anonymous FCM token for device ${deviceId}`);
+    } else {
+      // Insert new token
+      await pool.query(`
+        INSERT INTO fcm_tokens (player_id, device_id, fcm_token, platform, timezone, app_version, is_anonymous, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, true, NOW(), NOW())
+      `, [anonymousPlayerId, deviceId, fcmToken, platform, timezone || 'UTC', appVersion || '1.5.3']);
+      
+      logger.info(`🔥 Registered new anonymous FCM token for device ${deviceId}`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Anonymous FCM token registered successfully',
+      playerId: anonymousPlayerId
+    });
+
+  } catch (error) {
+    logger.error('🔥 ❌ Anonymous FCM registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to register anonymous FCM token'
+    });
+  }
+});
+
   return router;
 };
