@@ -424,7 +424,7 @@ router.post('/register-anonymous', [
       // Update existing token
       await req.db.query(`
         UPDATE fcm_tokens
-        SET fcm_token = $1, platform = $2, timezone = $3, updated_at = NOW()
+        SET token = $1, platform = $2, timezone = $3, updated_at = NOW()
         WHERE player_id = $4
       `, [fcmToken, platform, timezone || 'UTC', actualPlayerId]);
 
@@ -432,7 +432,7 @@ router.post('/register-anonymous', [
     } else {
       // Insert new token
       await req.db.query(`
-        INSERT INTO fcm_tokens (player_id, fcm_token, platform, timezone, created_at, updated_at)
+        INSERT INTO fcm_tokens (player_id, token, platform, timezone, created_at, updated_at)
         VALUES ($1, $2, $3, $4, NOW(), NOW())
       `, [actualPlayerId, fcmToken, platform, timezone || 'UTC']);
 
