@@ -63,7 +63,7 @@ const authenticateDashboard = (req, res, next) => {
 /**
  * POST /api/analytics/v2/event - Enhanced single event tracking
  */
-router.post('/v2/event', async (req, res) => {
+router.post('/event', async (req, res) => {
   try {
     const { 
       event_name, 
@@ -150,7 +150,7 @@ router.post('/v2/event', async (req, res) => {
 /**
  * POST /api/analytics/v2/batch - Enhanced batch event processing
  */
-router.post('/v2/batch', async (req, res) => {
+router.post('/batch', async (req, res) => {
   try {
     const { events } = req.body;
     
@@ -285,7 +285,7 @@ router.post('/v2/batch', async (req, res) => {
  * GET /api/analytics/v2/dashboard/kpis - Comprehensive KPI Dashboard
  * Returns all 16 KPIs in a single optimized query
  */
-router.get('/v2/dashboard/kpis', authenticateDashboard, async (req, res) => {
+router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days) || 30, 90);
     const startDate = new Date();
@@ -452,7 +452,7 @@ router.get('/v2/dashboard/kpis', authenticateDashboard, async (req, res) => {
 /**
  * GET /api/analytics/v2/dashboard/retention - Detailed retention analysis
  */
-router.get('/v2/dashboard/retention', authenticateDashboard, async (req, res) => {
+router.get('/dashboard/retention', authenticateDashboard, async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days) || 30, 90);
     
@@ -531,7 +531,7 @@ router.get('/v2/dashboard/retention', authenticateDashboard, async (req, res) =>
 /**
  * GET /api/analytics/v2/dashboard/monetization - Revenue and monetization metrics
  */
-router.get('/v2/dashboard/monetization', authenticateDashboard, async (req, res) => {
+router.get('/dashboard/monetization', authenticateDashboard, async (req, res) => {
   try {
     const days = Math.min(parseInt(req.query.days) || 30, 90);
     
