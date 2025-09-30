@@ -426,8 +426,8 @@ module.exports = (db) => {
 
         // Log the sync event for analytics
         await db.query(
-          `INSERT INTO analytics_events (player_id, event_type, event_data, created_at)
-           VALUES ($1, 'currency_sync', $2, NOW())`,
+          `INSERT INTO analytics_events (player_id, event_type, event_category, event_data, created_at)
+           VALUES ($1, 'currency_sync', 'player_action', $2, NOW())`,
           [playerId, JSON.stringify({
             syncReason: syncReason || 'manual',
             clientCoins: coins,
