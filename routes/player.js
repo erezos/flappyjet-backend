@@ -140,7 +140,7 @@ module.exports = (db) => {
       const playerId = req.user.playerId;
 
       const player = await db.query(
-        `SELECT id, nickname, best_score, best_streak, total_games as total_games_played,
+        `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
                 heart_booster_expiry, auto_refill_expiry, created_at, last_active_at
          FROM players WHERE id = $1`,
@@ -403,9 +403,18 @@ module.exports = (db) => {
 
         const currentData = currentPlayer.rows[0];
         
-        // Only update if client values are higher (conflict resolution)
-        const finalCoins = Math.max(currentData.current_coins || 0, coins);
-        const finalGems = Math.max(currentData.current_gems || 0, gems);
+        // Smart conflict resolution based on sync reason
+        let finalCoins, finalGems;
+        
+        if (syncReason === 'coin_spending' || syncReason === 'gem_spending') {
+          // For spending scenarios, trust the client (lower values)
+          finalCoins = coins;
+          finalGems = gems;
+        } else {
+          // For other scenarios (conflict resolution), take the higher value
+          finalCoins = Math.max(currentData.current_coins || 0, coins);
+          finalGems = Math.max(currentData.current_gems || 0, gems);
+        }
 
         // Update player currency
         await db.query(

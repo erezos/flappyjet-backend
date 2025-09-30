@@ -3,7 +3,6 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { rateLimitMiddleware } = require('../middleware/rate-limit');
 const FCMService = require('../services/fcm-service');
 const logger = require('../utils/logger');
 
@@ -341,115 +340,6 @@ router.get('/stats', authenticateToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch FCM statistics'
-    });
-  }
-});
-
-/**
- * Register FCM token for anonymous users
- * POST /api/fcm/register-anonymous
- */
-router.post('/register-anonymous', [
-  rateLimitMiddleware('anonymous_fcm', 60, 10), // Lower limit for anonymous users
-  body('fcmToken').isString().isLength({ min: 100 }).withMessage('Invalid FCM token'),
-  body('deviceId').isString().isLength({ min: 10, max: 255 }).withMessage('Device ID required'),
-  body('platform').isIn(['android', 'ios']).withMessage('Platform must be android or ios'),
-  body('timezone').optional().isString().withMessage('Timezone must be a string'),
-  body('appVersion').optional().isString().withMessage('App version must be a string'),
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation failed',
-        details: errors.array()
-      });
-    }
-
-    const { fcmToken, deviceId, platform, timezone, appVersion } = req.body;
-    const anonymousPlayerId = `anon_${deviceId}`;
-
-    // Only register Android tokens (iOS uses local notifications)
-    if (platform !== 'android') {
-      return res.json({
-        success: true,
-        message: 'iOS uses local notifications, token not stored'
-      });
-    }
-
-    logger.info(`🔥 Registering anonymous FCM token for device: ${deviceId}`);
-
-    // First, ensure the anonymous player exists in the database
-    // We need to find the actual UUID player_id for this device
-    let actualPlayerId = anonymousPlayerId;
-
-    try {
-      // Look for existing player by device_id (anonymous or authenticated)
-      const existingPlayer = await req.db.query(
-        'SELECT id FROM players WHERE device_id = $1',
-        [deviceId]
-      );
-
-      if (existingPlayer.rows.length > 0) {
-        // Use existing player
-        actualPlayerId = existingPlayer.rows[0].id;
-        logger.info(`🔥 Found existing player: ${actualPlayerId}`);
-      } else {
-        // Create new anonymous player
-        const newPlayer = await req.db.query(`
-          INSERT INTO players (device_id, nickname, platform, app_version, country_code, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-          RETURNING id
-        `, [deviceId, 'Anonymous Player', platform, appVersion || '1.5.3', 'US']);
-
-        actualPlayerId = newPlayer.rows[0].id;
-        logger.info(`🔥 Created new anonymous player: ${actualPlayerId}`);
-      }
-    } catch (error) {
-      logger.error('🔥 Failed to create/find anonymous player:', error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create anonymous player'
-      });
-    }
-
-    // Now register FCM token with the proper UUID player_id
-    const existingToken = await req.db.query(
-      'SELECT id FROM fcm_tokens WHERE player_id = $1',
-      [actualPlayerId]
-    );
-
-    if (existingToken.rows.length > 0) {
-      // Update existing token
-      await req.db.query(`
-        UPDATE fcm_tokens
-        SET token = $1, platform = $2, timezone = $3, updated_at = NOW()
-        WHERE player_id = $4
-      `, [fcmToken, platform, timezone || 'UTC', actualPlayerId]);
-
-      logger.info(`🔥 Updated FCM token for player ${actualPlayerId}`);
-    } else {
-      // Insert new token
-      await req.db.query(`
-        INSERT INTO fcm_tokens (player_id, token, platform, timezone, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, NOW(), NOW())
-      `, [actualPlayerId, fcmToken, platform, timezone || 'UTC']);
-
-      logger.info(`🔥 Registered new FCM token for player ${actualPlayerId}`);
-    }
-
-    res.json({
-      success: true,
-      message: 'Anonymous FCM token registered successfully',
-      playerId: anonymousPlayerId
-    });
-
-  } catch (error) {
-    logger.error('🔥 ❌ Anonymous FCM registration error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to register anonymous FCM token'
     });
   }
 });

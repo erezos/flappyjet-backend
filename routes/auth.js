@@ -6,7 +6,6 @@ const { v4: uuidv4 } = require('uuid');
 const Joi = require('joi');
 const logger = require('../utils/logger');
 const authAnalytics = require('../utils/auth-analytics');
-const GeoIPService = require('../services/geoip-service');
 
 module.exports = (db) => {
   const router = express.Router();
@@ -96,21 +95,15 @@ module.exports = (db) => {
       // We assume 'US' might be a default/hardcoded value from older app versions
       if (!detectedCountry) {
         // No country provided - try IP detection
-        const realIP = GeoIPService.extractRealIP(req);
-        detectedCountry = await GeoIPService.getCountryFromIP(realIP) || 'US';
-        logger.info(`🌍 No country provided, IP detection result: ${detectedCountry}`);
+        detectedCountry = getCountryFromIP(req) || 'US';
       } else if (countryCode === 'US') {
         // Client sent 'US' - could be real US user or hardcoded default
         // Try IP detection as additional validation, but keep 'US' if IP fails
-        const realIP = GeoIPService.extractRealIP(req);
-        const ipCountry = await GeoIPService.getCountryFromIP(realIP);
-        if (ipCountry) {
-          detectedCountry = ipCountry;
-          if (ipCountry !== 'US') {
-            logger.info(`🌍 IP-based country override: Client sent 'US' but IP suggests '${ipCountry}'`);
-          }
-        } else {
-          detectedCountry = 'US';
+        const ipCountry = getCountryFromIP(req);
+        detectedCountry = ipCountry || 'US';
+        
+        if (ipCountry && ipCountry !== 'US') {
+          console.log(`🌍 IP-based country override: Client sent 'US' but IP suggests '${ipCountry}'`);
         }
       }
       // For any other country code (FR, DE, JP, etc.), trust the client
@@ -167,7 +160,7 @@ module.exports = (db) => {
 
       // Get player data
       const playerData = await db.query(
-        `SELECT id, nickname, best_score, best_streak, total_games as total_games_played,
+        `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
                 heart_booster_expiry, created_at
          FROM players WHERE id = $1`,
@@ -252,7 +245,7 @@ module.exports = (db) => {
 
       // Find player by device ID
       const player = await db.query(
-        `SELECT id, nickname, best_score, best_streak, total_games as total_games_played,
+        `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
                 heart_booster_expiry, created_at, is_banned, ban_reason
          FROM players WHERE device_id = $1`,
@@ -433,7 +426,7 @@ module.exports = (db) => {
   router.get('/profile', authenticateToken, async (req, res) => {
     try {
       const player = await db.query(
-        `SELECT id, nickname, best_score, best_streak, total_games as total_games_played,
+        `SELECT id, nickname, best_score, best_streak, total_games_played,
                 current_coins, current_gems, current_hearts, is_premium,
                 heart_booster_expiry, created_at, last_active_at, platform,
                 total_coins_earned, total_gems_earned
@@ -507,7 +500,35 @@ module.exports = (db) => {
     }
   }
 
-  // 🌍 Country detection now handled by GeoIPService
+  /// 🌍 Get country code from IP address
+  function getCountryFromIP(req) {
+    try {
+      // Get real IP address (handle proxies, load balancers)
+      const forwarded = req.headers['x-forwarded-for'];
+      const ip = forwarded ? forwarded.split(',')[0].trim() : req.connection.remoteAddress;
+      
+      // Basic IP-to-country mapping (simplified)
+      // In production, you'd use a service like MaxMind GeoIP or ip-api.com
+      if (!ip || ip === '127.0.0.1' || ip === '::1' || ip.startsWith('192.168.') || ip.startsWith('10.')) {
+        return null; // Local/private IP
+      }
+
+      // For now, we'll use a simple heuristic based on common IP ranges
+      // This is a basic implementation - consider using a proper GeoIP service
+      logger.info(`🌍 Detecting country for IP: ${ip}`);
+      
+      // You can integrate with services like:
+      // - MaxMind GeoIP2
+      // - ip-api.com
+      // - ipinfo.io
+      // For now, return null to use client-provided country
+      
+      return null;
+    } catch (error) {
+      logger.error('Error detecting country from IP:', error);
+      return null;
+    }
+  }
 
   /// 📊 Get authentication analytics (admin only)
   router.get('/analytics', async (req, res) => {

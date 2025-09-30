@@ -305,11 +305,10 @@ class LeaderboardManager {
         playerId, playerName, score, jetSkin, theme, JSON.stringify(gameData)
       ]);
 
-      // Update or create player record with current app version and country
-      // FIXED: Include device_id and handle the unique constraint properly
+      // Update or create player record
       const upsertPlayerQuery = `
-        INSERT INTO players (player_id, player_name, device_id, best_score, total_games, jet_skin, theme, platform, app_version, country_code, is_anonymous)
-        VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8, $9, false)
+        INSERT INTO players (player_id, player_name, best_score, total_games, jet_skin, theme)
+        VALUES ($1, $2, $3, 1, $4, $5)
         ON CONFLICT (player_id) 
         DO UPDATE SET 
           player_name = EXCLUDED.player_name,
@@ -317,19 +316,12 @@ class LeaderboardManager {
           total_games = players.total_games + 1,
           jet_skin = EXCLUDED.jet_skin,
           theme = EXCLUDED.theme,
-          platform = COALESCE(EXCLUDED.platform, players.platform),
-          app_version = COALESCE(EXCLUDED.app_version, players.app_version),
-          country_code = COALESCE(EXCLUDED.country_code, players.country_code),
-          device_id = COALESCE(EXCLUDED.device_id, players.device_id),
           updated_at = NOW()
-        RETURNING best_score, (best_score = $4) as is_new_best
+        RETURNING best_score, (best_score = $3) as is_new_best
       `;
 
       const playerResult = await this.db.query(upsertPlayerQuery, [
-        playerId, playerName, gameData?.deviceId || 'unknown_device', score, jetSkin, theme, 
-        gameData?.platform || 'unknown', 
-        gameData?.appVersion || gameData?.app_version || '1.0.0',
-        gameData?.countryCode || gameData?.country_code || 'US'
+        playerId, playerName, score, jetSkin, theme
       ]);
 
       const isNewBest = playerResult.rows[0].is_new_best;
@@ -414,88 +406,6 @@ class LeaderboardManager {
       return {
         success: false,
         error: 'Failed to update nickname: ' + error.message
-      };
-    }
-  }
-
-  /**
-   * Submit anonymous score (no authentication required)
-   * Creates or updates anonymous player records
-   */
-  async submitAnonymousScore({
-    deviceId,
-    playerId,
-    playerName,
-    score,
-    platform = 'unknown',
-    appVersion = '1.0.0',
-    countryCode = 'US',
-    jetSkin = 'jets/sky_jet.png',
-    theme = 'sky',
-    gameData = {}
-  }) {
-    try {
-      console.log(`🎯 Processing anonymous score submission for ${playerName} (${playerId})`);
-
-      // Record the game session first
-      const sessionQuery = `
-        INSERT INTO game_sessions (player_id, player_name, score, survival_time, jet_skin, theme, game_data, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-      `;
-
-      const survivalTime = gameData.survivalTime || gameData.sessionLength || 0;
-      await this.db.query(sessionQuery, [
-        playerId, playerName, score, survivalTime, jetSkin, theme, JSON.stringify(gameData)
-      ]);
-
-      // Create or update anonymous player record
-      const upsertAnonymousPlayerQuery = `
-        INSERT INTO players (
-          player_id, player_name, device_id, best_score, total_games, 
-          jet_skin, theme, platform, app_version, country_code, 
-          is_anonymous, created_at, updated_at
-        )
-        VALUES ($1, $2, $3, $4, 1, $5, $6, $7, $8, $9, true, NOW(), NOW())
-        ON CONFLICT (player_id) 
-        DO UPDATE SET 
-          player_name = EXCLUDED.player_name,
-          best_score = GREATEST(players.best_score, EXCLUDED.best_score),
-          total_games = players.total_games + 1,
-          jet_skin = EXCLUDED.jet_skin,
-          theme = EXCLUDED.theme,
-          platform = COALESCE(EXCLUDED.platform, players.platform),
-          app_version = COALESCE(EXCLUDED.app_version, players.app_version),
-          country_code = COALESCE(EXCLUDED.country_code, players.country_code),
-          updated_at = NOW()
-        RETURNING best_score, (best_score = $4) as is_new_best
-      `;
-
-      const playerResult = await this.db.query(upsertAnonymousPlayerQuery, [
-        playerId, playerName, deviceId, score, jetSkin, theme, 
-        platform, appVersion, countryCode
-      ]);
-
-      const isNewBest = playerResult.rows[0]?.is_new_best || false;
-
-      // Clear relevant caches
-      await this.cache.delete(this.CACHE_KEYS.GLOBAL_LEADERBOARD + ':*');
-      await this.cache.delete(this.CACHE_KEYS.PLAYER_SCORES(playerId));
-      await this.cache.delete(this.CACHE_KEYS.PLAYER_RANK(playerId));
-
-      console.log(`🎯 ✅ Anonymous player ${playerName} processed: Score ${score}, New Best: ${isNewBest}`);
-
-      return {
-        success: true,
-        newBest: isNewBest,
-        playerId: playerId,
-        anonymous: true
-      };
-
-    } catch (error) {
-      console.error('🎯 ❌ Anonymous score submission error:', error);
-      return {
-        success: false,
-        error: error.message
       };
     }
   }

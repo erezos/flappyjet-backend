@@ -26,6 +26,7 @@ require('dotenv').config();
 
 // Import route modules
 const authRoutes = require('./routes/auth');
+const anonymousRoutes = require('./routes/anonymous');
 const playerRoutes = require('./routes/player');
 const leaderboardRoutes = require('./routes/leaderboard');
 const enhancedLeaderboardRoutes = require('./routes/enhanced-leaderboard');
@@ -34,6 +35,7 @@ const missionsRoutes = require('./routes/missions');
 const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
+const analyticsV2Routes = require('./routes/analytics-v2');
 const dailyStreakRoutes = require('./routes/daily-streak');
 const inventoryRoutes = require('./routes/inventory');
 const healthRoutes = require('./routes/health');
@@ -324,6 +326,7 @@ app.locals.leaderboardManager = leaderboardManager;
 // API Routes (only if database is available)
 if (db) {
   app.use('/api/auth', authRoutes(db));
+  app.use('/api/anonymous', anonymousRoutes(db));
   app.use('/api/player', playerRoutes(db));
   app.use('/api/leaderboard', leaderboardRoutes);
   app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
@@ -335,6 +338,7 @@ if (db) {
   app.use('/api/inventory', inventoryRoutes(db));
   app.use('/api/health', healthRoutes);
   app.use('/api/analytics', analyticsRoutes);
+  app.use('/api/analytics/v2', analyticsV2Routes);
 // app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));
 
