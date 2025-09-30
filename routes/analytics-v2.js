@@ -100,7 +100,7 @@ router.post('/v2/event', async (req, res) => {
       user_type: user_type || 'unknown',
       player_id: player_id || null,
       timestamp: timestamp || Date.now(),
-      app_version: '1.4.9',
+      app_version: req.headers['x-app-version'] || '1.5.5',
       platform: req.headers['user-agent']?.includes('Android') ? 'android' : 'ios',
       ip_address: req.ip,
     };
@@ -209,7 +209,7 @@ router.post('/v2/batch', async (req, res) => {
             user_type: user_type || 'unknown',
             player_id: player_id || null,
             timestamp: timestamp || Date.now(),
-            app_version: '1.4.9',
+            app_version: req.headers['x-app-version'] || '1.5.5',
             platform: req.headers['user-agent']?.includes('Android') ? 'android' : 'ios',
             ip_address: req.ip,
           };
