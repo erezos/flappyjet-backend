@@ -1,20 +1,14 @@
 // 📊 Enhanced Analytics Routes v2 - Comprehensive KPI Dashboard API
 // Handles all 16 KPIs with backward compatibility for existing endpoints
 // Production-ready with Railway Pro optimizations
+// Updated: 2025-09-30 - Force Railway redeployment
 
 const express = require('express');
-const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
-const router = express.Router();
 
-// Database connection with Railway Pro optimizations
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20, // Increased connection pool for Railway Pro
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// Export a function that accepts the database connection
+module.exports = (db) => {
+  const router = express.Router();
 
 // ============================================================================
 // MIDDLEWARE
@@ -129,7 +123,7 @@ router.post('/v2/event', async (req, res) => {
       enrichedData.ip_address
     ];
 
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     // Handle special events that need additional processing
     await handleSpecialEventV2(event_name, enrichedData);
@@ -241,7 +235,7 @@ router.post('/v2/batch', async (req, res) => {
           RETURNING id, event_name
         `;
 
-        const result = await pool.query(query, values);
+        const result = await db.query(query, values);
         insertedEvents.push(...result.rows);
 
       } catch (batchError) {
@@ -424,7 +418,7 @@ router.get('/v2/dashboard/kpis', authenticateDashboard, async (req, res) => {
       LIMIT $2
     `;
     
-    const result = await pool.query(query, [startDate, days]);
+    const result = await db.query(query, [startDate, days]);
     
     // Calculate summary statistics
     const summary = calculateKPISummary(result.rows);
@@ -507,7 +501,7 @@ router.get('/v2/dashboard/retention', authenticateDashboard, async (req, res) =>
       ORDER BY install_week DESC
     `;
     
-    const result = await pool.query(query);
+    const result = await db.query(query);
     
     res.json({
       success: true,
@@ -579,7 +573,7 @@ router.get('/v2/dashboard/monetization', authenticateDashboard, async (req, res)
       ORDER BY date DESC
     `;
     
-    const result = await pool.query(query);
+    const result = await db.query(query);
     
     res.json({
       success: true,
@@ -696,4 +690,5 @@ function calculateKPISummary(data) {
   };
 }
 
-module.exports = router;
+  return router;
+};

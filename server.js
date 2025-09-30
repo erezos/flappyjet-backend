@@ -338,7 +338,7 @@ if (db) {
   app.use('/api/inventory', inventoryRoutes(db));
   app.use('/api/health', healthRoutes);
   app.use('/api/analytics', analyticsRoutes);
-  app.use('/api/analytics/v2', analyticsV2Routes);
+  app.use('/api/analytics/v2', analyticsV2Routes(db));
 // app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));
 
