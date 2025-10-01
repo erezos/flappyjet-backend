@@ -684,6 +684,7 @@ function calculateKPISummary(data) {
     avg_arpu: data.reduce((sum, row) => sum + (row.arpu || 0), 0) / data.length,
     total_revenue: data.reduce((sum, row) => sum + (row.revenue_usd || 0), 0),
     total_purchases: data.reduce((sum, row) => sum + (row.purchases || 0), 0),
+    total_games: data.reduce((sum, row) => sum + (row.total_games || 0), 0), // 🔥 FIX: Added missing total_games
     total_continues: data.reduce((sum, row) => sum + (row.continues_used || 0), 0),
     total_missions_completed: data.reduce((sum, row) => sum + (row.missions_completed || 0), 0),
     total_achievements_unlocked: data.reduce((sum, row) => sum + (row.achievements_unlocked || 0), 0),
