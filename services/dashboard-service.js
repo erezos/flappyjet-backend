@@ -46,13 +46,13 @@ class DashboardService {
       const cached = this.getCachedData(cacheKey);
       
       if (cached) {
-        this.setCacheHeaders(res, cached);
+        this.setCacheHeaders(res, cached, req);
         return res.send(cached.data);
       }
 
       const dashboardHTML = await this.generateDashboardHTML();
       this.setCachedData(cacheKey, dashboardHTML);
-      this.setCacheHeaders(res, { data: dashboardHTML, etag: this.generateETag(dashboardHTML) });
+      this.setCacheHeaders(res, { data: dashboardHTML, etag: this.generateETag(dashboardHTML) }, req);
       
       res.send(dashboardHTML);
     } catch (error) {
@@ -136,7 +136,7 @@ class DashboardService {
     return require('crypto').createHash('md5').update(data).digest('hex');
   }
 
-  setCacheHeaders(res, cached) {
+  setCacheHeaders(res, cached, req) {
     res.set({
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'public, max-age=300, s-maxage=300',
@@ -144,7 +144,7 @@ class DashboardService {
       'Last-Modified': new Date(cached.timestamp).toUTCString()
     });
     
-    if (req.headers['if-none-match'] === cached.etag) {
+    if (req && req.headers['if-none-match'] === cached.etag) {
       res.status(304).end();
     }
   }
