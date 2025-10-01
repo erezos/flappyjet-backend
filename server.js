@@ -293,14 +293,12 @@ const rateLimitMiddleware = (req, res, next) => {
 
 app.use(rateLimitMiddleware);
 
-// Serve static dashboard files (always available)
-app.use('/analytics', express.static('analytics'));
-app.use('/dashboard', express.static('public'));
+// Initialize production dashboard service
+const DashboardService = require('./services/dashboard-service');
+const dashboardService = new DashboardService(db, logger);
 
-// Dashboard root route
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// Initialize dashboard routes
+dashboardService.initializeRoutes(app);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
