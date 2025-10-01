@@ -7,6 +7,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
+const path = require('path');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -292,6 +293,15 @@ const rateLimitMiddleware = (req, res, next) => {
 
 app.use(rateLimitMiddleware);
 
+// Serve static dashboard files (always available)
+app.use('/analytics', express.static('analytics'));
+app.use('/dashboard', express.static('public'));
+
+// Dashboard root route
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   logger.info('🏥 Health check requested');
@@ -345,9 +355,6 @@ app.use('/api/fcm', fcmRoutes(db));
 // Analytics Dashboard Routes
 app.use('/api/analytics/dashboard', analyticsDashboardRoutes);
 
-// Serve static dashboard files
-app.use('/analytics', express.static('analytics'));
-app.use('/dashboard', express.static('public'));
   logger.info('🚂 ✅ All API routes initialized');
 } else {
   // Minimal routes for health check
