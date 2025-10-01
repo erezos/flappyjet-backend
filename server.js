@@ -347,6 +347,7 @@ app.use('/api/analytics/dashboard', analyticsDashboardRoutes);
 
 // Serve static dashboard files
 app.use('/analytics', express.static('analytics'));
+app.use('/dashboard', express.static('public'));
   logger.info('🚂 ✅ All API routes initialized');
 } else {
   // Minimal routes for health check
