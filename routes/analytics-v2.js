@@ -344,7 +344,7 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
           END) as users_completed_missions,
           COUNT(DISTINCT CASE WHEN event_name = 'daily_mission_cycle_complete' AND (parameters->>'all_missions_completed')::boolean THEN 
             CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
-          END) as users_all_missions,
+          END) as users_completed_all_missions,
           
           -- 5. Achievements - FIXED: Count unique achievements per user
           COUNT(DISTINCT CASE WHEN event_name = 'achievement_unlock' THEN 
@@ -362,12 +362,12 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
             parameters->>'continue_type' = 'ad' OR parameters->>'gems_cost' IS NOT NULL
           ) THEN 
             CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
-          END) as continues_via_ad,
+          END) as continues_ad,
           COUNT(DISTINCT CASE WHEN event_name = 'continue_used' AND (
             parameters->>'continue_type' = 'gems' OR (parameters->>'gems_cost')::int > 0
           ) THEN 
             CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
-          END) as continues_via_gems,
+          END) as continues_gems,
           
           -- 7. Ad completion rate - FIXED: Count unique ad sessions
           COUNT(DISTINCT CASE WHEN event_name IN ('ad_shown', 'ad_viewed') THEN 
@@ -448,8 +448,8 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
         -- Mission metrics
         dm.missions_completed,
         dm.users_completed_missions,
-        dm.users_all_missions,
-        CASE WHEN dm.users_completed_missions > 0 THEN ROUND(dm.users_all_missions::numeric / dm.users_completed_missions * 100, 2) ELSE 0 END as mission_completion_rate,
+        dm.users_completed_all_missions,
+        CASE WHEN dm.users_completed_missions > 0 THEN ROUND(dm.users_completed_all_missions::numeric / dm.users_completed_missions * 100, 2) ELSE 0 END as mission_completion_rate,
         
         -- Achievement metrics
         dm.achievements_unlocked,
@@ -458,8 +458,8 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
         
         -- Continue metrics
         dm.continues_used,
-        dm.continues_via_ad,
-        dm.continues_via_gems,
+        dm.continues_ad,
+        dm.continues_gems,
         CASE WHEN dm.dau > 0 THEN ROUND(dm.continues_used::numeric / dm.dau, 2) ELSE 0 END as avg_continues_per_user,
         
         -- Ad metrics
