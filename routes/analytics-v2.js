@@ -404,22 +404,33 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
         WHERE created_at >= $1
         GROUP BY DATE(created_at)
       ),
-      retention_metrics AS (
+      user_install_dates AS (
         SELECT 
-          DATE(created_at) as date,
-          COUNT(DISTINCT CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END) as cohort_size,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_1' AND (parameters->>'is_retained')::boolean THEN 
-            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
-          END) as day1_retained,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_7' AND (parameters->>'is_retained')::boolean THEN 
-            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
-          END) as day7_retained,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_30' AND (parameters->>'is_retained')::boolean THEN 
-            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
-          END) as day30_retained
+          CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END as user_id,
+          DATE(MIN(created_at)) as install_date
         FROM analytics_events_v2
         WHERE created_at >= $1
-        GROUP BY DATE(created_at)
+        GROUP BY CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END
+      ),
+      retention_metrics AS (
+        SELECT 
+          DATE(ae.created_at) as date,
+          COUNT(DISTINCT uid.user_id) as cohort_size,
+          COUNT(DISTINCT CASE 
+            WHEN DATE(ae.created_at) = uid.install_date + INTERVAL '1 day' THEN uid.user_id 
+          END) as day1_retained,
+          COUNT(DISTINCT CASE 
+            WHEN DATE(ae.created_at) = uid.install_date + INTERVAL '7 days' THEN uid.user_id 
+          END) as day7_retained,
+          COUNT(DISTINCT CASE 
+            WHEN DATE(ae.created_at) = uid.install_date + INTERVAL '30 days' THEN uid.user_id 
+          END) as day30_retained
+        FROM analytics_events_v2 ae
+        JOIN user_install_dates uid ON (
+          CASE WHEN ae.player_id IS NOT NULL THEN ae.player_id ELSE ae.session_id END = uid.user_id
+        )
+        WHERE ae.created_at >= $1
+        GROUP BY DATE(ae.created_at)
       )
       SELECT 
         dm.date,
@@ -526,45 +537,47 @@ router.get('/dashboard/retention', authenticateDashboard, async (req, res) => {
     const query = `
       WITH user_cohorts AS (
         SELECT 
-          player_id,
+          CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END as user_id,
           DATE(MIN(created_at)) as install_date,
           DATE_TRUNC('week', MIN(created_at))::DATE as install_week
         FROM analytics_events_v2
         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
-        GROUP BY player_id
+        GROUP BY CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END
       ),
       retention_events AS (
         SELECT 
-          uc.player_id,
+          uc.user_id,
           uc.install_date,
           uc.install_week,
           DATE(ae.created_at) as activity_date,
           DATE(ae.created_at) - uc.install_date as days_since_install
         FROM user_cohorts uc
-        JOIN analytics_events_v2 ae ON uc.player_id = ae.player_id
+        JOIN analytics_events_v2 ae ON (
+          CASE WHEN ae.player_id IS NOT NULL THEN ae.player_id ELSE ae.session_id END = uc.user_id
+        )
         WHERE ae.created_at >= CURRENT_DATE - INTERVAL '${days} days'
       )
       SELECT 
         install_week,
-        COUNT(DISTINCT player_id) as cohort_size,
-        COUNT(DISTINCT CASE WHEN days_since_install = 1 THEN player_id END) as day1_retained,
-        COUNT(DISTINCT CASE WHEN days_since_install = 7 THEN player_id END) as day7_retained,
-        COUNT(DISTINCT CASE WHEN days_since_install = 30 THEN player_id END) as day30_retained,
+        COUNT(DISTINCT user_id) as cohort_size,
+        COUNT(DISTINCT CASE WHEN days_since_install = 1 THEN user_id END) as day1_retained,
+        COUNT(DISTINCT CASE WHEN days_since_install = 7 THEN user_id END) as day7_retained,
+        COUNT(DISTINCT CASE WHEN days_since_install = 30 THEN user_id END) as day30_retained,
         ROUND(
-          COUNT(DISTINCT CASE WHEN days_since_install = 1 THEN player_id END)::numeric / 
-          COUNT(DISTINCT player_id) * 100, 2
+          COUNT(DISTINCT CASE WHEN days_since_install = 1 THEN user_id END)::numeric / 
+          COUNT(DISTINCT user_id) * 100, 2
         ) as day1_retention_rate,
         ROUND(
-          COUNT(DISTINCT CASE WHEN days_since_install = 7 THEN player_id END)::numeric / 
-          COUNT(DISTINCT player_id) * 100, 2
+          COUNT(DISTINCT CASE WHEN days_since_install = 7 THEN user_id END)::numeric / 
+          COUNT(DISTINCT user_id) * 100, 2
         ) as day7_retention_rate,
         ROUND(
-          COUNT(DISTINCT CASE WHEN days_since_install = 30 THEN player_id END)::numeric / 
-          COUNT(DISTINCT player_id) * 100, 2
+          COUNT(DISTINCT CASE WHEN days_since_install = 30 THEN user_id END)::numeric / 
+          COUNT(DISTINCT user_id) * 100, 2
         ) as day30_retention_rate
       FROM retention_events
       GROUP BY install_week
-      HAVING COUNT(DISTINCT player_id) >= 5
+      HAVING COUNT(DISTINCT user_id) >= 5
       ORDER BY install_week DESC
     `;
     
