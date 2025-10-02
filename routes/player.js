@@ -330,8 +330,8 @@ module.exports = (db) => {
 
         // Log analytics event
         await db.query(
-          `INSERT INTO analytics_events (player_id, event_type, event_data, created_at)
-           VALUES ($1, 'auto_refill_activated', $2, NOW())`,
+          `INSERT INTO analytics_events (player_id, event_type, event_category, event_data, created_at)
+           VALUES ($1, 'auto_refill_activated', 'player_action', $2, NOW())`,
           [playerId, JSON.stringify({ 
             durationHours, 
             expiryTime: finalExpiryTime,
