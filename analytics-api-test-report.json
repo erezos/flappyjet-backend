@@ -1,0 +1,66 @@
+{
+  "timestamp": "2025-10-02T19:15:07.367Z",
+  "summary": {
+    "totalTests": 5,
+    "passedTests": 5,
+    "failedTests": 0,
+    "successRate": "100.0%"
+  },
+  "results": [
+    {
+      "test": "KPI Dashboard",
+      "status": "PASS",
+      "details": {
+        "status": 200,
+        "dataPoints": 3,
+        "summaryKeys": 11,
+        "totalGames": "050336330",
+        "avgDAU": 1360924.3333333333
+      }
+    },
+    {
+      "test": "Batch Endpoint",
+      "status": "PASS",
+      "details": {
+        "status": 200,
+        "inserted": 1,
+        "total": 1
+      }
+    },
+    {
+      "test": "Retention Endpoint",
+      "status": "PASS",
+      "details": {
+        "status": 200,
+        "cohorts": 1,
+        "avgRetention": {
+          "day1": 5.03,
+          "day7": 0,
+          "day30": 0
+        }
+      }
+    },
+    {
+      "test": "Monetization Endpoint",
+      "status": "PASS",
+      "details": {
+        "status": 200,
+        "dataPoints": 3,
+        "totalRevenue": "039.9875.240",
+        "totalPurchases": "02160",
+        "avgARPU": 0
+      }
+    },
+    {
+      "test": "Data Consistency",
+      "status": "PASS",
+      "details": {
+        "day1Games": "0503",
+        "day7Games": "050336330",
+        "day30Games": "050336330",
+        "consistent": true
+      }
+    }
+  ],
+  "errors": []
+}

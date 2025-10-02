@@ -171,13 +171,29 @@ router.post('/batch', async (req, res) => {
       });
     }
 
+    // 🔥 CRITICAL FIX: Deduplicate events to prevent inflated metrics
+    const deduplicatedEvents = [];
+    const seenEvents = new Set();
+    
+    for (const event of events) {
+      // Create unique key for deduplication
+      const eventKey = `${event.event_name}_${event.player_id || event.session_id}_${event.session_id}_${Math.floor(event.timestamp / 1000)}`;
+      
+      if (!seenEvents.has(eventKey)) {
+        seenEvents.add(eventKey);
+        deduplicatedEvents.push(event);
+      }
+    }
+    
+    console.log(`📊 Deduplication: ${events.length} events → ${deduplicatedEvents.length} unique events`);
+
     const insertedEvents = [];
     const errors = [];
 
     // Process events in optimized batches
     const batchSize = 50; // Increased batch size for Railway Pro
-    for (let i = 0; i < events.length; i += batchSize) {
-      const batch = events.slice(i, i + batchSize);
+    for (let i = 0; i < deduplicatedEvents.length; i += batchSize) {
+      const batch = deduplicatedEvents.slice(i, i + batchSize);
       
       try {
         const values = [];
@@ -249,7 +265,7 @@ router.post('/batch', async (req, res) => {
     }
 
     // Handle special events
-    for (const event of events) {
+    for (const event of deduplicatedEvents) {
       try {
         await handleSpecialEventV2(event.event_name, event.event_data);
       } catch (error) {
@@ -261,9 +277,10 @@ router.post('/batch', async (req, res) => {
       success: true,
       inserted_count: insertedEvents.length,
       total_events: events.length,
+      deduplicated_events: deduplicatedEvents.length,
       errors: errors.length > 0 ? errors : undefined,
       version: 'v2',
-      message: `Processed ${insertedEvents.length}/${events.length} events`
+      message: `Processed ${insertedEvents.length}/${events.length} events (${deduplicatedEvents.length} unique)`
     });
 
   } catch (error) {
@@ -296,48 +313,90 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
       WITH daily_metrics AS (
         SELECT 
           DATE(created_at) as date,
-          -- 1. DAU/MAU
-          COUNT(DISTINCT player_id) as dau,
-          COUNT(DISTINCT CASE WHEN event_name = 'session_start' THEN player_id END) as session_users,
-          COUNT(DISTINCT CASE WHEN event_name = 'game_start' THEN player_id END) as gaming_users,
+          -- 1. DAU/MAU - FIXED: Include both authenticated and anonymous users
+          COUNT(DISTINCT CASE 
+            WHEN player_id IS NOT NULL THEN player_id 
+            ELSE session_id 
+          END) as dau,
+          COUNT(DISTINCT CASE WHEN event_name = 'session_start' THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as session_users,
+          COUNT(DISTINCT CASE WHEN event_name = 'game_start' THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as gaming_users,
           
-          -- 2. Games per session/day
-          COUNT(CASE WHEN event_name = 'game_start' THEN 1 END) as total_games,
+          -- 2. Games per session/day - FIXED: Count unique game sessions, not individual events
+          COUNT(DISTINCT CASE WHEN event_name = 'game_start' THEN session_id END) as total_games,
           COUNT(DISTINCT session_id) as total_sessions,
           ROUND(AVG(CASE WHEN event_name = 'game_start' THEN (parameters->>'games_in_session')::int END), 2) as avg_games_per_session,
           
           -- 3. Session length
           ROUND(AVG(CASE WHEN event_name = 'session_end' THEN (parameters->>'session_duration_seconds')::int END), 2) as avg_session_duration,
           
-          -- 4. Missions completed
-          COUNT(CASE WHEN event_name = 'mission_complete' THEN 1 END) as missions_completed,
-          COUNT(DISTINCT CASE WHEN event_name = 'mission_complete' THEN player_id END) as users_completed_missions,
-          COUNT(CASE WHEN event_name = 'daily_mission_cycle_complete' AND (parameters->>'all_missions_completed')::boolean THEN 1 END) as users_all_missions,
+          -- 4. Missions completed - FIXED: Count unique missions per user
+          COUNT(DISTINCT CASE WHEN event_name = 'mission_complete' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', COALESCE(parameters->>'mission_id', parameters->>'mission_type', 'unknown'))
+          END) as missions_completed,
+          COUNT(DISTINCT CASE WHEN event_name = 'mission_complete' THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as users_completed_missions,
+          COUNT(DISTINCT CASE WHEN event_name = 'daily_mission_cycle_complete' AND (parameters->>'all_missions_completed')::boolean THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as users_all_missions,
           
-          -- 5. Achievements
-          COUNT(CASE WHEN event_name = 'achievement_unlock' THEN 1 END) as achievements_unlocked,
-          COUNT(DISTINCT CASE WHEN event_name = 'achievement_unlock' THEN player_id END) as users_unlocked_achievements,
+          -- 5. Achievements - FIXED: Count unique achievements per user
+          COUNT(DISTINCT CASE WHEN event_name = 'achievement_unlock' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', COALESCE(parameters->>'achievement_id', parameters->>'achievement_name', 'unknown'))
+          END) as achievements_unlocked,
+          COUNT(DISTINCT CASE WHEN event_name = 'achievement_unlock' THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as users_unlocked_achievements,
           
-          -- 6. Continue usage
-          COUNT(CASE WHEN event_name = 'continue_used' THEN 1 END) as continues_used,
-          COUNT(CASE WHEN event_name = 'continue_used' AND parameters->>'continue_type' = 'ad' THEN 1 END) as continues_via_ad,
-          COUNT(CASE WHEN event_name = 'continue_used' AND parameters->>'continue_type' = 'gems' THEN 1 END) as continues_via_gems,
+          -- 6. Continue usage - FIXED: Count unique continues per session
+          COUNT(DISTINCT CASE WHEN event_name = 'continue_used' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as continues_used,
+          COUNT(DISTINCT CASE WHEN event_name = 'continue_used' AND (
+            parameters->>'continue_type' = 'ad' OR parameters->>'gems_cost' IS NOT NULL
+          ) THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as continues_via_ad,
+          COUNT(DISTINCT CASE WHEN event_name = 'continue_used' AND (
+            parameters->>'continue_type' = 'gems' OR (parameters->>'gems_cost')::int > 0
+          ) THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as continues_via_gems,
           
-          -- 7. Ad completion rate
-          COUNT(CASE WHEN event_name = 'ad_shown' THEN 1 END) as ads_shown,
-          COUNT(CASE WHEN event_name = 'ad_completed' THEN 1 END) as ads_completed,
-          COUNT(CASE WHEN event_name = 'ad_abandoned' THEN 1 END) as ads_abandoned,
+          -- 7. Ad completion rate - FIXED: Count unique ad sessions
+          COUNT(DISTINCT CASE WHEN event_name IN ('ad_shown', 'ad_viewed') THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as ads_shown,
+          COUNT(DISTINCT CASE WHEN event_name = 'ad_completed' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as ads_completed,
+          COUNT(DISTINCT CASE WHEN event_name = 'ad_abandoned' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
+          END) as ads_abandoned,
           
-          -- 8. Currency tracking
-          SUM(CASE WHEN event_name = 'currency_earned' AND parameters->>'currency_type' = 'coins' THEN (parameters->>'amount')::int ELSE 0 END) as coins_earned,
-          SUM(CASE WHEN event_name = 'currency_earned' AND parameters->>'currency_type' = 'gems' THEN (parameters->>'amount')::int ELSE 0 END) as gems_earned,
-          SUM(CASE WHEN event_name = 'currency_spent' AND parameters->>'currency_type' = 'coins' THEN (parameters->>'amount')::int ELSE 0 END) as coins_spent,
-          SUM(CASE WHEN event_name = 'currency_spent' AND parameters->>'currency_type' = 'gems' THEN (parameters->>'amount')::int ELSE 0 END) as gems_spent,
+          -- 8. Currency tracking - FIXED: Sum currency events (no deduplication needed for currency)
+          SUM(CASE WHEN event_name = 'currency_earned' AND parameters->>'currency_type' = 'coins' THEN 
+            (parameters->>'amount')::int ELSE 0 END) as coins_earned,
+          SUM(CASE WHEN event_name = 'currency_earned' AND parameters->>'currency_type' = 'gems' THEN 
+            (parameters->>'amount')::int ELSE 0 END) as gems_earned,
+          SUM(CASE WHEN event_name = 'currency_spent' AND parameters->>'currency_type' = 'coins' THEN 
+            (parameters->>'amount')::int ELSE 0 END) as coins_spent,
+          SUM(CASE WHEN event_name = 'currency_spent' AND parameters->>'currency_type' = 'gems' THEN 
+            (parameters->>'amount')::int ELSE 0 END) as gems_spent,
           
-          -- 9. Revenue
-          COUNT(CASE WHEN event_name = 'iap_purchase' THEN 1 END) as purchases,
-          SUM(CASE WHEN event_name = 'iap_purchase' THEN (parameters->>'price_usd')::decimal ELSE 0 END) as revenue_usd,
-          COUNT(DISTINCT CASE WHEN event_name = 'iap_purchase' THEN player_id END) as paying_users
+          -- 9. Revenue - FIXED: Count unique purchases
+          COUNT(DISTINCT CASE WHEN event_name = 'iap_purchase' THEN 
+            CONCAT(COALESCE(player_id, session_id), '_', COALESCE(parameters->>'transaction_id', parameters->>'product_id', 'unknown'))
+          END) as purchases,
+          SUM(CASE WHEN event_name = 'iap_purchase' THEN 
+            (parameters->>'price_usd')::decimal ELSE 0 END) as revenue_usd,
+          COUNT(DISTINCT CASE WHEN event_name = 'iap_purchase' THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as paying_users
           
         FROM analytics_events_v2
         WHERE created_at >= $1
@@ -346,10 +405,16 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
       retention_metrics AS (
         SELECT 
           DATE(created_at) as date,
-          COUNT(DISTINCT player_id) as cohort_size,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_1' AND (parameters->>'is_retained')::boolean THEN player_id END) as day1_retained,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_7' AND (parameters->>'is_retained')::boolean THEN player_id END) as day7_retained,
-          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_30' AND (parameters->>'is_retained')::boolean THEN player_id END) as day30_retained
+          COUNT(DISTINCT CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END) as cohort_size,
+          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_1' AND (parameters->>'is_retained')::boolean THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as day1_retained,
+          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_7' AND (parameters->>'is_retained')::boolean THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as day7_retained,
+          COUNT(DISTINCT CASE WHEN event_name = 'retention_event' AND parameters->>'event_type' = 'day_30' AND (parameters->>'is_retained')::boolean THEN 
+            CASE WHEN player_id IS NOT NULL THEN player_id ELSE session_id END 
+          END) as day30_retained
         FROM analytics_events_v2
         WHERE created_at >= $1
         GROUP BY DATE(created_at)
@@ -676,18 +741,25 @@ async function handleSpecialEventV2(eventName, eventData) {
 function calculateKPISummary(data) {
   if (data.length === 0) return {};
   
+  // 🔥 CRITICAL FIX: Daily data already contains totals, don't sum them again!
+  // Instead, calculate proper averages and use the most recent totals
+  const latestDay = data[0]; // Most recent day
+  
   return {
-    avg_dau: data.reduce((sum, row) => sum + (row.dau || 0), 0) / data.length,
-    avg_session_duration: data.reduce((sum, row) => sum + (row.avg_session_duration || 0), 0) / data.length,
-    avg_games_per_session: data.reduce((sum, row) => sum + (row.avg_games_per_session || 0), 0) / data.length,
-    avg_ad_completion_rate: data.reduce((sum, row) => sum + (row.ad_completion_rate || 0), 0) / data.length,
-    avg_arpu: data.reduce((sum, row) => sum + (row.arpu || 0), 0) / data.length,
-    total_revenue: data.reduce((sum, row) => sum + (row.revenue_usd || 0), 0),
-    total_purchases: data.reduce((sum, row) => sum + (row.purchases || 0), 0),
-    total_games: data.reduce((sum, row) => sum + (row.total_games || 0), 0), // 🔥 FIX: Added missing total_games
-    total_continues: data.reduce((sum, row) => sum + (row.continues_used || 0), 0),
-    total_missions_completed: data.reduce((sum, row) => sum + (row.missions_completed || 0), 0),
-    total_achievements_unlocked: data.reduce((sum, row) => sum + (row.achievements_unlocked || 0), 0),
+    // Averages across all days
+    avg_dau: data.reduce((sum, row) => sum + (parseInt(row.dau) || 0), 0) / data.length,
+    avg_session_duration: data.reduce((sum, row) => sum + (parseFloat(row.avg_session_duration) || 0), 0) / data.length,
+    avg_games_per_session: data.reduce((sum, row) => sum + (parseFloat(row.avg_games_per_session) || 0), 0) / data.length,
+    avg_ad_completion_rate: data.reduce((sum, row) => sum + (parseFloat(row.ad_completion_rate) || 0), 0) / data.length,
+    avg_arpu: data.reduce((sum, row) => sum + (parseFloat(row.arpu) || 0), 0) / data.length,
+    
+    // Use latest day's totals (not summed across days)
+    total_revenue: parseFloat(latestDay.revenue_usd) || 0,
+    total_purchases: parseInt(latestDay.purchases) || 0,
+    total_games: parseInt(latestDay.total_games) || 0,
+    total_continues: parseInt(latestDay.continues_used) || 0,
+    total_missions_completed: parseInt(latestDay.missions_completed) || 0,
+    total_achievements_unlocked: parseInt(latestDay.achievements_unlocked) || 0,
   };
 }
 
