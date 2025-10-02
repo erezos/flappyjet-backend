@@ -326,7 +326,9 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
           END) as gaming_users,
           
           -- 2. Games per session/day - FIXED: Count unique game sessions, not individual events
-          COUNT(DISTINCT CASE WHEN event_name = 'game_start' THEN session_id END) as total_games,
+          COUNT(DISTINCT CASE WHEN event_name = 'game_start' THEN 
+            COALESCE(session_id, CONCAT('no_session_', COALESCE(player_id, 'anonymous'), '_', DATE(created_at)))
+          END) as total_games,
           COUNT(DISTINCT session_id) as total_sessions,
           ROUND(AVG(CASE WHEN event_name = 'game_start' THEN (parameters->>'games_in_session')::int END), 2) as avg_games_per_session,
           
