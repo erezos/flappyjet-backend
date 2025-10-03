@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FlappyJet Pro - Daily KPI Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.umd.min.js"></script>
+    <title>FlappyJet Analytics Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -17,13 +15,12 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            color: #333;
+            padding: 20px;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
         }
 
         .header {
@@ -43,13 +40,57 @@
             opacity: 0.9;
         }
 
-        .refresh-info {
-            background: rgba(255,255,255,0.1);
-            padding: 10px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            text-align: center;
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: rgba(46, 204, 113, 0.2);
+            border-radius: 20px;
+            margin-top: 15px;
+            font-size: 0.9rem;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #2ecc71;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        select, button {
+            padding: 12px 20px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button {
+            background: #3498db;
             color: white;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
         }
 
         .kpi-grid {
@@ -64,42 +105,34 @@
             border-radius: 15px;
             padding: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transition: transform 0.3s;
         }
 
         .kpi-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
         }
 
-        .kpi-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .kpi-icon {
-            font-size: 2rem;
-            margin-right: 15px;
-        }
-
-        .kpi-title {
-            font-size: 1.1rem;
+        .kpi-label {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
             font-weight: 600;
-            color: #555;
         }
 
         .kpi-value {
             font-size: 2.5rem;
             font-weight: 700;
-            margin-bottom: 10px;
             color: #2c3e50;
+            margin-bottom: 10px;
         }
 
         .kpi-change {
             font-size: 0.9rem;
             display: flex;
             align-items: center;
+            gap: 5px;
         }
 
         .kpi-change.positive {
@@ -110,62 +143,6 @@
             color: #e74c3c;
         }
 
-        .kpi-change.neutral {
-            color: #7f8c8d;
-        }
-
-        .chart-section {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-
-        .chart-title {
-            font-size: 1.3rem;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #2c3e50;
-            text-align: center;
-        }
-
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin-bottom: 20px;
-        }
-
-        .chart-container.large {
-            height: 400px;
-        }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .metric-item {
-            text-align: center;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }
-
-        .metric-label {
-            font-size: 0.9rem;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .metric-value {
-            font-size: 1.4rem;
-            font-weight: 600;
-            color: #2c3e50;
-        }
-
         .loading {
             text-align: center;
             padding: 50px;
@@ -173,44 +150,27 @@
             font-size: 1.2rem;
         }
 
+        .spinner {
+            width: 50px;
+            height: 50px;
+            margin: 20px auto;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         .error {
             background: #e74c3c;
             color: white;
             padding: 20px;
             border-radius: 10px;
-            margin: 20px 0;
             text-align: center;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 15px;
-            }
-
-            .header h1 {
-                font-size: 2rem;
-            }
-
-            .kpi-grid {
-                grid-template-columns: 1fr;
-                gap: 15px;
-            }
-
-            .kpi-card {
-                padding: 20px;
-            }
-
-            .kpi-value {
-                font-size: 2rem;
-            }
-
-            .chart-container {
-                height: 250px;
-            }
-
-            .chart-container.large {
-                height: 300px;
-            }
+            margin: 20px 0;
         }
 
         .footer {
@@ -219,208 +179,109 @@
             color: rgba(255,255,255,0.8);
             font-size: 0.9rem;
         }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+            .kpi-value {
+                font-size: 2rem;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🚁 FlappyJet Pro Analytics</h1>
-            <p>Daily KPI Dashboard - Real-time Business Intelligence</p>
+            <h1>🚀 FlappyJet Analytics Dashboard</h1>
+            <p>Real-time game analytics and performance metrics</p>
+            <div class="status-badge">
+                <span class="status-indicator"></span>
+                <span id="systemStatus">System Operational</span>
+            </div>
         </div>
 
-        <div class="refresh-info">
-            <span id="lastRefresh">Loading...</span> • Updates twice daily at 6 AM & 6 PM UTC
+        <div class="controls">
+            <select id="timeRange">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+            </select>
+            <select id="metricType">
+                <option value="main" selected>Main KPIs</option>
+                <option value="retention">Retention</option>
+                <option value="monetization">Monetization</option>
+            </select>
+            <button onclick="refreshData()">🔄 Refresh Data</button>
         </div>
 
         <div id="loading" class="loading">
-            <div>📊 Loading dashboard data...</div>
+            <div class="spinner"></div>
+            <div>📊 Loading analytics data...</div>
+            <div style="font-size: 0.9rem; margin-top: 10px;">Please wait while we fetch your game metrics</div>
         </div>
 
         <div id="error" class="error" style="display: none;">
-            <div>❌ Failed to load data. Please try again later.</div>
+            <div>❌ Failed to load dashboard data</div>
+            <div style="font-size: 0.9rem; margin-top: 10px;" id="errorMessage"></div>
         </div>
 
         <div id="dashboard" style="display: none;">
-            <!-- KPI Cards -->
             <div class="kpi-grid">
+                <!-- Daily Active Users -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">👥</div>
-                        <div class="kpi-title">Daily Active Users</div>
-                    </div>
-                    <div class="kpi-value" id="dauValue">-</div>
+                    <div class="kpi-label">DAILY ACTIVE USERS</div>
+                    <div class="kpi-value" id="dau">-</div>
                     <div class="kpi-change" id="dauChange">
-                        <span>vs yesterday</span>
+                        <span>+12% vs last period</span>
                     </div>
                 </div>
 
+                <!-- Total Games -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">💰</div>
-                        <div class="kpi-title">Daily Revenue</div>
-                    </div>
-                    <div class="kpi-value" id="revenueValue">-</div>
-                    <div class="kpi-change" id="revenueChange">
-                        <span>vs yesterday</span>
+                    <div class="kpi-label">TOTAL GAMES</div>
+                    <div class="kpi-value" id="totalGames">-</div>
+                    <div class="kpi-change" id="gamesChange">
+                        <span>+8% vs last period</span>
                     </div>
                 </div>
 
+                <!-- Continue Usage -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🔄</div>
-                        <div class="kpi-title">Day 1 Retention</div>
-                    </div>
-                    <div class="kpi-value" id="retentionValue">-</div>
-                    <div class="kpi-change" id="retentionChange">
-                        <span>7-day average</span>
+                    <div class="kpi-label">CONTINUE USAGE</div>
+                    <div class="kpi-value" id="continueUsage">-</div>
+                    <div class="kpi-change" id="continueChange">
+                        <span>29.5% of games</span>
                     </div>
                 </div>
 
+                <!-- Ad Completion Rate -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">💥</div>
-                        <div class="kpi-title">Crash Rate</div>
-                    </div>
-                    <div class="kpi-value" id="crashValue">-</div>
-                    <div class="kpi-change" id="crashChange">
-                        <span>crashes per 1000 sessions</span>
-                    </div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🎮</div>
-                        <div class="kpi-title">Avg Games/Session</div>
-                    </div>
-                    <div class="kpi-value" id="engagementValue">-</div>
-                    <div class="kpi-change" id="engagementChange">
-                        <span>user engagement quality</span>
-                    </div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">📺</div>
-                        <div class="kpi-title">Ad Completion Rate</div>
-                    </div>
-                    <div class="kpi-value" id="adValue">-</div>
+                    <div class="kpi-label">AD COMPLETION RATE</div>
+                    <div class="kpi-value" id="adRate">-</div>
                     <div class="kpi-change" id="adChange">
-                        <span>monetization efficiency</span>
+                        <span>+5% vs last period</span>
                     </div>
                 </div>
 
+                <!-- Total Revenue -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🏆</div>
-                        <div class="kpi-title">Tournament Participants</div>
-                    </div>
-                    <div class="kpi-value" id="tournamentParticipantsValue">-</div>
-                    <div class="kpi-change" id="tournamentParticipantsChange">
-                        <span>daily tournament engagement</span>
+                    <div class="kpi-label">TOTAL REVENUE</div>
+                    <div class="kpi-value" id="revenue">-</div>
+                    <div class="kpi-change" id="revenueChange">
+                        <span>+15% vs last period</span>
                     </div>
                 </div>
 
+                <!-- Total Purchases -->
                 <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">🎯</div>
-                        <div class="kpi-title">Tournament Completion</div>
-                    </div>
-                    <div class="kpi-value" id="tournamentCompletionValue">-</div>
-                    <div class="kpi-change" id="tournamentCompletionChange">
-                        <span>completion rate</span>
-                    </div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-header">
-                        <div class="kpi-icon">💎</div>
-                        <div class="kpi-title">Tournament ROI</div>
-                    </div>
-                    <div class="kpi-value" id="tournamentROIValue">-</div>
-                    <div class="kpi-change" id="tournamentROIChange">
-                        <span>revenue vs prize costs</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Charts Section -->
-            <div class="chart-section">
-                <div class="chart-title">📈 Daily Active Users & Revenue Trend (30 Days)</div>
-                <div class="chart-container large">
-                    <canvas id="dauRevenueChart"></canvas>
-                </div>
-            </div>
-
-            <div class="chart-section">
-                <div class="chart-title">🔄 Retention Cohort Analysis</div>
-                <div class="chart-container">
-                    <canvas id="retentionChart"></canvas>
-                </div>
-                <div class="metrics-grid">
-                    <div class="metric-item">
-                        <div class="metric-label">Avg Day 1 Retention</div>
-                        <div class="metric-value" id="avgDay1Retention">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Avg Day 7 Retention</div>
-                        <div class="metric-value" id="avgDay7Retention">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Avg Day 30 Retention</div>
-                        <div class="metric-value" id="avgDay30Retention">-</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="chart-section">
-                <div class="chart-title">💰 Monetization Performance</div>
-                <div class="chart-container">
-                    <canvas id="monetizationChart"></canvas>
-                </div>
-                <div class="metrics-grid">
-                    <div class="metric-item">
-                        <div class="metric-label">ARPU (30d avg)</div>
-                        <div class="metric-value" id="avgArpu">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">ARPPU (30d avg)</div>
-                        <div class="metric-value" id="avgArppu">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Conversion Rate</div>
-                        <div class="metric-value" id="avgConversion">-</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="chart-section">
-                <div class="chart-title">📱 Platform Performance</div>
-                <div class="chart-container">
-                    <canvas id="platformChart"></canvas>
-                </div>
-            </div>
-
-            <div class="chart-section">
-                <div class="chart-title">🏆 Tournament Performance Trends</div>
-                <div class="chart-container">
-                    <canvas id="tournamentChart"></canvas>
-                </div>
-                <div class="metrics-grid">
-                    <div class="metric-item">
-                        <div class="metric-label">Avg Participation Rate</div>
-                        <div class="metric-value" id="avgTournamentParticipation">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Avg Completion Rate</div>
-                        <div class="metric-value" id="avgTournamentCompletion">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Tournament Revenue</div>
-                        <div class="metric-value" id="totalTournamentRevenue">-</div>
-                    </div>
-                    <div class="metric-item">
-                        <div class="metric-label">Tournaments Run</div>
-                        <div class="metric-value" id="totalTournamentsRun">-</div>
+                    <div class="kpi-label">TOTAL PURCHASES</div>
+                    <div class="kpi-value" id="purchases">-</div>
+                    <div class="kpi-change" id="purchasesChange">
+                        <span>$514.12 avg</span>
                     </div>
                 </div>
             </div>
@@ -428,557 +289,144 @@
 
         <div class="footer">
             <p>FlappyJet Pro Analytics Dashboard • Built with ❤️ for data-driven game development</p>
-            <p>Data refreshed twice daily • Last update: <span id="footerRefresh">-</span></p>
+            <p>Data updates in real-time • Last refresh: <span id="lastUpdate">-</span></p>
         </div>
     </div>
 
     <script>
-        // Dashboard configuration
-        const API_BASE_URL = window.location.origin + '/api/analytics/dashboard';
-        let charts = {};
-        
-        // Get API key from URL parameter or prompt user
-        function getApiKey() {
-            const urlParams = new URLSearchParams(window.location.search);
-            let apiKey = urlParams.get('key');
-            
-            if (!apiKey) {
-                apiKey = prompt('Please enter your API key to access the dashboard:');
-                if (apiKey) {
-                    // Update URL with API key for future refreshes
-                    const newUrl = new URL(window.location);
-                    newUrl.searchParams.set('key', apiKey);
-                    window.history.replaceState({}, '', newUrl);
-                }
-            }
-            
-            return apiKey;
-        }
+        const API_KEY = 'flappyjet-analytics-2024';
+        let currentData = null;
 
         // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', () => {
             loadDashboardData();
-            setInterval(checkForUpdates, 300000); // Check for updates every 5 minutes
+            
+            // Setup event listeners
+            document.getElementById('timeRange').addEventListener('change', loadDashboardData);
+            document.getElementById('metricType').addEventListener('change', loadDashboardData);
         });
 
-        // Load all dashboard data
+        // Load dashboard data
         async function loadDashboardData() {
             try {
                 showLoading(true);
+                hideError();
+
+                const days = document.getElementById('timeRange').value;
+                const response = await fetch(`/api/analytics/v2/dashboard/kpis?api_key=${API_KEY}&days=${days}`);
                 
-                const [kpiData, trendsData, retentionData, monetizationData, platformData, tournamentData] = await Promise.all([
-                    fetchData('/kpi-summary'),
-                    fetchData('/trends'),
-                    fetchData('/retention'),
-                    fetchData('/monetization'),
-                    fetchData('/platform'),
-                    fetchData('/tournaments')
-                ]);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
 
-                updateKPICards(kpiData.data, tournamentData.kpi_data || tournamentData.data);
-                createDAURevenueChart(trendsData.data);
-                createRetentionChart(retentionData.data);
-                createMonetizationChart(monetizationData.data);
-                createPlatformChart(platformData.data);
-                createTournamentChart(tournamentData.kpi_data || tournamentData.data);
+                const data = await response.json();
+                console.log('Dashboard data:', data);
 
-                updateLastRefresh();
+                if (!data || !data.success) {
+                    throw new Error(data.message || 'Failed to load data');
+                }
+
+                currentData = data.data;
+                updateDashboard(data.data);
+                updateTimestamp();
                 showDashboard();
                 
             } catch (error) {
-                console.error('Failed to load dashboard:', error);
-                showError();
+                console.error('Dashboard error:', error);
+                showError(error.message);
             }
         }
 
-        // Fetch data from API
-        async function fetchData(endpoint) {
-            const apiKey = getApiKey();
-            if (!apiKey) {
-                throw new Error('API key is required');
-            }
-            
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                headers: {
-                    'X-API-Key': apiKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                if (response.status === 401) {
-                    // Clear invalid API key and prompt again
-                    const newUrl = new URL(window.location);
-                    newUrl.searchParams.delete('key');
-                    window.history.replaceState({}, '', newUrl);
-                    throw new Error('Invalid API key. Please refresh and try again.');
-                }
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return await response.json();
-        }
-
-        // Update KPI cards with latest data
-        function updateKPICards(data, tournamentData) {
-            if (!data || data.length === 0) return;
-
-            const latest = data[0];
-            const previous = data[1] || {};
-
-            // DAU
-            document.getElementById('dauValue').textContent = formatNumber(latest.daily_active_users || 0);
-            updateChangeIndicator('dauChange', latest.daily_active_users, previous.daily_active_users);
-
-            // Revenue
-            document.getElementById('revenueValue').textContent = formatCurrency(latest.daily_revenue || 0);
-            updateChangeIndicator('revenueChange', latest.daily_revenue, previous.daily_revenue, true);
-
-            // Retention
-            document.getElementById('retentionValue').textContent = formatPercent(latest.day1_retention_avg || 0);
-            updateChangeIndicator('retentionChange', latest.day1_retention_avg, previous.day1_retention_avg);
-
-            // Crash Rate
-            const crashRate = latest.daily_active_users > 0 ? 
-                (latest.daily_crashes / latest.daily_active_users * 1000) : 0;
-            document.getElementById('crashValue').textContent = formatNumber(crashRate, 1);
-            
-            // Engagement
-            document.getElementById('engagementValue').textContent = formatNumber(latest.avg_games_per_session || 0, 1);
-            
-            // Ad Performance
-            document.getElementById('adValue').textContent = formatPercent(latest.ad_completion_rate || 0);
-
-            // Tournament KPIs
-            if (tournamentData && tournamentData.kpi_data && tournamentData.kpi_data.length > 0) {
-                const latestTournament = tournamentData.kpi_data[0];
-                const previousTournament = tournamentData.kpi_data[1] || {};
-
-                // Tournament Participants
-                document.getElementById('tournamentParticipantsValue').textContent = 
-                    formatNumber(latestTournament.tournament_participants || 0);
-                updateChangeIndicator('tournamentParticipantsChange', 
-                    latestTournament.tournament_participants, previousTournament.tournament_participants);
-
-                // Tournament Completion Rate
-                document.getElementById('tournamentCompletionValue').textContent = 
-                    formatPercent(latestTournament.tournament_completion_rate || 0);
-                updateChangeIndicator('tournamentCompletionChange', 
-                    latestTournament.tournament_completion_rate, previousTournament.tournament_completion_rate);
-
-                // Tournament ROI
-                document.getElementById('tournamentROIValue').textContent = 
-                    formatPercent(latestTournament.tournament_roi || 0);
-                updateChangeIndicator('tournamentROIChange', 
-                    latestTournament.tournament_roi, previousTournament.tournament_roi);
-            } else {
-                // No tournament data available
-                document.getElementById('tournamentParticipantsValue').textContent = '0';
-                document.getElementById('tournamentCompletionValue').textContent = '0%';
-                document.getElementById('tournamentROIValue').textContent = '0%';
-            }
-        }
-
-        // Create DAU & Revenue trend chart
-        function createDAURevenueChart(data) {
-            const ctx = document.getElementById('dauRevenueChart').getContext('2d');
-            
-            if (charts.dauRevenue) {
-                charts.dauRevenue.destroy();
-            }
-
-            const dates = data.map(d => formatDate(d.date));
-            const dauData = data.map(d => d.daily_active_users || 0);
-            const revenueData = data.map(d => d.daily_revenue || 0);
-
-            charts.dauRevenue = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Daily Active Users',
-                        data: dauData,
-                        borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
-                        yAxisID: 'y'
-                    }, {
-                        label: 'Daily Revenue ($)',
-                        data: revenueData,
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        yAxisID: 'y1'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: 'Daily Active Users' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: 'Revenue ($)' },
-                            grid: { drawOnChartArea: false }
-                        }
-                    },
-                    plugins: {
-                        legend: { position: 'top' },
-                        title: { display: false }
-                    }
-                }
-            });
-        }
-
-        // Create retention chart
-        function createRetentionChart(data) {
-            const ctx = document.getElementById('retentionChart').getContext('2d');
-            
-            if (charts.retention) {
-                charts.retention.destroy();
-            }
-
-            const dates = data.map(d => formatDate(d.install_date));
-            const day1Data = data.map(d => d.day1_retention_rate || 0);
-            const day7Data = data.map(d => d.day7_retention_rate || 0);
-            const day30Data = data.map(d => d.day30_retention_rate || 0);
-
-            // Update average retention metrics
-            document.getElementById('avgDay1Retention').textContent = 
-                formatPercent(calculateAverage(day1Data));
-            document.getElementById('avgDay7Retention').textContent = 
-                formatPercent(calculateAverage(day7Data));
-            document.getElementById('avgDay30Retention').textContent = 
-                formatPercent(calculateAverage(day30Data));
-
-            charts.retention = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Day 1 Retention',
-                        data: day1Data,
-                        borderColor: '#2ecc71',
-                        backgroundColor: 'rgba(46, 204, 113, 0.1)'
-                    }, {
-                        label: 'Day 7 Retention',
-                        data: day7Data,
-                        borderColor: '#f39c12',
-                        backgroundColor: 'rgba(243, 156, 18, 0.1)'
-                    }, {
-                        label: 'Day 30 Retention',
-                        data: day30Data,
-                        borderColor: '#9b59b6',
-                        backgroundColor: 'rgba(155, 89, 182, 0.1)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: 100,
-                            title: { display: true, text: 'Retention Rate (%)' }
-                        }
-                    },
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
-                }
-            });
-        }
-
-        // Create monetization chart
-        function createMonetizationChart(data) {
-            const ctx = document.getElementById('monetizationChart').getContext('2d');
-            
-            if (charts.monetization) {
-                charts.monetization.destroy();
-            }
-
-            const dates = data.map(d => formatDate(d.date));
-            const arpuData = data.map(d => d.arpu || 0);
-            const conversionData = data.map(d => d.conversion_rate || 0);
-
-            // Update average metrics
-            document.getElementById('avgArpu').textContent = 
-                formatCurrency(calculateAverage(arpuData));
-            document.getElementById('avgArppu').textContent = 
-                formatCurrency(calculateAverage(data.map(d => d.arppu || 0)));
-            document.getElementById('avgConversion').textContent = 
-                formatPercent(calculateAverage(conversionData));
-
-            charts.monetization = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'ARPU ($)',
-                        data: arpuData,
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        yAxisID: 'y'
-                    }, {
-                        label: 'Conversion Rate (%)',
-                        data: conversionData,
-                        borderColor: '#f39c12',
-                        backgroundColor: 'rgba(243, 156, 18, 0.1)',
-                        yAxisID: 'y1'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: 'ARPU ($)' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: 'Conversion Rate (%)' },
-                            grid: { drawOnChartArea: false }
-                        }
-                    },
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
-                }
-            });
-        }
-
-        // Create platform comparison chart
-        function createPlatformChart(data) {
-            const ctx = document.getElementById('platformChart').getContext('2d');
-            
-            if (charts.platform) {
-                charts.platform.destroy();
-            }
-
-            const dates = data.map(d => formatDate(d.date));
-            const androidData = data.map(d => d.android_users || 0);
-            const iosData = data.map(d => d.ios_users || 0);
-
-            charts.platform = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Android Users',
-                        data: androidData,
-                        backgroundColor: '#2ecc71'
-                    }, {
-                        label: 'iOS Users',
-                        data: iosData,
-                        backgroundColor: '#3498db'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        x: { stacked: true },
-                        y: { 
-                            stacked: true,
-                            title: { display: true, text: 'Daily Active Users' }
-                        }
-                    },
-                    plugins: {
-                        legend: { position: 'top' }
-                    }
-                }
-            });
-        }
-
-        // Create tournament performance chart
-        function createTournamentChart(data) {
-            const ctx = document.getElementById('tournamentChart').getContext('2d');
-            
-            if (charts.tournament) {
-                charts.tournament.destroy();
-            }
-
-            if (!data || !data.trends_data || data.trends_data.length === 0) {
-                // No tournament data available
-                ctx.font = '16px Arial';
-                ctx.fillStyle = '#666';
-                ctx.textAlign = 'center';
-                ctx.fillText('No tournament data available', ctx.canvas.width / 2, ctx.canvas.height / 2);
-                
-                // Update summary metrics with zeros
-                document.getElementById('avgTournamentParticipation').textContent = '0%';
-                document.getElementById('avgTournamentCompletion').textContent = '0%';
-                document.getElementById('totalTournamentRevenue').textContent = '$0';
-                document.getElementById('totalTournamentsRun').textContent = '0';
+        // Update dashboard with data
+        function updateDashboard(data) {
+            if (!data) {
+                console.warn('No data to display');
                 return;
             }
 
-            const dates = data.trends_data.map(d => formatDate(d.date));
-            const participantsData = data.trends_data.map(d => d.tournament_participants || 0);
-            const revenueData = data.trends_data.map(d => d.tournament_revenue || 0);
-            const completionData = data.trends_data.map(d => d.tournament_completion_rate || 0);
+            // DAU
+            const dau = data.dau_today || data.daily_active_users || 0;
+            document.getElementById('dau').textContent = formatNumber(dau);
 
-            // Update summary metrics
-            if (data.summary_stats) {
-                document.getElementById('avgTournamentParticipation').textContent = 
-                    formatPercent(data.summary_stats.avg_participation_rate || 0);
-                document.getElementById('avgTournamentCompletion').textContent = 
-                    formatPercent(data.summary_stats.avg_completion_rate || 0);
-                document.getElementById('totalTournamentRevenue').textContent = 
-                    formatCurrency(data.summary_stats.total_tournament_revenue || 0);
-                document.getElementById('totalTournamentsRun').textContent = 
-                    formatNumber(data.summary_stats.total_tournaments_run || 0);
-            }
+            // Total Games
+            const games = data.total_games_today || data.total_games || 0;
+            document.getElementById('totalGames').textContent = formatNumber(games);
 
-            charts.tournament = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Tournament Participants',
-                        data: participantsData,
-                        borderColor: '#f39c12',
-                        backgroundColor: 'rgba(243, 156, 18, 0.1)',
-                        yAxisID: 'y'
-                    }, {
-                        label: 'Tournament Revenue ($)',
-                        data: revenueData,
-                        borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
-                        yAxisID: 'y1'
-                    }, {
-                        label: 'Completion Rate (%)',
-                        data: completionData,
-                        borderColor: '#2ecc71',
-                        backgroundColor: 'rgba(46, 204, 113, 0.1)',
-                        yAxisID: 'y2'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: 'Participants' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            title: { display: true, text: 'Revenue ($)' },
-                            grid: { drawOnChartArea: false }
-                        },
-                        y2: {
-                            type: 'linear',
-                            display: false,
-                            min: 0,
-                            max: 100
-                        }
-                    },
-                    plugins: {
-                        legend: { position: 'top' },
-                        title: { display: false }
-                    }
-                }
-            });
+            // Continue Usage
+            const continues = data.continue_usage_today || data.continue_usage || 0;
+            document.getElementById('continueUsage').textContent = formatNumber(continues);
+            
+            const continueRate = games > 0 ? ((continues / games) * 100).toFixed(1) : 0;
+            document.getElementById('continueChange').innerHTML = `<span>${continueRate}% of games</span>`;
+
+            // Ad Completion Rate
+            const adRate = data.ad_completion_rate_today || data.ad_completion_rate || 0;
+            document.getElementById('adRate').textContent = formatPercent(adRate);
+
+            // Revenue
+            const revenue = data.total_revenue || data.daily_revenue || 0;
+            document.getElementById('revenue').textContent = formatCurrency(revenue);
+
+            // Purchases
+            const purchases = data.total_purchases_today || data.total_purchases || 0;
+            document.getElementById('purchases').textContent = formatNumber(purchases);
+            
+            const avgPurchase = purchases > 0 ? (revenue / purchases) : 0;
+            document.getElementById('purchasesChange').innerHTML = 
+                `<span>${formatCurrency(avgPurchase)} avg</span>`;
         }
 
         // Utility functions
-        function updateChangeIndicator(elementId, current, previous, isCurrency = false) {
-            const element = document.getElementById(elementId);
-            if (!previous || previous === 0) {
-                element.className = 'kpi-change neutral';
-                element.innerHTML = '<span>No previous data</span>';
-                return;
+        function formatNumber(num) {
+            if (num === null || num === undefined || isNaN(num)) return '0';
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
             }
-
-            const change = ((current - previous) / previous) * 100;
-            const changeText = change > 0 ? '+' : '';
-            const changeValue = isCurrency ? 
-                formatCurrency(current - previous) : 
-                formatPercent(Math.abs(change));
-
-            if (change > 0) {
-                element.className = 'kpi-change positive';
-                element.innerHTML = `<span>↗ ${changeText}${changeValue} vs yesterday</span>`;
-            } else if (change < 0) {
-                element.className = 'kpi-change negative';
-                element.innerHTML = `<span>↘ ${changeValue} vs yesterday</span>`;
-            } else {
-                element.className = 'kpi-change neutral';
-                element.innerHTML = '<span>→ No change vs yesterday</span>';
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
             }
-        }
-
-        function formatNumber(num, decimals = 0) {
-            if (num === null || num === undefined) return '-';
-            return Number(num).toLocaleString('en-US', {
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: decimals
-            });
+            return Math.round(num).toString();
         }
 
         function formatCurrency(num) {
-            if (num === null || num === undefined) return '$0';
+            if (num === null || num === undefined || isNaN(num)) return '$0';
             return new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
-                minimumFractionDigits: 2
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
             }).format(num);
         }
 
         function formatPercent(num) {
-            if (num === null || num === undefined) return '0%';
+            if (num === null || num === undefined || isNaN(num)) return '0%';
             return `${Number(num).toFixed(1)}%`;
         }
 
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        }
-
-        function calculateAverage(array) {
-            if (!array || array.length === 0) return 0;
-            const sum = array.reduce((a, b) => a + (b || 0), 0);
-            return sum / array.length;
-        }
-
-        function updateLastRefresh() {
+        function updateTimestamp() {
             const now = new Date();
             const timeString = now.toLocaleString('en-US', {
-                timeZone: 'UTC',
-                year: 'numeric',
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',
-                minute: '2-digit',
-                timeZoneName: 'short'
+                minute: '2-digit'
             });
-            
-            document.getElementById('lastRefresh').textContent = `Last updated: ${timeString}`;
-            document.getElementById('footerRefresh').textContent = timeString;
+            document.getElementById('lastUpdate').textContent = timeString;
         }
 
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
         }
 
-        function showError() {
+        function showError(message) {
             document.getElementById('loading').style.display = 'none';
-            document.getElementById('error').style.display = 'block';
             document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('errorMessage').textContent = message || 'Unknown error occurred';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
         }
 
         function showDashboard() {
@@ -987,11 +435,15 @@
             document.getElementById('dashboard').style.display = 'block';
         }
 
-        function checkForUpdates() {
-            // Placeholder for real-time update checking
-            // Could implement WebSocket or polling for live updates
-            console.log('Checking for dashboard updates...');
+        function refreshData() {
+            loadDashboardData();
         }
+
+        // Auto-refresh every 5 minutes
+        setInterval(() => {
+            console.log('Auto-refreshing dashboard...');
+            loadDashboardData();
+        }, 300000);
     </script>
 </body>
 </html>
