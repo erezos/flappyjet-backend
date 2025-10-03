@@ -369,8 +369,8 @@ router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
             CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
           END) as continues_gems,
           
-          -- 7. Ad completion rate - FIXED: Count unique ad sessions
-          COUNT(DISTINCT CASE WHEN event_name IN ('ad_shown', 'ad_viewed') THEN 
+          -- 7. Ad completion rate - FIXED: Count unique ad sessions with proper matching
+          COUNT(DISTINCT CASE WHEN event_name = 'ad_shown' THEN 
             CONCAT(COALESCE(player_id, session_id), '_', session_id, '_', DATE(created_at))
           END) as ads_shown,
           COUNT(DISTINCT CASE WHEN event_name = 'ad_completed' THEN 
