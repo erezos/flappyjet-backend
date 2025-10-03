@@ -42,19 +42,9 @@ class DashboardService {
   // Handle dashboard HTML request
   async handleDashboardRequest(req, res) {
     try {
-      const cacheKey = 'dashboard_html';
-      const cached = this.getCachedData(cacheKey);
-      
-      if (cached) {
-        this.setCacheHeaders(res, cached, req);
-        return res.send(cached.data);
-      }
-
-      const dashboardHTML = await this.generateDashboardHTML();
-      this.setCachedData(cacheKey, dashboardHTML);
-      this.setCacheHeaders(res, { data: dashboardHTML, etag: this.generateETag(dashboardHTML) }, req);
-      
-      res.send(dashboardHTML);
+      // Serve static HTML file instead of generating dynamically
+      const dashboardPath = path.join(__dirname, '../analytics/dashboard.html');
+      res.sendFile(dashboardPath);
     } catch (error) {
       this.logger.error('Dashboard generation error:', error);
       res.status(500).json({ 
