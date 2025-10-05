@@ -367,7 +367,8 @@ module.exports = (db) => {
         .custom((value) => {
           // Accept both integers and numeric strings
           const num = Number(value);
-          if (!Number.isInteger(num) || num < 0 || num > 999999999) {
+          // Check if it's a valid number (not NaN) and within range
+          if (isNaN(num) || !isFinite(num) || num < 0 || num > 999999999 || Math.floor(num) !== num) {
             throw new Error('Invalid coins amount');
           }
           return true;
@@ -376,7 +377,8 @@ module.exports = (db) => {
         .custom((value) => {
           // Accept both integers and numeric strings
           const num = Number(value);
-          if (!Number.isInteger(num) || num < 0 || num > 999999999) {
+          // Check if it's a valid number (not NaN) and within range
+          if (isNaN(num) || !isFinite(num) || num < 0 || num > 999999999 || Math.floor(num) !== num) {
             throw new Error('Invalid gems amount');
           }
           return true;
