@@ -388,6 +388,17 @@ module.exports = (db) => {
     ],
     async (req, res) => {
       try {
+        // 🔍 DEBUG: Log the raw request body to diagnose data structure issues
+        logger.info('💰 Currency sync request received:', {
+          rawBody: JSON.stringify(req.body),
+          coins: req.body.coins,
+          gems: req.body.gems,
+          syncReason: req.body.syncReason,
+          bodyType: typeof req.body,
+          coinsType: typeof req.body.coins,
+          gemsType: typeof req.body.gems
+        });
+
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
           // 🔍 Log validation errors for debugging
