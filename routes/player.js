@@ -364,11 +364,23 @@ module.exports = (db) => {
     authenticateToken,
     [
       body('coins')
-        .isInt({ min: 0, max: 999999999 })
-        .withMessage('Invalid coins amount'),
+        .custom((value) => {
+          // Accept both integers and numeric strings
+          const num = Number(value);
+          if (!Number.isInteger(num) || num < 0 || num > 999999999) {
+            throw new Error('Invalid coins amount');
+          }
+          return true;
+        }),
       body('gems')
-        .isInt({ min: 0, max: 999999999 })
-        .withMessage('Invalid gems amount'),
+        .custom((value) => {
+          // Accept both integers and numeric strings
+          const num = Number(value);
+          if (!Number.isInteger(num) || num < 0 || num > 999999999) {
+            throw new Error('Invalid gems amount');
+          }
+          return true;
+        }),
       body('syncReason')
         .optional()
         .isString()
@@ -378,6 +390,11 @@ module.exports = (db) => {
       try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
+          // 🔍 Log validation errors for debugging
+          logger.warn(`💰 Currency sync validation failed for player ${req.user?.playerId}:`, {
+            errors: errors.array(),
+            body: req.body
+          });
           return res.status(400).json({
             success: false,
             error: 'Invalid currency values',
@@ -386,7 +403,11 @@ module.exports = (db) => {
         }
 
         const playerId = req.user.playerId;
-        const { coins, gems, syncReason } = req.body;
+        
+        // 🔧 Ensure values are integers (handle both number and string inputs)
+        const coins = parseInt(req.body.coins, 10);
+        const gems = parseInt(req.body.gems, 10);
+        const syncReason = req.body.syncReason;
 
         // Get current backend values for comparison
         const currentPlayer = await db.query(
