@@ -357,70 +357,88 @@ module.exports = (db) => {
   );
 
   /**
-   * 💰 Sync Currency from Client (for conflict resolution)
+   * 💰 Sync Player Data from Client (full game state sync)
    * PUT /api/player/sync-currency
+   * 
+   * Accepts two formats:
+   * 1. Simple: { coins, gems, syncReason }
+   * 2. Full: { stats: {...}, resources: {...}, pendingChanges: {...}, lastSyncTime }
    */
   router.put('/sync-currency',
     authenticateToken,
-    [
-      body('coins')
-        .custom((value) => {
-          // Accept both integers and numeric strings
-          const num = Number(value);
-          // Check if it's a valid number (not NaN) and within range
-          if (isNaN(num) || !isFinite(num) || num < 0 || num > 999999999 || Math.floor(num) !== num) {
-            throw new Error('Invalid coins amount');
-          }
-          return true;
-        }),
-      body('gems')
-        .custom((value) => {
-          // Accept both integers and numeric strings
-          const num = Number(value);
-          // Check if it's a valid number (not NaN) and within range
-          if (isNaN(num) || !isFinite(num) || num < 0 || num > 999999999 || Math.floor(num) !== num) {
-            throw new Error('Invalid gems amount');
-          }
-          return true;
-        }),
-      body('syncReason')
-        .optional()
-        .isString()
-        .withMessage('Invalid sync reason'),
-    ],
     async (req, res) => {
       try {
-        // 🔍 DEBUG: Log the raw request body to diagnose data structure issues
-        logger.info('💰 Currency sync request received:', {
-          rawBody: JSON.stringify(req.body),
-          coins: req.body.coins,
-          gems: req.body.gems,
-          syncReason: req.body.syncReason,
-          bodyType: typeof req.body,
-          coinsType: typeof req.body.coins,
-          gemsType: typeof req.body.gems
-        });
-
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-          // 🔍 Log validation errors for debugging
-          logger.warn(`💰 Currency sync validation failed for player ${req.user?.playerId}:`, {
-            errors: errors.array(),
-            body: req.body
-          });
-          return res.status(400).json({
-            success: false,
-            error: 'Invalid currency values',
-            details: errors.array()
-          });
-        }
-
         const playerId = req.user.playerId;
         
-        // 🔧 Ensure values are integers (handle both number and string inputs)
-        const coins = parseInt(req.body.coins, 10);
-        const gems = parseInt(req.body.gems, 10);
-        const syncReason = req.body.syncReason;
+        // 🔍 Detect data format (simple vs full)
+        const isFullSync = req.body.stats && req.body.resources;
+        
+        let coins, gems, syncReason;
+        let stats = null;
+        let resources = null;
+        
+        if (isFullSync) {
+          // 📊 Full game data sync
+          logger.info('📊 Full game data sync received:', {
+            playerId,
+            hasStats: !!req.body.stats,
+            hasResources: !!req.body.resources,
+            hasPendingChanges: !!req.body.pendingChanges
+          });
+          
+          stats = req.body.stats;
+          resources = req.body.resources;
+          
+          // Extract coins and gems from resources
+          coins = resources?.coins;
+          gems = resources?.gems;
+          syncReason = 'full_game_sync';
+          
+          // Validate extracted values
+          if (typeof coins !== 'number' || typeof gems !== 'number') {
+            logger.warn('💰 Invalid data in full sync:', {
+              coins, gems, coinsType: typeof coins, gemsType: typeof gems
+            });
+            return res.status(400).json({
+              success: false,
+              error: 'Invalid currency values in resources'
+            });
+          }
+        } else {
+          // 💰 Simple currency sync
+          logger.info('💰 Simple currency sync received:', {
+            playerId,
+            coins: req.body.coins,
+            gems: req.body.gems,
+            syncReason: req.body.syncReason
+          });
+          
+          coins = req.body.coins;
+          gems = req.body.gems;
+          syncReason = req.body.syncReason;
+          
+          // Validate simple format
+          if (typeof coins !== 'number' || typeof gems !== 'number') {
+            logger.warn('💰 Invalid currency values:', {
+              coins, gems, coinsType: typeof coins, gemsType: typeof gems
+            });
+            return res.status(400).json({
+              success: false,
+              error: 'Invalid currency values'
+            });
+          }
+        }
+        
+        // 🔧 Ensure values are valid integers
+        coins = parseInt(coins, 10);
+        gems = parseInt(gems, 10);
+        
+        if (isNaN(coins) || isNaN(gems) || coins < 0 || gems < 0) {
+          return res.status(400).json({
+            success: false,
+            error: 'Currency values must be non-negative integers'
+          });
+        }
 
         // Get current backend values for comparison
         const currentPlayer = await db.query(
@@ -457,21 +475,71 @@ module.exports = (db) => {
            WHERE id = $3`,
           [finalCoins, finalGems, playerId]
         );
-
-        // Log the sync event for analytics
-        await db.query(
-          `INSERT INTO analytics_events (player_id, event_type, event_category, event_data, created_at)
-           VALUES ($1, 'currency_sync', 'player_action', $2, NOW())`,
-          [playerId, JSON.stringify({
-            syncReason: syncReason || 'manual',
-            clientCoins: coins,
-            clientGems: gems,
-            backendCoins: currentData.current_coins,
-            backendGems: currentData.current_gems,
-            finalCoins,
-            finalGems
-          })]
-        );
+        
+        // 📊 If full sync, save additional stats and resources
+        if (isFullSync && stats && resources) {
+          try {
+            // Update best score and streak if higher
+            if (stats.bestScore || stats.bestStreak) {
+              await db.query(
+                `UPDATE players 
+                 SET best_score = GREATEST(COALESCE(best_score, 0), $1),
+                     best_streak = GREATEST(COALESCE(best_streak, 0), $2)
+                 WHERE id = $3`,
+                [stats.bestScore || 0, stats.bestStreak || 0, playerId]
+              );
+            }
+            
+            // Log full game data for analytics
+            await db.query(
+              `INSERT INTO analytics_events (player_id, event_type, event_category, event_data, created_at)
+               VALUES ($1, 'full_game_sync', 'player_action', $2, NOW())`,
+              [playerId, JSON.stringify({
+                stats: {
+                  bestScore: stats.bestScore,
+                  bestStreak: stats.bestStreak,
+                  totalGamesPlayed: stats.totalGamesPlayed,
+                  totalCoinsEarned: stats.totalCoinsEarned,
+                  totalGemsEarned: stats.totalGemsEarned,
+                  totalPlayTime: stats.totalPlayTime
+                },
+                resources: {
+                  coins: resources.coins,
+                  gems: resources.gems,
+                  hearts: resources.hearts,
+                  heartBoosterActive: resources.heartBoosterActive
+                },
+                syncReason: 'full_game_sync'
+              })]
+            );
+            
+            logger.info(`📊 Full game data saved for player ${playerId}:`, {
+              bestScore: stats.bestScore,
+              bestStreak: stats.bestStreak,
+              totalGamesPlayed: stats.totalGamesPlayed,
+              coins: finalCoins,
+              gems: finalGems
+            });
+          } catch (statsError) {
+            // Don't fail the whole sync if stats logging fails
+            logger.error('📊 Error saving full game stats:', statsError);
+          }
+        } else {
+          // Log simple currency sync event for analytics
+          await db.query(
+            `INSERT INTO analytics_events (player_id, event_type, event_category, event_data, created_at)
+             VALUES ($1, 'currency_sync', 'player_action', $2, NOW())`,
+            [playerId, JSON.stringify({
+              syncReason: syncReason || 'manual',
+              clientCoins: coins,
+              clientGems: gems,
+              backendCoins: currentData.current_coins,
+              backendGems: currentData.current_gems,
+              finalCoins,
+              finalGems
+            })]
+          );
+        }
 
         logger.info(`💰 Currency synced for player ${playerId}: ${currentData.current_coins}→${finalCoins} coins, ${currentData.current_gems}→${finalGems} gems (reason: ${syncReason})`);
 
