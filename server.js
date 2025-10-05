@@ -37,12 +37,12 @@ const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
 const analyticsRoutes = require('./routes/analytics');
 const analyticsV2Routes = require('./routes/analytics-v2');
+const analyticsDashboardRoutes = require('./routes/analytics-dashboard');
 const dailyStreakRoutes = require('./routes/daily-streak');
 const inventoryRoutes = require('./routes/inventory');
 const healthRoutes = require('./routes/health');
 // const adminRoutes = require('./routes/admin'); // Removed - temporary fix completed
 const fcmRoutes = require('./routes/fcm');
-const analyticsDashboardRoutes = require('./routes/analytics-dashboard');
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -347,11 +347,9 @@ if (db) {
   app.use('/api/health', healthRoutes);
   app.use('/api/analytics', analyticsRoutes);
   app.use('/api/analytics/v2', analyticsV2Routes(db));
+  app.use('/api/analytics', analyticsDashboardRoutes(db));
 // app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));
-
-// Analytics Dashboard Routes
-app.use('/api/analytics/dashboard', analyticsDashboardRoutes);
 
   logger.info('🚂 ✅ All API routes initialized');
 } else {

@@ -236,16 +236,16 @@
                     <div class="kpi-label">DAILY ACTIVE USERS</div>
                     <div class="kpi-value" id="dau">-</div>
                     <div class="kpi-change" id="dauChange">
-                        <span>+12% vs last period</span>
+                        <span>-</span>
                     </div>
                 </div>
 
                 <!-- Total Games -->
                 <div class="kpi-card">
-                    <div class="kpi-label">TOTAL GAMES</div>
+                    <div class="kpi-label">GAMES PLAYED TODAY</div>
                     <div class="kpi-value" id="totalGames">-</div>
                     <div class="kpi-change" id="gamesChange">
-                        <span>+8% vs last period</span>
+                        <span>-</span>
                     </div>
                 </div>
 
@@ -254,7 +254,7 @@
                     <div class="kpi-label">CONTINUE USAGE</div>
                     <div class="kpi-value" id="continueUsage">-</div>
                     <div class="kpi-change" id="continueChange">
-                        <span>29.5% of games</span>
+                        <span>-</span>
                     </div>
                 </div>
 
@@ -263,25 +263,88 @@
                     <div class="kpi-label">AD COMPLETION RATE</div>
                     <div class="kpi-value" id="adRate">-</div>
                     <div class="kpi-change" id="adChange">
-                        <span>+5% vs last period</span>
+                        <span>-</span>
                     </div>
                 </div>
 
                 <!-- Total Revenue -->
                 <div class="kpi-card">
-                    <div class="kpi-label">TOTAL REVENUE</div>
+                    <div class="kpi-label">REVENUE TODAY</div>
                     <div class="kpi-value" id="revenue">-</div>
                     <div class="kpi-change" id="revenueChange">
-                        <span>+15% vs last period</span>
+                        <span>-</span>
                     </div>
                 </div>
 
                 <!-- Total Purchases -->
                 <div class="kpi-card">
-                    <div class="kpi-label">TOTAL PURCHASES</div>
+                    <div class="kpi-label">PURCHASES TODAY</div>
                     <div class="kpi-value" id="purchases">-</div>
                     <div class="kpi-change" id="purchasesChange">
-                        <span>$514.12 avg</span>
+                        <span>-</span>
+                    </div>
+                </div>
+
+                <!-- Jet Skins Bought -->
+                <div class="kpi-card">
+                    <div class="kpi-label">JET SKINS BOUGHT</div>
+                    <div class="kpi-value" id="skinsBought">-</div>
+                    <div class="kpi-change">
+                        <span>Today</span>
+                    </div>
+                </div>
+
+                <!-- Daily Missions -->
+                <div class="kpi-card">
+                    <div class="kpi-label">DAILY MISSIONS COMPLETED</div>
+                    <div class="kpi-value" id="missionsCompleted">-</div>
+                    <div class="kpi-change">
+                        <span>Today</span>
+                    </div>
+                </div>
+
+                <!-- D1 Retention -->
+                <div class="kpi-card">
+                    <div class="kpi-label">D1 RETENTION</div>
+                    <div class="kpi-value" id="d1Retention">-</div>
+                    <div class="kpi-change">
+                        <span>Day 1</span>
+                </div>
+            </div>
+
+                <!-- D7 Retention -->
+                <div class="kpi-card">
+                    <div class="kpi-label">D7 RETENTION</div>
+                    <div class="kpi-value" id="d7Retention">-</div>
+                    <div class="kpi-change">
+                        <span>Day 7</span>
+                    </div>
+                    </div>
+
+                <!-- D30 Retention -->
+                <div class="kpi-card">
+                    <div class="kpi-label">D30 RETENTION</div>
+                    <div class="kpi-value" id="d30Retention">-</div>
+                    <div class="kpi-change">
+                        <span>Day 30</span>
+                </div>
+            </div>
+
+                <!-- Continue with Ads -->
+                <div class="kpi-card">
+                    <div class="kpi-label">CONTINUE WITH ADS</div>
+                    <div class="kpi-value" id="continueAd">-</div>
+                    <div class="kpi-change">
+                        <span>Today</span>
+                </div>
+            </div>
+
+                <!-- Continue with Gems -->
+                <div class="kpi-card">
+                    <div class="kpi-label">CONTINUE WITH GEMS</div>
+                    <div class="kpi-value" id="continueGems">-</div>
+                    <div class="kpi-change">
+                        <span>Today</span>
                     </div>
                 </div>
             </div>
@@ -313,7 +376,7 @@
                 hideError();
 
                 const days = document.getElementById('timeRange').value;
-                const response = await fetch(`/api/analytics/v2/dashboard/kpis?api_key=${API_KEY}&days=${days}`);
+                const response = await fetch(`/api/analytics/dashboard/kpis?api_key=${API_KEY}&days=${days}`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -345,35 +408,48 @@
             }
 
             // DAU
-            const dau = data.dau_today || data.daily_active_users || 0;
-            document.getElementById('dau').textContent = formatNumber(dau);
+            document.getElementById('dau').textContent = formatNumber(data.dau_today || 0);
+            document.getElementById('dauChange').innerHTML = 
+                `<span>${formatChange(data.dau_change || 0)} vs last period</span>`;
 
             // Total Games
-            const games = data.total_games_today || data.total_games || 0;
-            document.getElementById('totalGames').textContent = formatNumber(games);
+            document.getElementById('totalGames').textContent = formatNumber(data.games_played_today || 0);
+            document.getElementById('gamesChange').innerHTML = 
+                `<span>${formatChange(data.games_change || 0)} vs last period</span>`;
 
             // Continue Usage
-            const continues = data.continue_usage_today || data.continue_usage || 0;
-            document.getElementById('continueUsage').textContent = formatNumber(continues);
-            
-            const continueRate = games > 0 ? ((continues / games) * 100).toFixed(1) : 0;
-            document.getElementById('continueChange').innerHTML = `<span>${continueRate}% of games</span>`;
+            document.getElementById('continueUsage').textContent = formatNumber(data.continues_total || 0);
+            document.getElementById('continueChange').innerHTML = 
+                `<span>${formatPercent(data.continue_usage_rate || 0)} of games</span>`;
 
             // Ad Completion Rate
-            const adRate = data.ad_completion_rate_today || data.ad_completion_rate || 0;
-            document.getElementById('adRate').textContent = formatPercent(adRate);
+            document.getElementById('adRate').textContent = formatPercent(data.ad_completion_rate || 0);
+            document.getElementById('adChange').innerHTML = 
+                `<span>${formatChange(data.ad_change || 0)} vs last period</span>`;
 
             // Revenue
-            const revenue = data.total_revenue || data.daily_revenue || 0;
-            document.getElementById('revenue').textContent = formatCurrency(revenue);
+            document.getElementById('revenue').textContent = formatCurrency(data.revenue_today || 0);
+            document.getElementById('revenueChange').innerHTML = 
+                `<span>${formatChange(data.revenue_change || 0)} vs last period</span>`;
 
             // Purchases
-            const purchases = data.total_purchases_today || data.total_purchases || 0;
-            document.getElementById('purchases').textContent = formatNumber(purchases);
-            
-            const avgPurchase = purchases > 0 ? (revenue / purchases) : 0;
+            document.getElementById('purchases').textContent = formatNumber(data.purchases_today || 0);
+            const avgPurchase = data.purchases_today > 0 ? (data.revenue_today / data.purchases_today) : 0;
             document.getElementById('purchasesChange').innerHTML = 
                 `<span>${formatCurrency(avgPurchase)} avg</span>`;
+
+            // New metrics
+            document.getElementById('skinsBought').textContent = formatNumber(data.skins_bought_today || 0);
+            document.getElementById('missionsCompleted').textContent = formatNumber(data.missions_completed_today || 0);
+            
+            // Retention
+            document.getElementById('d1Retention').textContent = formatPercent(data.d1_retention || 0);
+            document.getElementById('d7Retention').textContent = formatPercent(data.d7_retention || 0);
+            document.getElementById('d30Retention').textContent = formatPercent(data.d30_retention || 0);
+            
+            // Continue breakdown
+            document.getElementById('continueAd').textContent = formatNumber(data.continues_ad || 0);
+            document.getElementById('continueGems').textContent = formatNumber(data.continues_gems || 0);
         }
 
         // Utility functions
@@ -401,6 +477,12 @@
         function formatPercent(num) {
             if (num === null || num === undefined || isNaN(num)) return '0%';
             return `${Number(num).toFixed(1)}%`;
+        }
+
+        function formatChange(num) {
+            if (num === null || num === undefined || isNaN(num)) return '0%';
+            const sign = num > 0 ? '+' : '';
+            return `${sign}${Number(num).toFixed(0)}%`;
         }
 
         function updateTimestamp() {

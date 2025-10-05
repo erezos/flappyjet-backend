@@ -1,522 +1,267 @@
-// 📊 Analytics Dashboard API Routes
-// Serves KPI data to the Daily Dashboard
+/**
+ * 📊 Analytics Dashboard Routes - Gaming KPIs
+ * Optimized for FlappyJet game analytics
+ */
+
 const express = require('express');
-const { Pool } = require('pg');
 const router = express.Router();
+const logger = require('../utils/logger');
 
-// Database connection
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
-
-// ============================================================================
-// MIDDLEWARE
-// ============================================================================
-
-// Simple API key authentication for dashboard access
-const authenticateDashboard = (req, res, next) => {
-  const apiKey = req.headers['x-api-key'] || req.query.api_key;
-  const validApiKey = process.env.DASHBOARD_API_KEY || 'flappyjet-analytics-2024';
+module.exports = (db) => {
   
-  if (!apiKey || apiKey !== validApiKey) {
+  // Dashboard API key authentication
+const authenticateDashboard = (req, res, next) => {
+    const apiKey = req.query.api_key || req.headers['x-api-key'];
+    const validKey = process.env.DASHBOARD_API_KEY || 'flappyjet-analytics-2024';
+  
+    if (apiKey !== validKey) {
     return res.status(401).json({ 
-      error: 'Unauthorized', 
-      message: 'Valid API key required for dashboard access' 
+        success: false,
+        error: 'Invalid API key'
     });
   }
-  
   next();
 };
 
-// ============================================================================
-// DASHBOARD DATA ENDPOINTS
-// ============================================================================
-
-/**
- * GET /api/analytics/kpi-summary
- * Returns the main KPI summary for dashboard cards
- */
-router.get('/kpi-summary', authenticateDashboard, async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 30;
-    
-    const query = `
+  /**
+   * GET /api/analytics/dashboard/kpis - Gaming Analytics Dashboard
+   * Returns comprehensive gaming metrics
+   */
+  router.get('/dashboard/kpis', authenticateDashboard, async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days) || 30, 90);
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      
+      logger.info(`📊 Dashboard KPI request: ${days} days`);
+      
+      // Get today's metrics
+      const todayQuery = `
+        WITH today_data AS (
       SELECT 
-        date,
-        daily_active_users,
-        gaming_users,
-        android_users,
-        ios_users,
-        daily_revenue_usd as daily_revenue,
-        paying_users,
-        total_purchases as daily_purchases,
-        total_sessions,
-        avg_sessions_per_user,
-        completion_rate_percent,
-        total_crashes as daily_crashes,
-        crash_rate_percent,
-        ad_conversion_rate,
-        iap_conversion_rate,
-        arpu,
-        arppu
-      FROM daily_kpi_summary 
-      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-      ORDER BY date DESC
-      LIMIT ${days}
-    `;
-    
-    const result = await db.query(query);
-    
-    // Add calculated metrics
-    const data = result.rows.map(row => ({
-      ...row,
-      crash_rate_per_1000: parseInt(row.daily_active_users) > 0 ? 
-        (parseInt(row.daily_crashes) / parseInt(row.daily_active_users) * 1000) : 0,
-      revenue_per_dau: parseInt(row.daily_active_users) > 0 ? 
-        (parseFloat(row.daily_revenue) / parseInt(row.daily_active_users)) : 0
-    }));
-    
-    res.json({
+            -- DAU (Daily Active Users)
+            COUNT(DISTINCT player_id) FILTER (WHERE player_id IS NOT NULL) as dau,
+            
+            -- Games played today
+            COUNT(*) FILTER (WHERE event_name = 'game_over') as games_played,
+            
+            -- Continue usage
+            COUNT(*) FILTER (WHERE event_name = 'continue_used') as continues_total,
+            COUNT(*) FILTER (WHERE event_name = 'continue_used' AND 
+              (parameters->>'continue_type' = 'ad' OR parameters->>'method' = 'ad')) as continues_ad,
+            COUNT(*) FILTER (WHERE event_name = 'continue_used' AND 
+              (parameters->>'continue_type' = 'gems' OR parameters->>'method' = 'gems')) as continues_gems,
+            
+            -- Ad metrics
+            COUNT(*) FILTER (WHERE event_name = 'ad_shown') as ads_shown,
+            COUNT(*) FILTER (WHERE event_name = 'ad_completed') as ads_completed,
+            
+            -- Purchases
+            COUNT(DISTINCT (parameters->>'transaction_id')) FILTER (
+              WHERE event_name = 'iap_purchase' AND parameters->>'transaction_id' IS NOT NULL
+            ) as purchases_today,
+            SUM((parameters->>'price_usd')::decimal) FILTER (
+              WHERE event_name = 'iap_purchase'
+            ) as revenue_today,
+            
+            -- Jet skins bought
+            COUNT(*) FILTER (WHERE event_name = 'skin_purchased') as skins_bought,
+            
+            -- Daily missions completed
+            COUNT(DISTINCT player_id) FILTER (
+              WHERE event_name = 'mission_complete' AND 
+              parameters->>'mission_type' = 'daily'
+            ) as missions_completed
+            
+          FROM analytics_events
+          WHERE created_at >= CURRENT_DATE
+            AND created_at < CURRENT_DATE + INTERVAL '1 day'
+        )
+      SELECT 
+          dau,
+          games_played,
+          continues_total,
+          continues_ad,
+          continues_gems,
+          ads_shown,
+          ads_completed,
+          CASE 
+            WHEN ads_shown > 0 THEN ROUND((ads_completed::decimal / ads_shown * 100), 1)
+            ELSE 0 
+          END as ad_completion_rate,
+          purchases_today,
+          COALESCE(revenue_today, 0) as revenue_today,
+          skins_bought,
+          missions_completed
+        FROM today_data;
+      `;
+      
+      const todayResult = await db.query(todayQuery);
+      const today = todayResult.rows[0] || {};
+      
+      // Get retention metrics (D1, D7, D30)
+      const retentionQuery = `
+        WITH user_first_seen AS (
+          SELECT 
+            player_id,
+            DATE(MIN(created_at)) as first_seen_date
+          FROM analytics_events
+          WHERE player_id IS NOT NULL
+            AND created_at >= $1
+          GROUP BY player_id
+        ),
+        retention_cohorts AS (
+          SELECT 
+            ufs.first_seen_date as cohort_date,
+            COUNT(DISTINCT ufs.player_id) as cohort_size,
+            
+            -- D1 Retention
+            COUNT(DISTINCT CASE 
+              WHEN EXISTS (
+                SELECT 1 FROM analytics_events ae
+                WHERE ae.player_id = ufs.player_id
+                  AND DATE(ae.created_at) = ufs.first_seen_date + INTERVAL '1 day'
+              ) THEN ufs.player_id 
+            END) as d1_retained,
+            
+            -- D7 Retention
+            COUNT(DISTINCT CASE 
+              WHEN EXISTS (
+                SELECT 1 FROM analytics_events ae
+                WHERE ae.player_id = ufs.player_id
+                  AND DATE(ae.created_at) = ufs.first_seen_date + INTERVAL '7 days'
+              ) THEN ufs.player_id 
+            END) as d7_retained,
+            
+            -- D30 Retention
+            COUNT(DISTINCT CASE 
+              WHEN EXISTS (
+                SELECT 1 FROM analytics_events ae
+                WHERE ae.player_id = ufs.player_id
+                  AND DATE(ae.created_at) = ufs.first_seen_date + INTERVAL '30 days'
+              ) THEN ufs.player_id 
+            END) as d30_retained
+            
+          FROM user_first_seen ufs
+          WHERE ufs.first_seen_date >= $1
+          GROUP BY ufs.first_seen_date
+        )
+      SELECT 
+          SUM(cohort_size) as total_cohort_size,
+          CASE 
+            WHEN SUM(cohort_size) > 0 
+            THEN ROUND((SUM(d1_retained)::decimal / SUM(cohort_size) * 100), 1)
+            ELSE 0 
+          END as d1_retention,
+          CASE 
+            WHEN SUM(cohort_size) > 0 
+            THEN ROUND((SUM(d7_retained)::decimal / SUM(cohort_size) * 100), 1)
+            ELSE 0 
+          END as d7_retention,
+          CASE 
+            WHEN SUM(cohort_size) > 0 
+            THEN ROUND((SUM(d30_retained)::decimal / SUM(cohort_size) * 100), 1)
+            ELSE 0 
+          END as d30_retention
+        FROM retention_cohorts;
+      `;
+      
+      const retentionResult = await db.query(retentionQuery, [startDate]);
+      const retention = retentionResult.rows[0] || {};
+      
+      // Get period comparison (previous period)
+      const previousStartDate = new Date(startDate);
+      previousStartDate.setDate(previousStartDate.getDate() - days);
+      
+      const comparisonQuery = `
+      SELECT 
+          COUNT(DISTINCT player_id) FILTER (WHERE player_id IS NOT NULL) as prev_dau,
+          COUNT(*) FILTER (WHERE event_name = 'game_over') as prev_games,
+          COUNT(*) FILTER (WHERE event_name = 'ad_completed') as prev_ads_completed,
+          COUNT(DISTINCT (parameters->>'transaction_id')) FILTER (
+            WHERE event_name = 'iap_purchase' AND parameters->>'transaction_id' IS NOT NULL
+          ) as prev_purchases,
+          SUM((parameters->>'price_usd')::decimal) FILTER (
+            WHERE event_name = 'iap_purchase'
+          ) as prev_revenue
+        FROM analytics_events
+        WHERE created_at >= $1
+          AND created_at < $2;
+      `;
+      
+      const comparisonResult = await db.query(comparisonQuery, [previousStartDate, startDate]);
+      const previous = comparisonResult.rows[0] || {};
+      
+      // Calculate percentage changes
+      const calculateChange = (current, previous) => {
+        if (!previous || previous === 0) return 0;
+        return Math.round(((current - previous) / previous) * 100);
+      };
+      
+      const response = {
       success: true,
-      data,
+        data: {
+          // Today's metrics
+          dau_today: parseInt(today.dau) || 0,
+          games_played_today: parseInt(today.games_played) || 0,
+          
+          // Continue usage
+          continues_total: parseInt(today.continues_total) || 0,
+          continues_ad: parseInt(today.continues_ad) || 0,
+          continues_gems: parseInt(today.continues_gems) || 0,
+          continue_usage_rate: today.games_played > 0 
+            ? Math.round((today.continues_total / today.games_played) * 100 * 10) / 10
+            : 0,
+          
+          // Ad metrics
+          ads_shown: parseInt(today.ads_shown) || 0,
+          ads_completed: parseInt(today.ads_completed) || 0,
+          ad_completion_rate: parseFloat(today.ad_completion_rate) || 0,
+          
+          // Monetization
+          purchases_today: parseInt(today.purchases_today) || 0,
+          revenue_today: parseFloat(today.revenue_today) || 0,
+          skins_bought_today: parseInt(today.skins_bought) || 0,
+          
+          // Missions
+          missions_completed_today: parseInt(today.missions_completed) || 0,
+          
+          // Retention
+          d1_retention: parseFloat(retention.d1_retention) || 0,
+          d7_retention: parseFloat(retention.d7_retention) || 0,
+          d30_retention: parseFloat(retention.d30_retention) || 0,
+          
+          // Period comparisons
+          dau_change: calculateChange(today.dau, previous.prev_dau),
+          games_change: calculateChange(today.games_played, previous.prev_games),
+          ad_change: calculateChange(today.ads_completed, previous.prev_ads_completed),
+          purchases_change: calculateChange(today.purchases_today, previous.prev_purchases),
+          revenue_change: calculateChange(today.revenue_today, previous.prev_revenue),
+        },
       meta: {
-        total_days: data.length,
-        date_range: {
-          from: data[data.length - 1]?.date,
-          to: data[0]?.date
+          period_days: days,
+          start_date: startDate.toISOString(),
+          generated_at: new Date().toISOString()
         }
-      }
-    });
+      };
+      
+      logger.info('📊 Dashboard KPIs generated successfully', {
+        dau: response.data.dau_today,
+        games: response.data.games_played_today,
+        revenue: response.data.revenue_today
+      });
+      
+      res.json(response);
     
   } catch (error) {
-    console.error('KPI Summary API Error:', error);
+      logger.error('📊 Dashboard KPI error:', error);
     res.status(500).json({ 
       success: false, 
-      error: 'Failed to fetch KPI summary',
+        error: 'Failed to generate dashboard metrics',
       message: error.message 
     });
   }
 });
 
-/**
- * GET /api/analytics/trends
- * Returns trend data for charts (DAU, Revenue over time)
- */
-router.get('/trends', authenticateDashboard, async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 30;
-    
-    const query = `
-      SELECT 
-        date,
-        daily_active_users,
-        gaming_users,
-        COALESCE(android_users, 0) as android_users,
-        COALESCE(ios_users, 0) as ios_users,
-        daily_revenue_usd as daily_revenue,
-        total_purchases as daily_purchases,
-        paying_users,
-        arpu,
-        iap_conversion_rate as conversion_rate
-      FROM daily_kpi_summary 
-      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-        AND CAST(daily_active_users AS INTEGER) > 0  -- Only include days with actual activity
-      ORDER BY date ASC  -- Ascending for chart display
-    `;
-    
-    const result = await db.query(query);
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      meta: {
-        total_days: result.rows.length,
-        avg_dau: result.rows.reduce((sum, row) => sum + (row.daily_active_users || 0), 0) / result.rows.length,
-        avg_revenue: result.rows.reduce((sum, row) => sum + (row.daily_revenue || 0), 0) / result.rows.length
-      }
-    });
-    
-  } catch (error) {
-    console.error('Trends API Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch trends data',
-      message: error.message 
-    });
-  }
-});
-
-/**
- * GET /api/analytics/retention
- * Returns retention cohort analysis data
- */
-router.get('/retention', authenticateDashboard, async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 30;
-    
-    const query = `
-      SELECT 
-        install_date,
-        cohort_size,
-        day_1_retained,
-        day_1_retention_rate,
-        day_7_retained,
-        day_7_retention_rate,
-        day_30_retained,
-        day_30_retention_rate
-      FROM retention_cohorts 
-      WHERE install_date >= CURRENT_DATE - INTERVAL '${days} days'
-        AND cohort_size >= 5  -- Only meaningful cohorts
-      ORDER BY install_date ASC
-    `;
-    
-    const result = await db.query(query);
-    
-    // Calculate overall averages
-    const avgRetention = {
-      day1: result.rows.reduce((sum, row) => sum + (row.day_1_retention_rate || 0), 0) / result.rows.length || 0,
-      day7: result.rows.reduce((sum, row) => sum + (row.day_7_retention_rate || 0), 0) / result.rows.length || 0,
-      day30: result.rows.reduce((sum, row) => sum + (row.day_30_retention_rate || 0), 0) / result.rows.length || 0
-    };
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      meta: {
-        total_cohorts: result.rows.length,
-        avg_retention: avgRetention,
-        total_users_analyzed: result.rows.reduce((sum, row) => sum + (row.cohort_size || 0), 0)
-      }
-    });
-    
-  } catch (error) {
-    console.error('Retention API Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch retention data',
-      message: error.message 
-    });
-  }
-});
-
-/**
- * GET /api/analytics/monetization
- * Returns monetization funnel and performance data
- */
-router.get('/monetization', authenticateDashboard, async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 30;
-    
-    const query = `
-      SELECT 
-        dks.date,
-        dks.daily_revenue_usd as daily_revenue,
-        dks.total_purchases as daily_purchases,
-        dks.paying_users,
-        dks.arpu,
-        dks.arppu,
-        dks.iap_conversion_rate as conversion_rate,
-        COALESCE(dmf.total_ad_views, 0) as ads_shown,
-        COALESCE(dmf.ad_users, 0) as ads_completed,
-        COALESCE(dmf.total_ad_views, 0) as ad_rewards_granted,
-        COALESCE(dmf.ad_conversion_rate, 0) as ad_completion_rate
-      FROM daily_kpi_summary dks
-      LEFT JOIN daily_monetization_funnel dmf ON dks.date = dmf.date
-      WHERE dks.date >= CURRENT_DATE - INTERVAL '${days} days'
-      ORDER BY dks.date ASC
-    `;
-    
-    const result = await db.query(query);
-    
-    // Calculate funnel metrics
-    const totalAdsShown = result.rows.reduce((sum, row) => sum + (row.ads_shown || 0), 0);
-    const totalAdsCompleted = result.rows.reduce((sum, row) => sum + (row.ads_completed || 0), 0);
-    const overallAdCompletionRate = totalAdsShown > 0 ? (totalAdsCompleted / totalAdsShown * 100) : 0;
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      meta: {
-        total_days: result.rows.length,
-        funnel_metrics: {
-          total_ads_shown: totalAdsShown,
-          total_ads_completed: totalAdsCompleted,
-          overall_completion_rate: overallAdCompletionRate,
-          total_revenue: result.rows.reduce((sum, row) => sum + (row.daily_revenue || 0), 0)
-        }
-      }
-    });
-    
-  } catch (error) {
-    console.error('Monetization API Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch monetization data',
-      message: error.message 
-    });
-  }
-});
-
-/**
- * GET /api/analytics/platform
- * Returns platform comparison data (iOS vs Android)
- */
-router.get('/platform', authenticateDashboard, async (req, res) => {
-  try {
-    const days = parseInt(req.query.days) || 30;
-    
-    const query = `
-      SELECT 
-        date,
-        COALESCE(android_users, 0) as android_users,
-        COALESCE(ios_users, 0) as ios_users,
-        daily_active_users,
-        -- Calculate platform percentages
-        CASE 
-          WHEN CAST(daily_active_users AS INTEGER) > 0 
-          THEN ROUND(COALESCE(android_users, 0)::numeric / CAST(daily_active_users AS INTEGER) * 100, 1)
-          ELSE 0 
-        END as android_percentage,
-        CASE 
-          WHEN CAST(daily_active_users AS INTEGER) > 0 
-          THEN ROUND(COALESCE(ios_users, 0)::numeric / CAST(daily_active_users AS INTEGER) * 100, 1)
-          ELSE 0 
-        END as ios_percentage
-      FROM daily_kpi_summary 
-      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-        AND CAST(daily_active_users AS INTEGER) > 0
-      ORDER BY date ASC
-    `;
-    
-    const result = await db.query(query);
-    
-    // Calculate platform totals
-    const totalAndroid = result.rows.reduce((sum, row) => sum + (row.android_users || 0), 0);
-    const totalIOS = result.rows.reduce((sum, row) => sum + (row.ios_users || 0), 0);
-    const totalUsers = totalAndroid + totalIOS;
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      meta: {
-        total_days: result.rows.length,
-        platform_summary: {
-          total_android_users: totalAndroid,
-          total_ios_users: totalIOS,
-          android_share: totalUsers > 0 ? (totalAndroid / totalUsers * 100) : 0,
-          ios_share: totalUsers > 0 ? (totalIOS / totalUsers * 100) : 0
-        }
-      }
-    });
-    
-  } catch (error) {
-    console.error('Platform API Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch platform data',
-      message: error.message 
-    });
-  }
-});
-
-/**
- * GET /api/analytics/health
- * Dashboard health check and data freshness
- */
-router.get('/health', async (req, res) => {
-  try {
-    // Check database connection
-    const dbCheck = await db.query('SELECT NOW() as current_time');
-    
-    // Check data freshness
-    const freshnessCheck = await db.query(`
-      SELECT 
-        MAX(date) as latest_data_date,
-        COUNT(*) as total_days,
-        COUNT(CASE WHEN date >= CURRENT_DATE - INTERVAL '7 days' THEN 1 END) as recent_days
-      FROM daily_kpi_summary
-    `);
-    
-    const latestDate = freshnessCheck.rows[0]?.latest_data_date;
-    const daysSinceUpdate = latestDate ? 
-      Math.floor((new Date() - new Date(latestDate)) / (1000 * 60 * 60 * 24)) : null;
-    
-    res.json({
-      success: true,
-      status: 'healthy',
-      database: {
-        connected: true,
-        current_time: dbCheck.rows[0].current_time
-      },
-      data_freshness: {
-        latest_data_date: latestDate,
-        days_since_update: daysSinceUpdate,
-        total_days_available: freshnessCheck.rows[0]?.total_days || 0,
-        recent_days_available: freshnessCheck.rows[0]?.recent_days || 0
-      },
-      api_info: {
-        version: '1.1.0',
-        endpoints: ['/kpi-summary', '/trends', '/retention', '/monetization', '/platform', '/tournaments'],
-        authentication: 'API Key required'
-      }
-    });
-    
-  } catch (error) {
-    console.error('Health Check Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      status: 'unhealthy',
-      error: error.message 
-    });
-  }
-});
-
-/**
- * POST /api/analytics/refresh
- * Manually trigger dashboard data refresh
- */
-router.post('/refresh', authenticateDashboard, async (req, res) => {
-  try {
-    // Call the refresh function
-    await db.query('SELECT refresh_dashboard_views()');
-    
-    res.json({
-      success: true,
-      message: 'Dashboard data refreshed successfully',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('Manual Refresh Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to refresh dashboard data',
-      message: error.message 
-    });
-  }
-});
-
-// ============================================================================
-// ERROR HANDLING
-// ============================================================================
-
-// Global error handler for analytics routes
-router.use((error, req, res, next) => {
-  console.error('Analytics Dashboard API Error:', error);
-  
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-  });
-});
-
-/**
- * GET /api/analytics/tournaments
- * Tournament-specific analytics data
- */
-router.get('/tournaments', authenticateDashboard, async (req, res) => {
-  try {
-    const days = Math.min(parseInt(req.query.days) || 30, 90);
-    
-    // Tournament KPI Summary (using available data)
-    const kpiQuery = `
-      SELECT 
-        date,
-        daily_active_users,
-        gaming_users,
-        daily_revenue_usd as tournament_revenue,
-        total_purchases,
-        paying_users,
-        0 as tournament_participants,
-        0 as tournament_completion_rate,
-        0 as tournament_roi,
-        0 as tournament_participation_rate,
-        day1_retention_rate as tournament_day1_retention,
-        day7_retention_rate as tournament_day7_retention,
-        0 as active_tournaments,
-        0 as total_prizes_distributed,
-        1.0 as tournament_score_multiplier
-      FROM daily_kpi_summary 
-      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-      ORDER BY date DESC
-      LIMIT ${days}
-    `;
-    
-    const kpiResult = await db.query(kpiQuery);
-    
-    // Tournament Trends for Charts (using available data)
-    const trendsQuery = `
-      SELECT 
-        date,
-        0 as tournament_participants,
-        daily_revenue_usd as tournament_revenue,
-        0 as tournament_completion_rate,
-        0 as tournament_participation_rate,
-        0 as active_tournaments
-      FROM daily_kpi_summary
-      WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
-      ORDER BY date ASC  -- Ascending for chart display
-    `;
-    
-    const trendsResult = await db.query(trendsQuery);
-    
-    // Tournament Performance Summary (placeholder data)
-    const performanceQuery = `
-      SELECT 
-        'No tournaments configured' as tournament_name,
-        'N/A' as tournament_type,
-        CURRENT_DATE as start_date,
-        CURRENT_DATE as end_date,
-        'inactive' as status,
-        0 as total_participants,
-        0 as participation_rate,
-        0 as avg_score,
-        0 as winning_score,
-        0 as total_prizes_awarded,
-        0 as estimated_revenue_impact
-      WHERE FALSE  -- Return empty result
-    `;
-    
-    const performanceResult = await db.query(performanceQuery);
-    
-    // Calculate summary statistics
-    const summaryStats = {
-      total_tournament_participants: kpiResult.rows.reduce((sum, row) => sum + (row.tournament_participants || 0), 0),
-      avg_completion_rate: kpiResult.rows.length > 0 ? 
-        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_completion_rate || 0), 0) / kpiResult.rows.length : 0,
-      total_tournament_revenue: kpiResult.rows.reduce((sum, row) => sum + (row.tournament_revenue || 0), 0),
-      avg_tournament_roi: kpiResult.rows.length > 0 ? 
-        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_roi || 0), 0) / kpiResult.rows.length : 0,
-      avg_participation_rate: kpiResult.rows.length > 0 ? 
-        kpiResult.rows.reduce((sum, row) => sum + (row.tournament_participation_rate || 0), 0) / kpiResult.rows.length : 0,
-      total_tournaments_run: performanceResult.rows.length
-    };
-    
-    res.json({
-      success: true,
-      period: `${days} days`,
-      kpi_data: kpiResult.rows.map(row => ({
-        ...row,
-        tournament_revenue: parseFloat(row.tournament_revenue || 0),
-        tournament_roi: parseFloat(row.tournament_roi || 0),
-        tournament_participation_rate: parseFloat(row.tournament_participation_rate || 0),
-        tournament_completion_rate: parseFloat(row.tournament_completion_rate || 0)
-      })),
-      trends_data: trendsResult.rows,
-      tournament_performance: performanceResult.rows,
-      summary_stats: summaryStats
-    });
-    
-  } catch (error) {
-    console.error('Tournament Analytics Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch tournament analytics',
-      message: error.message 
-    });
-  }
-});
-
-module.exports = router;
+  return router;
+};
