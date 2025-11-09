@@ -14,6 +14,7 @@ class TournamentManager {
     this.prizeManager = prizeManager;
     this.wsManager = wsManager;
     this.leaderboardManager = leaderboardManager;
+    this.logger = logger; // ✅ Initialize logger
     
     // Cache keys
     this.CACHE_KEYS = {
