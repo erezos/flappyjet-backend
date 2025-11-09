@@ -148,7 +148,15 @@ router.post('/event', async (req, res) => {
 });
 
 /**
- * POST /api/analytics/v2/batch - Enhanced batch event processing
+ * POST /api/analytics/v2/batch - DEPRECATED - Legacy endpoint for old app versions
+ * 
+ * This endpoint is kept alive for backward compatibility with old app versions
+ * that still use ComprehensiveAnalyticsManager. It accepts requests but doesn't
+ * process them, preventing errors for users who haven't updated yet.
+ * 
+ * NEW apps should use /api/events with EventBus instead.
+ * 
+ * TODO: Remove this endpoint after 90 days (2026-02-09) when most users have updated
  */
 router.post('/batch', async (req, res) => {
   try {
@@ -162,14 +170,20 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    // Enhanced batch size limits
-    if (events.length > 200) {
-      return res.status(400).json({
-        success: false,
-        error: 'Batch size too large (max 200 events)',
-        version: 'v2'
-      });
-    }
+    // Log receipt of old-format events (for monitoring migration progress)
+    console.log(`⚠️  DEPRECATED /api/analytics/v2/batch received ${events.length} events from old app version`);
+    console.log(`   User-Agent: ${req.headers['user-agent']}`);
+    console.log(`   IP: ${req.ip}`);
+    
+    // Return success immediately without processing
+    // This prevents errors for users with old app versions
+    return res.status(200).json({
+      success: true,
+      message: 'Events received (legacy endpoint)',
+      count: events.length,
+      note: 'This endpoint is deprecated. Please update to the latest app version.',
+      version: 'v2-deprecated'
+    });
 
     // 🔥 CRITICAL FIX: Deduplicate events to prevent inflated metrics
     const deduplicatedEvents = [];
