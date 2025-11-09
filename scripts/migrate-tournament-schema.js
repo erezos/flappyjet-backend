@@ -1,5 +1,23 @@
 #!/usr/bin/env node
 
+// ⛔⛔⛔ DEPRECATED - DO NOT USE ⛔⛔⛔
+// This script applies the OLD JWT-based tournament schema
+// It has been REPLACED by the new event-driven migration system
+//
+// Use this instead:
+//   node scripts/run-migrations.js
+//
+// This will run migrations 001-005 which include the NEW
+// event-driven tournament system with proper schema.
+//
+// See: CLEANUP_SUMMARY.md for details
+// ⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
+
+console.error('⛔ ERROR: This script is deprecated!');
+console.error('⛔ Use: node scripts/run-migrations.js');
+console.error('⛔ See: CLEANUP_SUMMARY.md for details');
+process.exit(1);
+
 /**
  * Tournament Schema Migration Script
  * Runs the tournament-schema.sql file against the Railway database

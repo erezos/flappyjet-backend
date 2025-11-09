@@ -1,3 +1,18 @@
+-- ⛔⛔⛔ DEPRECATED - DO NOT USE ⛔⛔⛔
+-- This schema is from the OLD JWT-based tournament system
+-- It has been REPLACED by the new event-driven architecture
+-- 
+-- New system uses these migrations instead:
+--   001_events_table.sql
+--   002_event_leaderboards.sql
+--   003_prizes.sql
+--   004_analytics_aggregates.sql
+--   005_performance_indexes.sql
+--
+-- Running this file will CREATE CONFLICTING TABLES!
+-- See: CLEANUP_SUMMARY.md for migration guide
+-- ⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔⛔
+
 -- Tournament System Database Schema
 -- FlappyJet Pro Weekly Competitions with Prizes
 
