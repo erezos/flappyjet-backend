@@ -23,6 +23,10 @@ const TournamentScheduler = require('./services/tournament-scheduler');
 const SimpleCacheManager = require('./services/simple-cache-manager');
 const SmartNotificationScheduler = require('./services/smart-notification-scheduler');
 const LeaderboardManager = require('./services/leaderboard-manager');
+const LeaderboardAggregator = require('./services/leaderboard-aggregator');
+const AnalyticsAggregator = require('./services/analytics-aggregator');
+const PrizeCalculator = require('./services/prize-calculator');
+const EventQueue = require('./services/event-queue');
 require('dotenv').config();
 
 // Import route modules
@@ -43,6 +47,10 @@ const inventoryRoutes = require('./routes/inventory');
 const healthRoutes = require('./routes/health');
 // const adminRoutes = require('./routes/admin'); // Removed - temporary fix completed
 const fcmRoutes = require('./routes/fcm');
+const eventsRoutes = require('./routes/events'); // Event-driven architecture
+const leaderboardsV2Routes = require('./routes/leaderboards-v2'); // V2: Device-based
+const tournamentsV2Routes = require('./routes/tournaments-v2'); // V2: Device-based
+const prizesV2Routes = require('./routes/prizes-v2'); // V2: Device-based
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -56,21 +64,21 @@ try {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     
-    // Railway Pro Optimized Settings - More conservative for network stability
-    max: 5,                    // Reduced from 10 - Railway Pro handles scaling
-    min: 1,                    // Keep minimum connections
-    idleTimeoutMillis: 30000,  // Increased for Railway's network stability
-    connectionTimeoutMillis: 15000,  // Increased timeout for Railway network
-    acquireTimeoutMillis: 60000,     // Increased acquire timeout
-    createTimeoutMillis: 15000,      // Increased create timeout
-    destroyTimeoutMillis: 5000,      // Timeout for destroying a connection
-    reapIntervalMillis: 5000,        // Increased interval for stability
-    createRetryIntervalMillis: 2000, // Increased retry interval
+    // ✅ OPTIMIZED POOL SETTINGS FOR SCALABILITY
+    max: 50,                    // Max connections (Railway Pro supports 100+)
+    min: 10,                     // Keep 10 connections warm
+    idleTimeoutMillis: 30000,    // Close idle connections after 30s
+    connectionTimeoutMillis: 5000, // Fail fast if can't connect in 5s
+    maxUses: 7500,               // Recycle connections after 7.5k uses
+    allowExitOnIdle: true,       // Allow process to exit when idle
     
-    // Railway Pro Specific - Keep connections alive
-    allowExitOnIdle: false,    // Keep connections alive for Railway
-    keepAlive: true,           // Enable TCP keep-alive
-    keepAliveInitialDelayMillis: 10000,
+    // Query timeouts
+    query_timeout: 10000,        // 10s max per query
+    statement_timeout: 10000,    // 10s max per statement
+    
+    // Keep-alive for Railway
+    keepAlive: true,             // Enable TCP keep-alive
+    keepAliveInitialDelayMillis: 10000
   });
 
   // Test database connection with retry logic - Railway Pro optimized
@@ -211,6 +219,55 @@ if (db) {
       logger.error('🏆 ❌ Leaderboard Manager failed:', error.message);
     }
     
+    // Initialize Event-Driven Aggregators (NEW)
+    let leaderboardAggregator = null;
+    let analyticsAggregator = null;
+    
+    try {
+      leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
+      app.locals.leaderboardAggregator = leaderboardAggregator;
+      logger.info('📊 ✅ Leaderboard Aggregator initialized');
+    } catch (error) {
+      logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
+    }
+    
+    try {
+      analyticsAggregator = new AnalyticsAggregator(db);
+      app.locals.analyticsAggregator = analyticsAggregator;
+      logger.info('📈 ✅ Analytics Aggregator initialized');
+    } catch (error) {
+      logger.error('📈 ❌ Analytics Aggregator failed:', error.message);
+    }
+    
+    // Initialize Prize Calculator
+    let prizeCalculator = null;
+    
+    try {
+      prizeCalculator = new PrizeCalculator(db);
+      app.locals.prizeCalculator = prizeCalculator;
+      logger.info('🏆 ✅ Prize Calculator initialized');
+    } catch (error) {
+      logger.error('🏆 ❌ Prize Calculator failed:', error.message);
+    }
+    
+    // Initialize Event Queue (for 100K+ DAU scalability)
+    let eventQueue = null;
+    
+    try {
+      if (cacheManager && cacheManager.redis) {
+        eventQueue = new EventQueue(cacheManager.redis, db);
+        app.locals.eventQueue = eventQueue;
+        logger.info('📦 ✅ Event Queue initialized (Bull + Redis)');
+        logger.info('📦    Workers: 10, Capacity: ~100 events/second');
+      } else {
+        logger.warn('📦 ⚠️ Event Queue not initialized - Redis unavailable');
+        logger.warn('📦    Using direct processing (suitable for <10K DAU)');
+      }
+    } catch (error) {
+      logger.error('📦 ❌ Event Queue failed:', error.message);
+      logger.info('📦    Falling back to direct event processing');
+    }
+    
     // Initialize Prize Manager
     try {
       prizeManager = new PrizeManager({ db, wsManager });
@@ -333,6 +390,15 @@ app.locals.leaderboardManager = leaderboardManager;
 
 // API Routes (only if database is available)
 if (db) {
+  // Event-driven architecture (NEW)
+  app.use('/api/events', eventsRoutes);
+  
+  // V2 Routes - Device-based (no auth required)
+  app.use('/api/v2/leaderboard', leaderboardsV2Routes);
+  app.use('/api/v2/tournaments', tournamentsV2Routes);
+  app.use('/api/v2/prizes', prizesV2Routes);
+  
+  // Existing routes (V1 - will be deprecated eventually)
   app.use('/api/auth', authRoutes(db));
   app.use('/api/anonymous', anonymousRoutes(db));
   app.use('/api/player', playerRoutes(db));
@@ -351,7 +417,7 @@ if (db) {
 // app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
 app.use('/api/fcm', fcmRoutes(db));
 
-  logger.info('🚂 ✅ All API routes initialized');
+  logger.info('🚂 ✅ All API routes initialized (including event-driven v2 endpoints)');
 } else {
   // Minimal routes for health check
   app.get('/api/*', (req, res) => {
@@ -439,6 +505,161 @@ cron.schedule('0 2 * * 0', async () => {
     logger.error('🧹 ❌ Weekly cleanup failed:', error);
   }
 });
+
+// ============================================================================
+// EVENT-DRIVEN ARCHITECTURE CRON JOBS (NEW)
+// ============================================================================
+
+// 🏆 Update global leaderboard from game_ended events (every 10 minutes)
+if (db) {
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      logger.info('🏆 Cron: Updating global leaderboard from events...');
+      const leaderboardAggregator = app.locals.leaderboardAggregator;
+      
+      if (leaderboardAggregator) {
+        const result = await leaderboardAggregator.updateGlobalLeaderboard();
+        if (result.success) {
+          logger.info(`🏆 ✅ Global leaderboard updated: ${result.processed} events processed`);
+        } else {
+          logger.error(`🏆 ❌ Global leaderboard update failed: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      logger.error('🏆 ❌ Global leaderboard cron failed:', error);
+    }
+  });
+  logger.info('🏆 Cron job registered: Global leaderboard update (every 10 minutes)');
+}
+
+// 🏆 Update tournament leaderboard from game_ended events (every 4 minutes)
+if (db && tournamentManager) {
+  cron.schedule('*/4 * * * *', async () => {
+    try {
+      logger.info('🏆 Cron: Updating tournament leaderboard from events...');
+      
+      // Get current tournament
+      const tournament = await tournamentManager.getCurrentTournament();
+      
+      if (tournament.success && tournament.tournament) {
+        const leaderboardAggregator = app.locals.leaderboardAggregator;
+        
+        if (leaderboardAggregator) {
+          const result = await leaderboardAggregator.updateTournamentLeaderboard(
+            tournament.tournament.tournament_id,
+            tournament.tournament.start_date,
+            tournament.tournament.end_date
+          );
+          
+          if (result.success) {
+            logger.info(`🏆 ✅ Tournament leaderboard updated: ${result.processed} events processed`);
+          } else {
+            logger.error(`🏆 ❌ Tournament leaderboard update failed: ${result.error}`);
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('🏆 ❌ Tournament leaderboard cron failed:', error);
+    }
+  });
+  logger.info('🏆 Cron job registered: Tournament leaderboard update (every 4 minutes)');
+}
+
+// 📊 Aggregate daily KPIs from events (every hour)
+if (db) {
+  cron.schedule('0 * * * *', async () => {
+    try {
+      logger.info('📊 Cron: Aggregating daily KPIs from events...');
+      const analyticsAggregator = app.locals.analyticsAggregator;
+      
+      if (analyticsAggregator) {
+        const result = await analyticsAggregator.aggregateDailyKPIs();
+        if (result.success) {
+          logger.info(`📊 ✅ Daily KPIs aggregated: DAU=${result.metrics.dau}, Games=${result.metrics.games_completed}`);
+        } else {
+          logger.error(`📊 ❌ Daily KPIs aggregation failed: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      logger.error('📊 ❌ Daily KPIs cron failed:', error);
+    }
+  });
+  logger.info('📊 Cron job registered: Daily KPIs aggregation (every hour)');
+}
+
+// 📈 Aggregate hourly metrics (every hour at :30)
+if (db) {
+  cron.schedule('30 * * * *', async () => {
+    try {
+      logger.info('📈 Cron: Aggregating hourly metrics...');
+      const analyticsAggregator = app.locals.analyticsAggregator;
+      
+      if (analyticsAggregator) {
+        const result = await analyticsAggregator.aggregateHourlyMetrics();
+        if (result.success) {
+          logger.info('📈 ✅ Hourly metrics aggregated');
+        } else {
+          logger.error(`📈 ❌ Hourly metrics aggregation failed: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      logger.error('📈 ❌ Hourly metrics cron failed:', error);
+    }
+  });
+  logger.info('📈 Cron job registered: Hourly metrics aggregation (every hour at :30)');
+}
+
+// 🧹 Cleanup old events (keep 90 days) - runs weekly on Sunday at 3 AM
+if (db) {
+  cron.schedule('0 3 * * 0', async () => {
+    try {
+      logger.info('🧹 Cron: Cleaning up old events (>90 days)...');
+      
+      const result = await db.query(`
+        DELETE FROM events 
+        WHERE received_at < NOW() - INTERVAL '90 days'
+          AND processed_at IS NOT NULL
+        RETURNING id
+      `);
+      
+      logger.info(`🧹 ✅ Cleaned up ${result.rowCount} old events`);
+    } catch (error) {
+      logger.error('🧹 ❌ Event cleanup failed:', error);
+    }
+  });
+  logger.info('🧹 Cron job registered: Old events cleanup (weekly, Sunday 3 AM)');
+}
+
+// 🏆 Calculate tournament prizes (Monday 00:05 UTC - after tournament ends)
+if (db) {
+  cron.schedule('5 0 * * 1', async () => {
+    try {
+      logger.info('🏆 Cron: Calculating tournament prizes...');
+      const prizeCalculator = app.locals.prizeCalculator;
+      
+      if (prizeCalculator) {
+        const result = await prizeCalculator.processLastWeekPrizes();
+        
+        if (result.success) {
+          if (result.prizes_awarded > 0) {
+            logger.info(`🏆 ✅ Tournament prizes calculated: ${result.prizes_awarded} prizes awarded for ${result.tournament_name}`);
+          } else {
+            logger.info(`🏆 ✅ Prize calculation complete: ${result.message}`);
+          }
+        } else {
+          logger.error(`🏆 ❌ Prize calculation failed: ${result.error}`);
+        }
+      }
+    } catch (error) {
+      logger.error('🏆 ❌ Prize calculation cron failed:', error);
+    }
+  });
+  logger.info('🏆 Cron job registered: Tournament prize calculation (Monday 00:05 UTC)');
+}
+
+// ============================================================================
+// END EVENT-DRIVEN CRON JOBS
+// ============================================================================
 
 // Dashboard views refresh (twice daily: 6 AM and 6 PM UTC)
 cron.schedule('0 6,18 * * *', async () => {

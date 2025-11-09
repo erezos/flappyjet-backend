@@ -181,4 +181,51 @@ router.get('/detailed', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/health/pool
+ * Database connection pool metrics for monitoring scalability
+ */
+router.get('/pool', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    
+    if (!db) {
+      return res.status(503).json({
+        success: false,
+        error: 'Database not configured'
+      });
+    }
+    
+    const poolMetrics = {
+      total: db.totalCount,          // Total connections in pool
+      idle: db.idleCount,             // Idle connections
+      waiting: db.waitingCount,       // Queries waiting for connection
+      max: db.options.max,            // Max pool size
+      utilization: ((db.totalCount - db.idleCount) / db.options.max * 100).toFixed(2) + '%',
+      health: 'healthy'
+    };
+    
+    // Warn if pool utilization is high
+    if (db.totalCount >= db.options.max * 0.8) {
+      poolMetrics.health = 'warning';
+      poolMetrics.message = 'Pool utilization > 80%';
+    }
+    
+    // Critical if waiting requests
+    if (db.waitingCount > 0) {
+      poolMetrics.health = 'critical';
+      poolMetrics.message = `${db.waitingCount} queries waiting for connection`;
+    }
+    
+    res.json(poolMetrics);
+    
+  } catch (error) {
+    logger.error('Pool health check error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;
