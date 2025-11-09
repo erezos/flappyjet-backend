@@ -753,15 +753,15 @@ class TournamentManager {
   }
 
   async _logTournamentEvent(tournamentId, eventType, eventData = {}) {
-    const query = `
-      INSERT INTO tournament_events (tournament_id, event_type, event_data)
-      VALUES ($1, $2, $3)
-      RETURNING id
-    `;
-
-    return await this.db.query(query, [
-      tournamentId, eventType, JSON.stringify(eventData)
-    ]);
+    // NOTE: tournament_events table has been redesigned to link tournaments to game events
+    // This internal logging method is temporarily disabled
+    // TODO: Consider using the main events table for tournament lifecycle events
+    this.logger.info(`🏆 Tournament event: ${eventType}`, { 
+      tournamentId, 
+      eventType, 
+      ...eventData 
+    });
+    return { rows: [{ id: null }] }; // Return empty result to maintain compatibility
   }
 
   /**

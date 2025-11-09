@@ -324,22 +324,17 @@ class PrizeManager {
   }
 
   async _logPrizeDistribution(tournamentId, playerId, rank, amount) {
-    const query = `
-      INSERT INTO tournament_events (tournament_id, event_type, event_data, player_id)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id
-    `;
-
-    const eventData = {
-      player_id: playerId,
-      rank: rank,
-      prize_amount: amount,
+    // NOTE: tournament_events table has been redesigned to link tournaments to game events
+    // This internal logging method is temporarily disabled
+    // TODO: Consider using the main events table or prizes table for prize distribution logging
+    this.logger.info(`💰 Prize distributed`, {
+      tournamentId,
+      playerId,
+      rank,
+      amount,
       distributed_at: new Date().toISOString()
-    };
-
-    return await this.db.query(query, [
-      tournamentId, 'prize_distributed', JSON.stringify(eventData), playerId
-    ]);
+    });
+    return { rows: [{ id: null }] }; // Return empty result to maintain compatibility
   }
 
   _getOrdinal(number) {
