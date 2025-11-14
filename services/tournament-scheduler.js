@@ -190,19 +190,29 @@ class TournamentScheduler {
       const now = new Date();
 
       for (const tournament of tournaments) {
-        const startDate = new Date(tournament.start_date);
-        const endDate = new Date(tournament.end_date);
+        try {
+          const startDate = new Date(tournament.start_date);
+          const endDate = new Date(tournament.end_date);
 
-        // Check if tournament should start
-        if (tournament.status === 'upcoming' && now >= startDate) {
-          logger.info(`🏆 🚀 Auto-starting tournament: ${tournament.name}`);
-          await this.tournamentManager.startTournament(tournament.id);
-        }
+          // Check if tournament should start
+          if (tournament.status === 'upcoming' && now >= startDate) {
+            logger.info(`🏆 🚀 Auto-starting tournament: ${tournament.name}`);
+            await this.tournamentManager.startTournament(tournament.id);
+          }
 
-        // Check if tournament should end
-        if (tournament.status === 'active' && now >= endDate) {
-          logger.info(`🏆 🏁 Auto-ending tournament: ${tournament.name}`);
-          await this.tournamentManager.endTournament(tournament.id);
+          // Check if tournament should end
+          if (tournament.status === 'active' && now >= endDate) {
+            logger.info(`🏆 🏁 Auto-ending tournament: ${tournament.name}`);
+            await this.tournamentManager.endTournament(tournament.id);
+          }
+        } catch (tournamentError) {
+          // ✅ FIX: Log error but continue processing other tournaments
+          logger.error(`🏆 ❌ Error processing tournament ${tournament.name} (${tournament.id}):`, {
+            error: tournamentError.message,
+            stack: tournamentError.stack,
+            tournament_id: tournament.id
+          });
+          // Continue to next tournament instead of crashing
         }
       }
 

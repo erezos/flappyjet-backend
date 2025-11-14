@@ -10,6 +10,7 @@ class PrizeManager {
   constructor({ db, wsManager }) {
     this.db = db;
     this.wsManager = wsManager;
+    this.logger = logger; // ✅ FIX: Store logger instance
   }
 
   /**
