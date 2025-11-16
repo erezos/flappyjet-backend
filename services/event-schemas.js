@@ -67,6 +67,19 @@ const appUninstalledSchema = Joi.object({
   last_seen_at: Joi.string().isoDate().required(),
 });
 
+// 6. user_installed - User installation event (similar to app_installed)
+const userInstalledSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('user_installed').required(),
+  device_model: Joi.string().optional(),
+  os_version: Joi.string().optional(),
+  country: Joi.string().optional(),
+  timezone: Joi.string().optional(),
+  install_source: Joi.string().optional(),
+  referrer: Joi.string().optional(),
+  first_open: Joi.boolean().optional(),
+}).unknown(true); // Allow additional fields
+
 // ============================================================================
 // GAME SESSION EVENTS (8 events)
 // ============================================================================
@@ -348,6 +361,7 @@ const schemaMap = {
   user_registered: userRegisteredSchema,
   settings_changed: settingsChangedSchema,
   app_uninstalled: appUninstalledSchema,
+  user_installed: userInstalledSchema, // ✅ NEW: Add user_installed event
   
   // Game Session
   game_started: gameStartedSchema,
@@ -432,6 +446,7 @@ module.exports = {
   userRegisteredSchema,
   settingsChangedSchema,
   appUninstalledSchema,
+  userInstalledSchema, // ✅ NEW: Export user_installed schema
   gameStartedSchema,
   gameEndedSchema,
   gamePausedSchema,
