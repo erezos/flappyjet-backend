@@ -18,6 +18,7 @@ const baseFields = {
   timestamp: Joi.string().isoDate().required(),
   app_version: Joi.string().required(),
   platform: Joi.string().valid('ios', 'android').required(),
+  session_id: Joi.string().optional(), // ✅ FIX: Allow session_id from EventBus
 };
 
 // ============================================================================
