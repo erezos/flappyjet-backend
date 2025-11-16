@@ -350,6 +350,9 @@ const rateLimitMiddleware = (req, res, next) => {
 
 app.use(rateLimitMiddleware);
 
+// ✅ Serve static files from 'public' directory (for dashboard.html)
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Initialize production dashboard service
 const DashboardService = require('./services/dashboard-service');
 const dashboardService = new DashboardService(db, logger);
