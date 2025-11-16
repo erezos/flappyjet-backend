@@ -24,7 +24,20 @@ const EventProcessor = require('../services/event-processor');
  */
 router.post('/', async (req, res) => {
   try {
-    let events = Array.isArray(req.body) ? req.body : [req.body];
+    // ✅ FIX: Support both request formats for backward compatibility
+    // - New format (correct): [{...}, {...}] (array at root)
+    // - Old format (EventBus bug): { events: [{...}, {...}] } (wrapped in object)
+    let events;
+    if (Array.isArray(req.body)) {
+      // New format: array at root level
+      events = req.body;
+    } else if (req.body.events && Array.isArray(req.body.events)) {
+      // Old format: extract from 'events' key
+      events = req.body.events;
+    } else {
+      // Single event object: wrap in array
+      events = [req.body];
+    }
     
     // ✅ LIMIT BATCH SIZE TO PREVENT MEMORY SPIKES
     const MAX_BATCH_SIZE = 100;
