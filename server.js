@@ -357,6 +357,17 @@ const dashboardService = new DashboardService(db, logger);
 // Initialize dashboard routes
 dashboardService.initializeRoutes(app);
 
+// ✅ NEW: Initialize analytics dashboard API (with Redis caching)
+if (db && cacheManager) {
+  try {
+    const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
+    app.use('/api/dashboard', dashboardApiRoutes);
+    logger.info('📊 ✅ Analytics Dashboard API initialized');
+  } catch (error) {
+    logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
+  }
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   logger.info('🏥 Health check requested');
