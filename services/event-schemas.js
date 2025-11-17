@@ -40,8 +40,17 @@ const appInstalledSchema = Joi.object({
 const appLaunchedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('app_launched').required(),
-  session_number: Joi.number().integer().min(1).required(),
-  time_since_last_session: Joi.number().integer().min(0).required(), // seconds
+  // ✅ FIX: Flutter client sends these from getDeviceMetadata()
+  deviceModel: Joi.string().optional(),
+  osVersion: Joi.string().optional(),
+  appVersion: Joi.string().optional(),
+  // ✅ FIX: Flutter client sends these from getSessionMetadata()
+  daysSinceInstall: Joi.number().integer().min(0).optional(),
+  daysSinceLastSession: Joi.number().integer().min(0).optional(),
+  isFirstLaunch: Joi.boolean().optional(),
+  // ❌ DEPRECATED: Backend expected these but Flutter doesn't send them
+  // session_number: Joi.number().integer().min(1).required(),
+  // time_since_last_session: Joi.number().integer().min(0).required(), // seconds
 });
 
 // 3. user_registered - Device ID created

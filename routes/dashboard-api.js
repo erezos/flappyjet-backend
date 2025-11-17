@@ -71,17 +71,19 @@ module.exports = (db, cacheManager) => {
           `),
           
           // Average session duration (last 7 days)
+          // ✅ FIX: Extract session_id from JSONB payload
           db.query(`
             SELECT 
               ROUND(AVG(duration_seconds)) as avg_session_seconds
             FROM (
               SELECT 
                 user_id,
-                session_id,
+                payload->>'session_id' as session_id,
                 EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) as duration_seconds
               FROM events
               WHERE received_at >= CURRENT_DATE - INTERVAL '7 days'
-              GROUP BY user_id, session_id
+                AND payload->>'session_id' IS NOT NULL
+              GROUP BY user_id, payload->>'session_id'
               HAVING EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) > 0
             ) sessions
           `),
