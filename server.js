@@ -151,137 +151,176 @@ let tournamentScheduler = null;
 let cacheManager = null;
 let redisClient = null;
 
-// Initialize services only if database is available
-if (db) {
-  // ✅ Use IIFE (Immediately Invoked Function Expression) to allow async/await
-  (async () => {
+// ✅ ASYNC SERVICE INITIALIZATION - Wrap in async IIFE to handle Redis properly
+(async () => {
+  // Initialize services only if database is available
+  if (db) {
+    logger.info('🔧 Starting service initialization...');
+    
+    // Initialize Redis Client (optional, graceful degradation)
     try {
-      logger.info('🔧 Starting service initialization...');
+      const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL;
       
-      // Initialize Redis Client
-      try {
-        const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL || 'redis://localhost:6379';
+      if (redisUrl) {
+        logger.info('💾 Redis URL found, initializing client...', { url: redisUrl?.substring(0, 20) + '...' });
         redisClient = new Redis(redisUrl, {
           maxRetriesPerRequest: 3,
-          enableReadyCheck: true,
-          lazyConnect: true, // Don't connect immediately
+          enableReadyCheck: true, // ✅ Check if connection is ready
+          lazyConnect: false, // ✅ Connect immediately
+          connectTimeout: 10000, // ✅ Increased timeout for Railway network
           retryStrategy: (times) => {
-            if (times > 3) {
+            if (times > 5) {
               logger.error('💾 ❌ Redis: Max retry attempts reached');
               return null; // Stop retrying
             }
-            const delay = Math.min(times * 100, 2000);
-            logger.warn(`💾 ⚠️ Redis: Retrying connection in ${delay}ms...`);
+            const delay = Math.min(times * 200, 2000);
+            logger.info(`💾 🔄 Redis retry attempt ${times}, waiting ${delay}ms...`);
             return delay;
           }
         });
-
-        // Connect to Redis
-        await redisClient.connect();
         
         redisClient.on('connect', () => {
-          logger.info('💾 ✅ Redis connected successfully');
+          logger.info('💾 🔌 Redis connection initiated...');
+        });
+        
+        redisClient.on('ready', () => {
+          logger.info('💾 ✅ Redis connected and READY!');
         });
         
         redisClient.on('error', (err) => {
           logger.error('💾 ❌ Redis error:', err.message);
+          // Don't crash the server
         });
         
         redisClient.on('close', () => {
           logger.warn('💾 ⚠️ Redis connection closed');
         });
         
-        logger.info('💾 ✅ Redis client initialized');
-      } catch (error) {
-        logger.error('💾 ❌ Redis initialization failed:', error.message);
-        logger.warn('💾 ⚠️ Continuing without Redis (dashboard will not have caching)');
+        redisClient.on('reconnecting', () => {
+          logger.info('💾 🔄 Redis reconnecting...');
+        });
+        
+        // ✅ WAIT for Redis to be ready or timeout after 10 seconds
+        try {
+          await Promise.race([
+            new Promise((resolve) => {
+              if (redisClient.status === 'ready') {
+                resolve();
+              } else {
+                redisClient.once('ready', resolve);
+              }
+            }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connection timeout')), 10000))
+          ]);
+          logger.info('💾 ✅ Redis client initialized and ready');
+        } catch (waitError) {
+          logger.error('💾 ❌ Redis ready check failed:', waitError.message);
+          logger.warn('💾 ⚠️ Continuing without Redis (will retry in background)');
+          // Keep the client for background reconnection, but don't wait
+        }
+      } else {
+        logger.warn('💾 ⚠️ No Redis URL configured, running without Redis');
         redisClient = null;
       }
-      
-      // Initialize Cache Manager (with or without Redis)
-      try {
-        if (redisClient) {
-          cacheManager = new CacheManager(redisClient);
-          logger.info('💾 ✅ Cache Manager initialized (with Redis)');
-        } else {
-          // Create a no-op cache manager for graceful degradation
-          cacheManager = {
-            get: async () => null,
-            set: async () => false,
-            delete: async () => false,
-            redis: null
-          };
-          logger.warn('💾 ⚠️ Cache Manager initialized (no-op mode, no Redis)');
-        }
-      } catch (error) {
-        logger.error('💾 ❌ Cache Manager failed:', error.message);
-      }
-      
-      // ✅ Initialize dashboard API routes (needs cacheManager)
-      try {
-        const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
-        app.use('/api/dashboard', dashboardApiRoutes);
-        logger.info('📊 ✅ Analytics Dashboard API initialized');
-      } catch (error) {
-        logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
-      }
-      
-      // Initialize Event-Driven Aggregators
-      let leaderboardAggregator = null;
-      
-      try {
-        leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
-        app.locals.leaderboardAggregator = leaderboardAggregator;
-        logger.info('📊 ✅ Leaderboard Aggregator initialized');
-      } catch (error) {
-        logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
-      }
-      
-      // Initialize Prize Manager
-      try {
-        prizeManager = new PrizeManager({ db, wsManager: null }); // ✅ No WebSocket manager
-        logger.info('🏆 ✅ Prize Manager initialized');
-      } catch (error) {
-        logger.error('🏆 ❌ Prize Manager failed:', error.message);
-      }
-      
-      // Initialize Tournament Manager
-      try {
-        tournamentManager = new TournamentManager({ 
-          db, 
-          cacheManager, 
-          prizeManager, 
-          wsManager: null, // ✅ No WebSocket manager
-          leaderboardManager: null // ✅ No separate leaderboard manager
-        });
-        logger.info('🏆 ✅ Tournament Manager initialized');
-      } catch (error) {
-        logger.error('🏆 ❌ Tournament Manager failed:', error.message);
-      }
-      
-      // Initialize Tournament Scheduler
-      try {
-        tournamentScheduler = new TournamentScheduler({ 
-          db, 
-          tournamentManager, 
-          wsManager: null // ✅ No WebSocket manager
-        });
-        tournamentScheduler.start();
-        logger.info('🏆 ✅ Tournament Scheduler started');
-      } catch (error) {
-        logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
-      }
-      
-      logger.info('🔧 ✅ Service initialization completed');
-      
     } catch (error) {
-      logger.error('🚂 ❌ Service initialization failed:', error);
-      logger.info('🚂 ⚠️ Continuing with available services...');
+      logger.error('💾 ❌ Redis initialization failed:', error.message);
+      logger.warn('💾 ⚠️ Continuing without Redis (dashboard will not have caching)');
+      redisClient = null;
     }
-  })(); // ✅ Execute IIFE immediately
-} else {
-  logger.info('🚂 ⚠️ Database not available, running in minimal mode');
-}
+    
+    // Initialize Cache Manager (with or without Redis)
+    try {
+      if (redisClient && redisClient.status === 'ready') {
+        cacheManager = new CacheManager(redisClient);
+        logger.info('💾 ✅ Cache Manager initialized (with Redis)');
+      } else {
+        // Create a no-op cache manager for graceful degradation
+        cacheManager = {
+          get: async () => null,
+          set: async () => true,
+          delete: async () => true,
+          redis: null
+        };
+        logger.warn('💾 ⚠️ Cache Manager initialized (no-op mode, no Redis)');
+      }
+    } catch (error) {
+      logger.error('💾 ❌ Cache Manager failed:', error.message);
+      // Create no-op fallback
+      cacheManager = {
+        get: async () => null,
+        set: async () => true,
+        delete: async () => true,
+        redis: null
+      };
+    }
+    
+    // ✅ Initialize dashboard API routes (needs cacheManager)
+    try {
+      const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
+      app.use('/api/dashboard', dashboardApiRoutes);
+      logger.info('📊 ✅ Analytics Dashboard API initialized');
+    } catch (error) {
+      logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
+    }
+    
+    // Initialize Event-Driven Aggregators
+    let leaderboardAggregator = null;
+    
+    try {
+      leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
+      app.locals.leaderboardAggregator = leaderboardAggregator;
+      logger.info('📊 ✅ Leaderboard Aggregator initialized');
+    } catch (error) {
+      logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
+    }
+    
+    // Initialize Prize Manager
+    try {
+      prizeManager = new PrizeManager({ db, wsManager: null }); // ✅ No WebSocket manager
+      app.locals.prizeManager = prizeManager;
+      logger.info('🏆 ✅ Prize Manager initialized');
+    } catch (error) {
+      logger.error('🏆 ❌ Prize Manager failed:', error.message);
+    }
+    
+    // Initialize Tournament Manager
+    try {
+      tournamentManager = new TournamentManager({ 
+        db, 
+        cacheManager, 
+        prizeManager, 
+        wsManager: null, // ✅ No WebSocket manager
+        leaderboardManager: null // ✅ No separate leaderboard manager
+      });
+      app.locals.tournamentManager = tournamentManager;
+      logger.info('🏆 ✅ Tournament Manager initialized');
+    } catch (error) {
+      logger.error('🏆 ❌ Tournament Manager failed:', error.message);
+      logger.error('🏆 ❌ Error details:', error);
+    }
+    
+    // Initialize Tournament Scheduler
+    try {
+      tournamentScheduler = new TournamentScheduler({ 
+        db, 
+        tournamentManager, 
+        wsManager: null // ✅ No WebSocket manager
+      });
+      tournamentScheduler.start();
+      app.locals.tournamentScheduler = tournamentScheduler;
+      logger.info('🏆 ✅ Tournament Scheduler started');
+    } catch (error) {
+      logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
+    }
+    
+    logger.info('🔧 ✅ Service initialization completed');
+  } else {
+    logger.info('🚂 ⚠️ Database not available, running in minimal mode');
+  }
+})().catch(err => {
+  logger.error('🚨 ❌ CRITICAL: Service initialization failed:', err);
+  // Don't crash the server, but log the error
+});
 
 // Middleware
 app.use(helmet({
@@ -346,10 +385,8 @@ app.get('/health', (req, res) => {
 
 // Migration endpoint removed for security
 
-// Make services available to routes
-app.locals.tournamentManager = tournamentManager;
-app.locals.prizeManager = prizeManager;
-app.locals.tournamentScheduler = tournamentScheduler;
+// ✅ Services are now set in app.locals inside the async IIFE above (lines 154-323)
+// This ensures proper async initialization of Redis and all services
 
 // API Routes (only if database is available)
 if (db) {
