@@ -1,14 +1,10 @@
 /// 💰 Purchase Routes - IAP validation and purchase management
 const express = require('express');
 const Joi = require('joi');
+const logger = require('../utils/logger');
 
 module.exports = (db) => {
   const router = express.Router();
-  
-  // Import auth middleware
-  const authRoutes = require('./auth')(db);
-const logger = require('../utils/logger');
-  const authenticateToken = authRoutes.authenticateToken;
 
   // Validation schemas
   const validatePurchaseSchema = Joi.object({
@@ -20,8 +16,8 @@ const logger = require('../utils/logger');
     currencyCode: Joi.string().length(3).default('USD')
   });
 
-  /// 💰 Validate IAP purchase
-  router.post('/validate', authenticateToken, async (req, res) => {
+  /// 💰 Validate IAP purchase (NO AUTH - device-based identity from event data)
+  router.post('/validate', async (req, res) => {
     try {
       const { error, value } = validatePurchaseSchema.validate(req.body);
       if (error) {
@@ -120,9 +116,15 @@ const logger = require('../utils/logger');
     }
   });
 
-  /// 📜 Get purchase history
-  router.get('/history', authenticateToken, async (req, res) => {
+  /// 📜 Get purchase history (NO AUTH - requires user_id in query param)
+  router.get('/history', async (req, res) => {
     try {
+      const userId = req.query.user_id; // ✅ Device-based identity
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'user_id is required' });
+      }
+      
       const limit = Math.min(parseInt(req.query.limit) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
@@ -134,13 +136,13 @@ const logger = require('../utils/logger');
         WHERE player_id = $1
         ORDER BY created_at DESC
         LIMIT $2 OFFSET $3
-      `, [req.playerId, limit, offset]);
+      `, [userId, limit, offset]);
 
       const totalCount = await db.query(`
         SELECT COUNT(*) as total
         FROM purchases
         WHERE player_id = $1
-      `, [req.playerId]);
+      `, [userId]);
 
       res.json({
         success: true,

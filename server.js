@@ -14,43 +14,23 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const cron = require('node-cron');
 const http = require('http');
-const { WebSocketManager } = require('./services/websocket-manager');
-const { EnhancedLeaderboardService } = require('./services/enhanced-leaderboard-service');
-const { MonitoringService } = require('./services/monitoring-service');
+const Redis = require('ioredis'); // ✅ For Redis connection
+// ✅ CLEANED UP: Only import services that exist and are used
 const TournamentManager = require('./services/tournament-manager');
 const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
-const SimpleCacheManager = require('./services/simple-cache-manager');
-const SmartNotificationScheduler = require('./services/smart-notification-scheduler');
-const LeaderboardManager = require('./services/leaderboard-manager');
+const CacheManager = require('./services/cache-manager'); // ✅ Use CacheManager (not Simple)
 const LeaderboardAggregator = require('./services/leaderboard-aggregator');
-const AnalyticsAggregator = require('./services/analytics-aggregator');
-const PrizeCalculator = require('./services/prize-calculator');
-const EventQueue = require('./services/event-queue');
 require('dotenv').config();
 
-// Import route modules
-const authRoutes = require('./routes/auth');
-const anonymousRoutes = require('./routes/anonymous');
-const playerRoutes = require('./routes/player');
+// ✅ CLEANED UP: Only import routes that exist and are used
 const leaderboardRoutes = require('./routes/leaderboard');
-const enhancedLeaderboardRoutes = require('./routes/enhanced-leaderboard');
 const tournamentRoutes = require('./routes/tournaments');
-const missionsRoutes = require('./routes/missions');
-const achievementsRoutes = require('./routes/achievements');
 const purchaseRoutes = require('./routes/purchase');
-const analyticsRoutes = require('./routes/analytics');
-const analyticsV2Routes = require('./routes/analytics-v2');
-const analyticsDashboardRoutes = require('./routes/analytics-dashboard');
-const dailyStreakRoutes = require('./routes/daily-streak');
-const inventoryRoutes = require('./routes/inventory');
 const healthRoutes = require('./routes/health');
-// const adminRoutes = require('./routes/admin'); // Removed - temporary fix completed
 const fcmRoutes = require('./routes/fcm');
-const eventsRoutes = require('./routes/events'); // Event-driven architecture
-const leaderboardsV2Routes = require('./routes/leaderboards-v2'); // V2: Device-based
-const tournamentsV2Routes = require('./routes/tournaments-v2'); // V2: Device-based
-const prizesV2Routes = require('./routes/prizes-v2'); // V2: Device-based
+const eventsRoutes = require('./routes/events'); // ✅ Event-driven architecture (PRIMARY)
+const prizesV2Routes = require('./routes/prizes-v2'); // ✅ Device-based prize distribution
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -164,156 +144,141 @@ try {
   app.locals.db = null;
 }
 
-// Initialize services
-let wsManager = null;
-let enhancedLeaderboardService = null;
-let monitoringService = null;
+// ✅ CLEANED UP: Only initialize services that exist and are used
 let tournamentManager = null;
 let prizeManager = null;
 let tournamentScheduler = null;
 let cacheManager = null;
-let leaderboardManager = null;
+let redisClient = null;
 
 // Initialize services only if database is available
 if (db) {
-  try {
-    logger.info('🔧 Starting service initialization...');
-    
-    // Initialize monitoring service
+  // ✅ Use IIFE (Immediately Invoked Function Expression) to allow async/await
+  (async () => {
     try {
-      monitoringService = new MonitoringService(db);
-      logger.info('📊 ✅ Monitoring Service initialized');
-    } catch (error) {
-      logger.error('📊 ❌ Monitoring Service failed:', error.message);
-    }
-    
-    // Initialize enhanced leaderboard service for WebSocket integration
-    try {
-      enhancedLeaderboardService = new EnhancedLeaderboardService(db);
-      logger.info('🏆 ✅ Enhanced Leaderboard Service initialized');
-    } catch (error) {
-      logger.error('🏆 ❌ Enhanced Leaderboard Service failed:', error.message);
-    }
-    
-    // Initialize WebSocket Manager
-    try {
-      wsManager = new WebSocketManager(server, enhancedLeaderboardService);
-      logger.info('🌐 ✅ WebSocket Manager initialized');
-    } catch (error) {
-      logger.error('🌐 ❌ WebSocket Manager failed:', error.message);
-    }
-    
-    // Initialize Cache Manager
-    try {
-      cacheManager = new SimpleCacheManager();
-      logger.info('💾 ✅ Cache Manager initialized');
-    } catch (error) {
-      logger.error('💾 ❌ Cache Manager failed:', error.message);
-    }
-    
-    // Initialize Leaderboard Manager
-    try {
-      leaderboardManager = new LeaderboardManager({ db, cacheManager });
-      logger.info('🏆 ✅ Leaderboard Manager initialized');
-    } catch (error) {
-      logger.error('🏆 ❌ Leaderboard Manager failed:', error.message);
-    }
-    
-    // Initialize Event-Driven Aggregators (NEW)
-    let leaderboardAggregator = null;
-    let analyticsAggregator = null;
-    
-    try {
-      leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
-      app.locals.leaderboardAggregator = leaderboardAggregator;
-      logger.info('📊 ✅ Leaderboard Aggregator initialized');
-    } catch (error) {
-      logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
-    }
-    
-    try {
-      analyticsAggregator = new AnalyticsAggregator(db);
-      app.locals.analyticsAggregator = analyticsAggregator;
-      logger.info('📈 ✅ Analytics Aggregator initialized');
-    } catch (error) {
-      logger.error('📈 ❌ Analytics Aggregator failed:', error.message);
-    }
-    
-    // Initialize Prize Calculator
-    let prizeCalculator = null;
-    
-    try {
-      prizeCalculator = new PrizeCalculator(db);
-      app.locals.prizeCalculator = prizeCalculator;
-      logger.info('🏆 ✅ Prize Calculator initialized');
-    } catch (error) {
-      logger.error('🏆 ❌ Prize Calculator failed:', error.message);
-    }
-    
-    // Initialize Event Queue (for 100K+ DAU scalability)
-    let eventQueue = null;
-    
-    try {
-      if (cacheManager && cacheManager.redis) {
-        eventQueue = new EventQueue(cacheManager.redis, db);
-        app.locals.eventQueue = eventQueue;
-        logger.info('📦 ✅ Event Queue initialized (Bull + Redis)');
-        logger.info('📦    Workers: 10, Capacity: ~100 events/second');
-      } else {
-        logger.warn('📦 ⚠️ Event Queue not initialized - Redis unavailable');
-        logger.warn('📦    Using direct processing (suitable for <10K DAU)');
-      }
-    } catch (error) {
-      logger.error('📦 ❌ Event Queue failed:', error.message);
-      logger.info('📦    Falling back to direct event processing');
-    }
-    
-    // Initialize Prize Manager
-    try {
-      prizeManager = new PrizeManager({ db, wsManager });
-      logger.info('🏆 ✅ Prize Manager initialized');
-    } catch (error) {
-      logger.error('🏆 ❌ Prize Manager failed:', error.message);
-    }
-    
-    // Initialize Tournament Manager
-    try {
-      tournamentManager = new TournamentManager({ 
-        db, 
-        cacheManager, 
-        prizeManager, 
-        wsManager,
-        leaderboardManager // Add leaderboard manager for unified score submission
-      });
-      logger.info('🏆 ✅ Tournament Manager initialized');
-    } catch (error) {
-      logger.error('🏆 ❌ Tournament Manager failed:', error.message);
-    }
-    
-    // Initialize Tournament Scheduler
-    try {
-      tournamentScheduler = new TournamentScheduler({ 
-        db, 
-        tournamentManager, 
-        wsManager 
-      });
-      tournamentScheduler.start();
-      logger.info('🏆 ✅ Tournament Scheduler started');
+      logger.info('🔧 Starting service initialization...');
+      
+      // Initialize Redis Client
+      try {
+        const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL || 'redis://localhost:6379';
+        redisClient = new Redis(redisUrl, {
+          maxRetriesPerRequest: 3,
+          enableReadyCheck: true,
+          lazyConnect: true, // Don't connect immediately
+          retryStrategy: (times) => {
+            if (times > 3) {
+              logger.error('💾 ❌ Redis: Max retry attempts reached');
+              return null; // Stop retrying
+            }
+            const delay = Math.min(times * 100, 2000);
+            logger.warn(`💾 ⚠️ Redis: Retrying connection in ${delay}ms...`);
+            return delay;
+          }
+        });
 
-      // Initialize Smart Notification Scheduler for FCM
-      const notificationScheduler = new SmartNotificationScheduler(db);
-      notificationScheduler.start();
-      logger.info('🔥 ✅ Smart Notification Scheduler started');
+        // Connect to Redis
+        await redisClient.connect();
+        
+        redisClient.on('connect', () => {
+          logger.info('💾 ✅ Redis connected successfully');
+        });
+        
+        redisClient.on('error', (err) => {
+          logger.error('💾 ❌ Redis error:', err.message);
+        });
+        
+        redisClient.on('close', () => {
+          logger.warn('💾 ⚠️ Redis connection closed');
+        });
+        
+        logger.info('💾 ✅ Redis client initialized');
+      } catch (error) {
+        logger.error('💾 ❌ Redis initialization failed:', error.message);
+        logger.warn('💾 ⚠️ Continuing without Redis (dashboard will not have caching)');
+        redisClient = null;
+      }
+      
+      // Initialize Cache Manager (with or without Redis)
+      try {
+        if (redisClient) {
+          cacheManager = new CacheManager(redisClient);
+          logger.info('💾 ✅ Cache Manager initialized (with Redis)');
+        } else {
+          // Create a no-op cache manager for graceful degradation
+          cacheManager = {
+            get: async () => null,
+            set: async () => false,
+            delete: async () => false,
+            redis: null
+          };
+          logger.warn('💾 ⚠️ Cache Manager initialized (no-op mode, no Redis)');
+        }
+      } catch (error) {
+        logger.error('💾 ❌ Cache Manager failed:', error.message);
+      }
+      
+      // ✅ Initialize dashboard API routes (needs cacheManager)
+      try {
+        const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
+        app.use('/api/dashboard', dashboardApiRoutes);
+        logger.info('📊 ✅ Analytics Dashboard API initialized');
+      } catch (error) {
+        logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
+      }
+      
+      // Initialize Event-Driven Aggregators
+      let leaderboardAggregator = null;
+      
+      try {
+        leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
+        app.locals.leaderboardAggregator = leaderboardAggregator;
+        logger.info('📊 ✅ Leaderboard Aggregator initialized');
+      } catch (error) {
+        logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
+      }
+      
+      // Initialize Prize Manager
+      try {
+        prizeManager = new PrizeManager({ db, wsManager: null }); // ✅ No WebSocket manager
+        logger.info('🏆 ✅ Prize Manager initialized');
+      } catch (error) {
+        logger.error('🏆 ❌ Prize Manager failed:', error.message);
+      }
+      
+      // Initialize Tournament Manager
+      try {
+        tournamentManager = new TournamentManager({ 
+          db, 
+          cacheManager, 
+          prizeManager, 
+          wsManager: null, // ✅ No WebSocket manager
+          leaderboardManager: null // ✅ No separate leaderboard manager
+        });
+        logger.info('🏆 ✅ Tournament Manager initialized');
+      } catch (error) {
+        logger.error('🏆 ❌ Tournament Manager failed:', error.message);
+      }
+      
+      // Initialize Tournament Scheduler
+      try {
+        tournamentScheduler = new TournamentScheduler({ 
+          db, 
+          tournamentManager, 
+          wsManager: null // ✅ No WebSocket manager
+        });
+        tournamentScheduler.start();
+        logger.info('🏆 ✅ Tournament Scheduler started');
+      } catch (error) {
+        logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
+      }
+      
+      logger.info('🔧 ✅ Service initialization completed');
+      
     } catch (error) {
-      logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
+      logger.error('🚂 ❌ Service initialization failed:', error);
+      logger.info('🚂 ⚠️ Continuing with available services...');
     }
-    
-    logger.info('🔧 ✅ Service initialization completed');
-    
-  } catch (error) {
-    logger.error('🚂 ❌ Service initialization failed:', error);
-    logger.info('🚂 ⚠️ Continuing with available services...');
-  }
+  })(); // ✅ Execute IIFE immediately
 } else {
   logger.info('🚂 ⚠️ Database not available, running in minimal mode');
 }
@@ -360,31 +325,18 @@ const dashboardService = new DashboardService(db, logger);
 // Initialize dashboard routes
 dashboardService.initializeRoutes(app);
 
-// ✅ NEW: Initialize analytics dashboard API (with Redis caching)
-if (db && cacheManager) {
-  try {
-    const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
-    app.use('/api/dashboard', dashboardApiRoutes);
-    logger.info('📊 ✅ Analytics Dashboard API initialized');
-  } catch (error) {
-    logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
-  }
-}
-
 // Health check endpoint
 app.get('/health', (req, res) => {
   logger.info('🏥 Health check requested');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '2.0.0', // ✅ Updated version
     environment: process.env.NODE_ENV || 'development',
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     services: {
       database: !!db,
-      monitoring: !!monitoringService,
-      websocket: !!wsManager,
       cache: !!cacheManager,
       tournament: !!tournamentManager,
       scheduler: !!tournamentScheduler
@@ -395,43 +347,26 @@ app.get('/health', (req, res) => {
 // Migration endpoint removed for security
 
 // Make services available to routes
-app.locals.wsManager = wsManager;
-app.locals.monitoringService = monitoringService;
 app.locals.tournamentManager = tournamentManager;
 app.locals.prizeManager = prizeManager;
 app.locals.tournamentScheduler = tournamentScheduler;
-app.locals.leaderboardManager = leaderboardManager;
 
 // API Routes (only if database is available)
 if (db) {
-  // Event-driven architecture (NEW)
+  // ✅ Event-driven architecture (PRIMARY - what Flutter app uses)
   app.use('/api/events', eventsRoutes);
   
-  // V2 Routes - Device-based (no auth required)
-  app.use('/api/v2/leaderboard', leaderboardsV2Routes);
-  app.use('/api/v2/tournaments', tournamentsV2Routes);
+  // ✅ V2 Routes - Device-based (no auth required)
   app.use('/api/v2/prizes', prizesV2Routes);
   
-  // Existing routes (V1 - will be deprecated eventually)
-  app.use('/api/auth', authRoutes(db));
-  app.use('/api/anonymous', anonymousRoutes(db));
-  app.use('/api/player', playerRoutes(db));
+  // ✅ Existing routes (still supported)
   app.use('/api/leaderboard', leaderboardRoutes);
-  app.use('/api/leaderboard/enhanced', enhancedLeaderboardRoutes);
   app.use('/api/tournaments', tournamentRoutes);
-  app.use('/api/missions', missionsRoutes(db));
-  app.use('/api/achievements', achievementsRoutes(db));
   app.use('/api/purchase', purchaseRoutes(db));
-  app.use('/api/daily-streak', dailyStreakRoutes);
-  app.use('/api/inventory', inventoryRoutes(db));
   app.use('/api/health', healthRoutes);
-  app.use('/api/analytics', analyticsRoutes);
-  app.use('/api/analytics/v2', analyticsV2Routes(db));
-  app.use('/api/analytics', analyticsDashboardRoutes(db));
-// app.use('/api/admin', adminRoutes(db)); // Removed - temporary fix completed
-app.use('/api/fcm', fcmRoutes(db));
+  app.use('/api/fcm', fcmRoutes(db));
 
-  logger.info('🚂 ✅ All API routes initialized (including event-driven v2 endpoints)');
+  logger.info('🚂 ✅ All API routes initialized (event-driven architecture)');
 } else {
   // Minimal routes for health check
   app.get('/api/*', (req, res) => {
@@ -447,18 +382,17 @@ app.use('/api/fcm', fcmRoutes(db));
 app.get('/', (req, res) => {
   res.json({
     message: '🚂 FlappyJet Pro Backend API',
-    version: '1.0.0',
+    version: '2.0.0',
+    architecture: 'Event-driven + Device-based Identity',
     endpoints: {
       health: '/health',
-      auth: '/api/auth/*',
-      player: '/api/player/*',
-      leaderboard: '/api/leaderboard/*',
+      events: '/api/events/*', // PRIMARY: All game events
       tournaments: '/api/tournaments/*',
-      missions: '/api/missions/*',
-      achievements: '/api/achievements/*',
+      leaderboard: '/api/leaderboard/*',
+      prizes: '/api/v2/prizes/*',
       purchase: '/api/purchase/*',
-      analytics: '/api/analytics/*',
-      admin: '/api/admin/*'
+      fcm: '/api/fcm/*',
+      dashboard: '/dashboard'
     },
     documentation: 'https://github.com/flappyjet/backend-docs'
   });
@@ -521,7 +455,7 @@ cron.schedule('0 2 * * 0', async () => {
 });
 
 // ============================================================================
-// EVENT-DRIVEN ARCHITECTURE CRON JOBS (NEW)
+// EVENT-DRIVEN ARCHITECTURE CRON JOBS
 // ============================================================================
 
 // 🏆 Update global leaderboard from game_ended events (every 10 minutes)
@@ -579,50 +513,6 @@ if (db && tournamentManager) {
   logger.info('🏆 Cron job registered: Tournament leaderboard update (every 4 minutes)');
 }
 
-// 📊 Aggregate daily KPIs from events (every hour)
-if (db) {
-  cron.schedule('0 * * * *', async () => {
-    try {
-      logger.info('📊 Cron: Aggregating daily KPIs from events...');
-      const analyticsAggregator = app.locals.analyticsAggregator;
-      
-      if (analyticsAggregator) {
-        const result = await analyticsAggregator.aggregateDailyKPIs();
-        if (result.success) {
-          logger.info(`📊 ✅ Daily KPIs aggregated: DAU=${result.metrics.dau}, Games=${result.metrics.games_completed}`);
-        } else {
-          logger.error(`📊 ❌ Daily KPIs aggregation failed: ${result.error}`);
-        }
-      }
-    } catch (error) {
-      logger.error('📊 ❌ Daily KPIs cron failed:', error);
-    }
-  });
-  logger.info('📊 Cron job registered: Daily KPIs aggregation (every hour)');
-}
-
-// 📈 Aggregate hourly metrics (every hour at :30)
-if (db) {
-  cron.schedule('30 * * * *', async () => {
-    try {
-      logger.info('📈 Cron: Aggregating hourly metrics...');
-      const analyticsAggregator = app.locals.analyticsAggregator;
-      
-      if (analyticsAggregator) {
-        const result = await analyticsAggregator.aggregateHourlyMetrics();
-        if (result.success) {
-          logger.info('📈 ✅ Hourly metrics aggregated');
-        } else {
-          logger.error(`📈 ❌ Hourly metrics aggregation failed: ${result.error}`);
-        }
-      }
-    } catch (error) {
-      logger.error('📈 ❌ Hourly metrics cron failed:', error);
-    }
-  });
-  logger.info('📈 Cron job registered: Hourly metrics aggregation (every hour at :30)');
-}
-
 // 🧹 Cleanup old events (keep 90 days) - runs weekly on Sunday at 3 AM
 if (db) {
   cron.schedule('0 3 * * 0', async () => {
@@ -642,33 +532,6 @@ if (db) {
     }
   });
   logger.info('🧹 Cron job registered: Old events cleanup (weekly, Sunday 3 AM)');
-}
-
-// 🏆 Calculate tournament prizes (Monday 00:05 UTC - after tournament ends)
-if (db) {
-  cron.schedule('5 0 * * 1', async () => {
-    try {
-      logger.info('🏆 Cron: Calculating tournament prizes...');
-      const prizeCalculator = app.locals.prizeCalculator;
-      
-      if (prizeCalculator) {
-        const result = await prizeCalculator.processLastWeekPrizes();
-        
-        if (result.success) {
-          if (result.prizes_awarded > 0) {
-            logger.info(`🏆 ✅ Tournament prizes calculated: ${result.prizes_awarded} prizes awarded for ${result.tournament_name}`);
-          } else {
-            logger.info(`🏆 ✅ Prize calculation complete: ${result.message}`);
-          }
-        } else {
-          logger.error(`🏆 ❌ Prize calculation failed: ${result.error}`);
-        }
-      }
-    } catch (error) {
-      logger.error('🏆 ❌ Prize calculation cron failed:', error);
-    }
-  });
-  logger.info('🏆 Cron job registered: Tournament prize calculation (Monday 00:05 UTC)');
 }
 
 // ============================================================================
@@ -696,9 +559,10 @@ process.on('SIGTERM', async () => {
     tournamentScheduler.stop();
   }
   
-  // Shutdown WebSocket Manager
-  if (wsManager) {
-    wsManager.shutdown();
+  // Close Redis connection
+  if (redisClient) {
+    await redisClient.quit();
+    logger.info('💾 ✅ Redis connection closed');
   }
   
   // Close database connection
@@ -721,9 +585,15 @@ process.on('SIGINT', async () => {
     tournamentScheduler.stop();
   }
   
-  // Shutdown WebSocket Manager
-  if (wsManager) {
-    wsManager.shutdown();
+  // Close Redis connection
+  if (redisClient) {
+    logger.info('💾 Closing Redis connection...');
+    try {
+      await redisClient.quit();
+      logger.info('💾 ✅ Redis connection closed');
+    } catch (error) {
+      logger.error('💾 ❌ Error closing Redis:', error);
+    }
   }
   
   // Close database connection gracefully
@@ -750,7 +620,8 @@ try {
     logger.info(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
     logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info(`📊 Health check: http://localhost:${PORT}/health`);
-    logger.info(`🌐 WebSocket endpoint: ws://localhost:${PORT}/ws/leaderboard`);
+    logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
+    logger.info(`🎮 Event API: http://localhost:${PORT}/api/events`);
     logger.info(`🚀 Railway deployment ready!`);
   });
 
