@@ -84,8 +84,10 @@ class TournamentScheduler {
 
     // Stop all scheduled jobs
     for (const [name, job] of this.scheduledJobs) {
-      job.destroy();
-      logger.info(`🏆 ⏹️ Stopped job: ${name}`);
+      if (job && typeof job.stop === 'function') {
+        job.stop(); // ✅ FIX: Use stop() instead of destroy()
+        logger.info(`🏆 ⏹️ Stopped job: ${name}`);
+      }
     }
 
     this.scheduledJobs.clear();

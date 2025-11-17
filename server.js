@@ -314,12 +314,51 @@ let redisClient = null;
     }
     
     logger.info('🔧 ✅ Service initialization completed');
+    
+    // ✅ START SERVER AFTER ALL SERVICES ARE INITIALIZED
+    // This ensures dashboard routes and all async initializations are complete
+    server.listen(PORT, '0.0.0.0', () => {
+      logger.info(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
+      logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+      logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
+      logger.info(`📊 Dashboard API: http://localhost:${PORT}/api/dashboard/overview`);
+      logger.info(`🎮 Event API: http://localhost:${PORT}/api/events`);
+      logger.info(`🚀 Railway deployment ready!`);
+      logger.info('');
+      logger.info('🔧 Services Status:');
+      logger.info(`   💾 Redis: ${redisClient && redisClient.status === 'ready' ? '✅ Connected' : '❌ Disconnected'}`);
+      logger.info(`   💾 Cache: ${cacheManager && cacheManager.redis ? '✅ Active' : '⚠️ No-op mode'}`);
+      logger.info(`   🏆 Tournaments: ${tournamentManager ? '✅ Active' : '❌ Inactive'}`);
+      logger.info(`   📅 Scheduler: ${tournamentScheduler ? '✅ Active' : '❌ Inactive'}`);
+      logger.info(`   🏅 Leaderboard: ${leaderboardAggregator ? '✅ Active' : '❌ Inactive'}`);
+    });
+
+    server.on('error', (error) => {
+      logger.error('🚨 Server startup error:', error);
+      if (error.code === 'EADDRINUSE') {
+        logger.error(`❌ Port ${PORT} is already in use`);
+      } else if (error.code === 'EACCES') {
+        logger.error(`❌ Permission denied for port ${PORT}`);
+      }
+      process.exit(1);
+    });
+    
   } else {
     logger.info('🚂 ⚠️ Database not available, running in minimal mode');
+    
+    // Start server even without database (for health checks)
+    server.listen(PORT, '0.0.0.0', () => {
+      logger.info(`🚂 ⚠️ FlappyJet Pro Backend running in MINIMAL MODE on port ${PORT}`);
+      logger.info(`📊 Health check: http://localhost:${PORT}/health`);
+    });
   }
 })().catch(err => {
   logger.error('🚨 ❌ CRITICAL: Service initialization failed:', err);
-  // Don't crash the server, but log the error
+  // Don't crash the server, but log the error and start anyway
+  server.listen(PORT, '0.0.0.0', () => {
+    logger.error(`🚂 ⚠️ Server started with initialization errors on port ${PORT}`);
+  });
 });
 
 // Middleware
@@ -651,30 +690,7 @@ process.on('SIGINT', async () => {
   });
 });
 
-// Start server with error handling
-try {
-  server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`🚂 ✅ FlappyJet Pro Backend running on port ${PORT}`);
-    logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-    logger.info(`📊 Health check: http://localhost:${PORT}/health`);
-    logger.info(`📊 Dashboard: http://localhost:${PORT}/dashboard`);
-    logger.info(`🎮 Event API: http://localhost:${PORT}/api/events`);
-    logger.info(`🚀 Railway deployment ready!`);
-  });
-
-  server.on('error', (error) => {
-    logger.error('🚨 Server startup error:', error);
-    if (error.code === 'EADDRINUSE') {
-      logger.error(`❌ Port ${PORT} is already in use`);
-    } else if (error.code === 'EACCES') {
-      logger.error(`❌ Permission denied for port ${PORT}`);
-    }
-    process.exit(1);
-  });
-
-} catch (error) {
-  logger.error('🚨 Fatal server error:', error);
-  process.exit(1);
-}
+// ✅ Server startup is now handled inside the async IIFE above (after all services initialize)
+// This ensures all routes are registered before the server starts accepting connections
 
 module.exports = app;
