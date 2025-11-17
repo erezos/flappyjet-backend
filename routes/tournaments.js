@@ -14,6 +14,24 @@ const { tournamentRateLimit } = require('../middleware/rate-limit');
 const logger = require('../utils/logger');
 
 /**
+ * ✅ HELPER: Check if tournament manager is available
+ * Returns error response if not initialized
+ */
+function checkTournamentManager(req, res) {
+  const tournamentManager = req.app.locals.tournamentManager;
+  if (!tournamentManager) {
+    logger.warn('⚠️ Tournament manager not initialized');
+    res.status(503).json({
+      success: false,
+      error: 'Tournament service temporarily unavailable',
+      message: 'Tournaments are currently being initialized. Please try again in a moment.'
+    });
+    return null;
+  }
+  return tournamentManager;
+}
+
+/**
  * Get current active tournament
  * GET /api/tournaments/current
  * Uses optionalAuth - works with or without authentication
@@ -23,7 +41,9 @@ router.get('/current',
   tournamentRateLimit, // Tournament rate limiting
   async (req, res) => {
     try {
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.getCurrentTournament();
 
       if (!result.success) {
@@ -85,7 +105,9 @@ router.post('/session',
         playerName = `Pilot${playerId.slice(-4)}`;
       }
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.handleTournamentSession({
         tournamentId,
         playerId,
@@ -140,7 +162,9 @@ router.post('/:tournamentId/register',
       const { playerName } = req.body;
       const playerId = req.user.playerId; // From auth token
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.registerPlayer(tournamentId, {
         playerId,
         playerName
@@ -196,7 +220,9 @@ router.post('/:tournamentId/scores',
       const { score, gameData } = req.body;
       const playerId = req.user.playerId;
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.submitScore(tournamentId, {
         playerId,
         score,
@@ -255,7 +281,9 @@ router.get('/:tournamentId/leaderboard',
       const limit = parseInt(req.query.limit) || 50;
       const offset = parseInt(req.query.offset) || 0;
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.getTournamentLeaderboard(tournamentId, {
         limit,
         offset
@@ -319,7 +347,9 @@ router.get('/player/:playerId/stats',
         });
       }
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.getPlayerStats(playerId);
 
       if (!result.success) {
@@ -437,7 +467,9 @@ router.post('/create-weekly',
 
       const { name, prizePool, startOffsetHours } = req.body;
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.createWeeklyTournament({
         name,
         prizePool,
@@ -496,7 +528,9 @@ router.post('/:tournamentId/start',
 
       const { tournamentId } = req.params;
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.startTournament(tournamentId);
 
       if (!result.success) {
@@ -552,7 +586,9 @@ router.post('/:tournamentId/end',
 
       const { tournamentId } = req.params;
 
-      const tournamentManager = req.app.locals.tournamentManager;
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return; // Error response already sent
+      
       const result = await tournamentManager.endTournament(tournamentId);
 
       if (!result.success) {
