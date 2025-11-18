@@ -236,9 +236,12 @@ let redisClient = null;
     // Initialize Cache Manager (with or without Redis)
     try {
       if (redisClient && redisClient.status === 'ready') {
+        // Test Redis connection before creating CacheManager
+        await redisClient.ping();
         cacheManager = new CacheManager(redisClient);
         logger.info('💾 ✅ Cache Manager initialized (with Redis)');
       } else {
+        logger.warn(`💾 ⚠️ Redis not ready (status: ${redisClient?.status || 'null'}), using no-op cache`);
         // Create a no-op cache manager for graceful degradation
         cacheManager = {
           get: async () => null,
@@ -249,7 +252,7 @@ let redisClient = null;
         logger.warn('💾 ⚠️ Cache Manager initialized (no-op mode, no Redis)');
       }
     } catch (error) {
-      logger.error('💾 ❌ Cache Manager failed:', error.message);
+      logger.error('💾 ❌ Cache Manager failed:', error.message, error.stack);
       // Create no-op fallback
       cacheManager = {
         get: async () => null,
