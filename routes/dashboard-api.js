@@ -158,6 +158,7 @@ module.exports = (db, cacheManager) => {
   /**
    * GET /api/dashboard/level-performance?zone=1
    * Returns completion rates for levels in a zone
+   * ✅ FIX: Use actual events from Flutter app (level_started, level_failed, game_ended)
    */
   router.get('/level-performance', async (req, res) => {
     try {
@@ -168,16 +169,19 @@ module.exports = (db, cacheManager) => {
         const startLevel = (zone - 1) * 10 + 1;
         const endLevel = zone * 10;
         
+        // ✅ FIX: Your app sends level_started and level_failed
+        // We'll calculate completion rate as: (started - failed) / started
         const result = await db.query(`
           SELECT 
             payload->>'level_id' as level,
-            COUNT(DISTINCT user_id) as players_started,
-            COUNT(DISTINCT CASE WHEN event_type = 'level_completed' THEN user_id END) as players_completed,
-            ROUND(100.0 * COUNT(DISTINCT CASE WHEN event_type = 'level_completed' THEN user_id END) / 
-                  NULLIF(COUNT(DISTINCT user_id), 0), 1) as completion_rate
+            COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) as players_started,
+            COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END) as players_failed,
+            ROUND(100.0 * (COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) - 
+                           COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END)) / 
+                  NULLIF(COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END), 0), 1) as completion_rate
           FROM events
           WHERE payload->>'level_id' IN (${Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',')})
-            AND event_type IN ('level_started', 'level_completed')
+            AND event_type IN ('level_started', 'level_failed')
             AND received_at >= CURRENT_DATE - INTERVAL '7 days'
           GROUP BY payload->>'level_id'
           ORDER BY CAST(payload->>'level_id' AS INTEGER)
@@ -188,7 +192,8 @@ module.exports = (db, cacheManager) => {
           levels: result.rows.map(r => ({
             level: parseInt(r.level),
             started: parseInt(r.players_started),
-            completed: parseInt(r.players_completed),
+            failed: parseInt(r.players_failed),
+            completed: parseInt(r.players_started) - parseInt(r.players_failed),
             completion_rate: parseFloat(r.completion_rate) || 0
           })),
           last_updated: new Date().toISOString()
@@ -253,6 +258,7 @@ module.exports = (db, cacheManager) => {
   /**
    * GET /api/dashboard/ad-performance
    * Returns ad metrics (rewarded, interstitial)
+   * ✅ Note: Returns zeros if no ad events (ad tracking not yet implemented in app)
    */
   router.get('/ad-performance', async (req, res) => {
     try {
@@ -289,6 +295,9 @@ module.exports = (db, cacheManager) => {
           interstitial: {
             shown: parseInt(interstitialResult.rows[0]?.shown || 0)
           },
+          message: (parseInt(rewardedResult.rows[0]?.shown || 0) === 0 && parseInt(interstitialResult.rows[0]?.shown || 0) === 0) 
+            ? 'No ad events tracked yet. Add ad event tracking to Flutter app to see data.' 
+            : null,
           last_updated: new Date().toISOString()
         };
       });
