@@ -25,7 +25,7 @@ module.exports = (db, cacheManager) => {
       const cached = await cacheManager.get(`${CACHE_PREFIX}${cacheKey}`);
       if (cached) {
         logger.info(`📊 Cache HIT: ${cacheKey}`);
-        return JSON.parse(cached);
+        return cached; // ✅ FIX: CacheManager already returns parsed JSON
       }
 
       // Cache miss - query database
@@ -33,7 +33,7 @@ module.exports = (db, cacheManager) => {
       const result = await queryFn();
       
       // Store in cache
-      await cacheManager.set(`${CACHE_PREFIX}${cacheKey}`, JSON.stringify(result), ttl);
+      await cacheManager.set(`${CACHE_PREFIX}${cacheKey}`, result, ttl); // ✅ FIX: CacheManager handles serialization
       
       return result;
     } catch (error) {
