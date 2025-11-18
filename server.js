@@ -262,14 +262,9 @@ let redisClient = null;
       };
     }
     
-    // ✅ Initialize dashboard API routes (needs cacheManager)
-    try {
-      const dashboardApiRoutes = require('./routes/dashboard-api')(db, cacheManager);
-      app.use('/api/dashboard', dashboardApiRoutes);
-      logger.info('📊 ✅ Analytics Dashboard API initialized');
-    } catch (error) {
-      logger.error('📊 ❌ Analytics Dashboard API failed:', error.message);
-    }
+    // ✅ Store cacheManager in app.locals for route access
+    app.locals.cacheManager = cacheManager;
+    logger.info('💾 ✅ Cache Manager set in app.locals for routes');
     
     // Initialize Event-Driven Aggregators
     let leaderboardAggregator = null;
@@ -437,6 +432,10 @@ app.get('/health', (req, res) => {
 
 // API Routes (only if database is available)
 if (db) {
+  // ✅ Analytics Dashboard API (needs cacheManager from app.locals)
+  const dashboardApiRoutes = require('./routes/dashboard-api')(db, app.locals.cacheManager || { get: async () => null, set: async () => true, delete: async () => true, redis: null });
+  app.use('/api/dashboard', dashboardApiRoutes);
+  
   // ✅ Event-driven architecture (PRIMARY - what Flutter app uses)
   app.use('/api/events', eventsRoutes);
   
