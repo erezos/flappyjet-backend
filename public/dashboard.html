@@ -316,12 +316,12 @@
             </div>
         </div>
 
-        <!-- Ad Performance -->
+        <!-- Ad Performance & Retention -->
         <div class="charts-grid">
             <div class="chart-card">
-                <h3>📺 Ad Performance (7 Days)</h3>
+                <h3>🔄 Player Retention</h3>
                 <div class="chart-container">
-                    <canvas id="adChart"></canvas>
+                    <canvas id="retentionChart"></canvas>
                 </div>
             </div>
             
@@ -556,6 +556,80 @@
         }
 
         // ============================================================================
+        // RETENTION CHART
+        // ============================================================================
+
+        async function loadRetention() {
+            const data = await fetchAPI('retention');
+            if (!data) return;
+
+            const ctx = document.getElementById('retentionChart').getContext('2d');
+            
+            if (charts.retention) charts.retention.destroy();
+            
+            const retentionData = [
+                { day: 'Day 1', rate: parseFloat(data.retention.day1.retention_rate) || 0, users: parseInt(data.retention.day1.returned_users) || 0 },
+                { day: 'Day 3', rate: parseFloat(data.retention.day3.retention_rate) || 0, users: parseInt(data.retention.day3.returned_users) || 0 },
+                { day: 'Day 7', rate: parseFloat(data.retention.day7.retention_rate) || 0, users: parseInt(data.retention.day7.returned_users) || 0 },
+                { day: 'Day 14', rate: parseFloat(data.retention.day14.retention_rate) || 0, users: parseInt(data.retention.day14.returned_users) || 0 },
+                { day: 'Day 30', rate: parseFloat(data.retention.day30.retention_rate) || 0, users: parseInt(data.retention.day30.returned_users) || 0 }
+            ];
+            
+            charts.retention = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: retentionData.map(d => d.day),
+                    datasets: [{
+                        label: 'Retention Rate (%)',
+                        data: retentionData.map(d => d.rate),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 6,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: '#667eea',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const index = context[0].dataIndex;
+                                    return retentionData[index].day;
+                                },
+                                afterTitle: function(context) {
+                                    const index = context[0].dataIndex;
+                                    return `${retentionData[index].users} users returned`;
+                                },
+                                label: function(context) {
+                                    return `Retention: ${context.parsed.y.toFixed(1)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: value => value + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
         // ACTIVITY FEED
         // ============================================================================
 
@@ -613,7 +687,7 @@
                 loadOverview(),
                 loadDAUTrend(),
                 loadLevelPerformance(),
-                loadAdPerformance(),
+                loadRetention(),
                 loadActivityFeed()
             ]);
 

@@ -353,7 +353,83 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
-  // 7. CACHE MANAGEMENT
+  // 7. RETENTION ANALYSIS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/retention
+   * Returns Day 1, Day 3, Day 7, Day 14, Day 30 retention rates
+   */
+  router.get('/retention', async (req, res) => {
+    try {
+      const data = await getCachedQuery('retention-cohorts', async () => {
+        // Find users and their install date
+        const result = await db.query(`
+          WITH first_sessions AS (
+            SELECT 
+              user_id,
+              MIN(DATE(received_at)) as install_date
+            FROM events
+            WHERE event_type = 'user_installed' 
+               OR event_type = 'app_launched'
+            GROUP BY user_id
+          ),
+          return_sessions AS (
+            SELECT DISTINCT
+              fs.user_id,
+              fs.install_date,
+              DATE(e.received_at) as return_date,
+              DATE(e.received_at) - fs.install_date as days_since_install
+            FROM first_sessions fs
+            JOIN events e ON fs.user_id = e.user_id
+            WHERE e.event_type IN ('app_launched', 'game_started', 'level_started')
+              AND DATE(e.received_at) > fs.install_date
+          ),
+          cohort_sizes AS (
+            SELECT 
+              install_date,
+              COUNT(DISTINCT user_id) as cohort_size
+            FROM first_sessions
+            GROUP BY install_date
+          )
+          SELECT
+            days_since_install,
+            COUNT(DISTINCT rs.user_id) as returned_users,
+            ROUND(100.0 * COUNT(DISTINCT rs.user_id) / 
+              SUM(CASE 
+                WHEN cs.install_date <= CURRENT_DATE - days_since_install 
+                THEN cs.cohort_size 
+                ELSE 0 
+              END), 1) as retention_rate
+          FROM return_sessions rs
+          JOIN cohort_sizes cs ON rs.install_date = cs.install_date
+          WHERE days_since_install IN (1, 3, 7, 14, 30)
+            AND rs.install_date <= CURRENT_DATE - days_since_install
+          GROUP BY days_since_install
+          ORDER BY days_since_install
+        `);
+
+        return {
+          retention: {
+            day1: result.rows.find(r => r.days_since_install === 1) || { returned_users: 0, retention_rate: 0 },
+            day3: result.rows.find(r => r.days_since_install === 3) || { returned_users: 0, retention_rate: 0 },
+            day7: result.rows.find(r => r.days_since_install === 7) || { returned_users: 0, retention_rate: 0 },
+            day14: result.rows.find(r => r.days_since_install === 14) || { returned_users: 0, retention_rate: 0 },
+            day30: result.rows.find(r => r.days_since_install === 30) || { returned_users: 0, retention_rate: 0 }
+          },
+          last_updated: new Date().toISOString()
+        };
+      }, 3600); // Cache for 1 hour (retention changes slowly)
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching retention:', error);
+      res.status(500).json({ error: 'Failed to fetch retention data' });
+    }
+  });
+
+  // ============================================================================
+  // 8. CACHE MANAGEMENT
   // ============================================================================
 
   /**
