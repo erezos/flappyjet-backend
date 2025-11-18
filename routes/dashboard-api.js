@@ -71,21 +71,17 @@ module.exports = (db, cacheManager) => {
           `),
           
           // Average session duration (last 7 days)
-          // ✅ FIX: Extract session_id from JSONB payload
+          // ✅ FIX: Use game_ended events to calculate realistic play time
+          // Each game is ~1-5 minutes, much more accurate than session spans
           db.query(`
             SELECT 
-              ROUND(AVG(duration_seconds)) as avg_session_seconds
-            FROM (
-              SELECT 
-                user_id,
-                payload->>'session_id' as session_id,
-                EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) as duration_seconds
-              FROM events
-              WHERE received_at >= CURRENT_DATE - INTERVAL '7 days'
-                AND payload->>'session_id' IS NOT NULL
-              GROUP BY user_id, payload->>'session_id'
-              HAVING EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) > 0
-            ) sessions
+              ROUND(AVG((payload->>'duration_seconds')::numeric)) as avg_session_seconds
+            FROM events
+            WHERE event_type = 'game_ended'
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+              AND payload->>'duration_seconds' IS NOT NULL
+              AND (payload->>'duration_seconds')::numeric > 0
+              AND (payload->>'duration_seconds')::numeric < 3600
           `),
           
           // Total games played (today)

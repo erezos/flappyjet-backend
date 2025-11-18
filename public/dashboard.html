@@ -295,7 +295,21 @@
             </div>
             
             <div class="chart-card">
-                <h3>🎮 Level Completion Rate (Zone 1)</h3>
+                <h3>
+                    🎮 Level Completion Rate 
+                    <select id="zoneSelector" onchange="loadLevelPerformance()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="1">Zone 1</option>
+                        <option value="2">Zone 2</option>
+                        <option value="3">Zone 3</option>
+                        <option value="4">Zone 4</option>
+                        <option value="5">Zone 5</option>
+                        <option value="6">Zone 6</option>
+                        <option value="7">Zone 7</option>
+                        <option value="8">Zone 8</option>
+                        <option value="9">Zone 9</option>
+                        <option value="10">Zone 10</option>
+                    </select>
+                </h3>
                 <div class="chart-container">
                     <canvas id="levelChart"></canvas>
                 </div>
@@ -434,7 +448,8 @@
         // ============================================================================
 
         async function loadLevelPerformance() {
-            const data = await fetchAPI('level-performance?zone=1');
+            const zone = document.getElementById('zoneSelector').value;
+            const data = await fetchAPI(`level-performance?zone=${zone}`);
             if (!data) return;
 
             const ctx = document.getElementById('levelChart').getContext('2d');
@@ -461,6 +476,27 @@
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const level = data.levels[index];
+                                    return `Level ${level.level}`;
+                                },
+                                afterTitle: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const level = data.levels[index];
+                                    return [
+                                        `Started: ${level.started} players`,
+                                        `Failed: ${level.failed} players`,
+                                        `Completed: ${level.completed} players`
+                                    ];
+                                },
+                                label: function(context) {
+                                    return `Completion Rate: ${context.parsed.y.toFixed(1)}%`;
+                                }
+                            }
                         }
                     },
                     scales: {
