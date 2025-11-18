@@ -162,8 +162,13 @@ let redisClient = null;
       const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL;
       
       if (redisUrl) {
+        // ✅ FIX: Railway uses IPv6 - add ?family=0 for dual-stack DNS resolution
+        const redisUrlWithIPv6 = redisUrl.includes('?') 
+          ? `${redisUrl}&family=0` 
+          : `${redisUrl}?family=0`;
+        
         logger.info('💾 Redis URL found, initializing client...', { url: redisUrl?.substring(0, 20) + '...' });
-        redisClient = new Redis(redisUrl, {
+        redisClient = new Redis(redisUrlWithIPv6, {
           maxRetriesPerRequest: 3,
           enableReadyCheck: true, // ✅ Check if connection is ready
           lazyConnect: false, // ✅ Connect immediately
