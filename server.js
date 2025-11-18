@@ -19,7 +19,7 @@ const Redis = require('ioredis'); // ✅ For Redis connection
 const TournamentManager = require('./services/tournament-manager');
 const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
-const CacheManager = require('./services/cache-manager'); // ✅ Use CacheManager (not Simple)
+const { CacheManager } = require('./services/cache-manager'); // ✅ Named export - destructure it!
 const LeaderboardAggregator = require('./services/leaderboard-aggregator');
 require('dotenv').config();
 
