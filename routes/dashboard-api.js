@@ -89,10 +89,11 @@ module.exports = (db, cacheManager) => {
           `),
           
           // Total games played (today)
+          // ✅ FIX: Use correct event types from Flutter app
           db.query(`
             SELECT COUNT(*) as games_today
             FROM events
-            WHERE event_type IN ('game_end', 'level_completed')
+            WHERE event_type = 'game_ended'
               AND received_at >= CURRENT_DATE
           `)
         ]);
