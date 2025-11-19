@@ -273,8 +273,23 @@
             </div>
             
             <div class="metric-card">
-                <div class="metric-label">Games Played</div>
-                <div class="metric-value" id="gamesToday">-</div>
+                <div class="metric-label">Games Started</div>
+                <div class="metric-value" id="gamesStarted">-</div>
+                <div class="metric-change">Today</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Games Ended</div>
+                <div class="metric-value" id="gamesEnded">-</div>
+                <div class="metric-change">Today</div>
+            </div>
+        </div>
+
+        <!-- Second Row of Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Completion Rate</div>
+                <div class="metric-value" id="completionRate">-</div>
                 <div class="metric-change">Today</div>
             </div>
             
@@ -282,6 +297,18 @@
                 <div class="metric-label">Avg Session</div>
                 <div class="metric-value" id="avgSession">-</div>
                 <div class="metric-change">Last 7 days</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Avg Game Time</div>
+                <div class="metric-value" id="avgGameTime">-</div>
+                <div class="metric-change">Today</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-label">Games per Player</div>
+                <div class="metric-value" id="gamesPerPlayer">-</div>
+                <div class="metric-change">Today</div>
             </div>
         </div>
 
@@ -294,6 +321,16 @@
                 </div>
             </div>
             
+            <div class="chart-card">
+                <h3>📊 Game Completion Rate (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="completionTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Level Performance -->
+        <div class="charts-grid">
             <div class="chart-card">
                 <h3>
                     🎮 Level Completion Rate 
@@ -314,17 +351,17 @@
                     <canvas id="levelChart"></canvas>
                 </div>
             </div>
-        </div>
 
-        <!-- Retention & Activity -->
-        <div class="charts-grid">
             <div class="chart-card">
                 <h3>🔄 Player Retention</h3>
                 <div class="chart-container">
                     <canvas id="retentionChart"></canvas>
                 </div>
             </div>
-            
+        </div>
+
+        <!-- Retention & Activity -->
+        <div class="charts-grid">
             <div class="chart-card">
                 <h3>🔥 Live Activity Feed</h3>
                 <div class="activity-feed" id="activityFeed">
@@ -333,6 +370,12 @@
                         Loading activity...
                     </div>
                 </div>
+            </div>
+
+            <div class="metric-card" style="grid-column: 1;">
+                <div class="metric-label">7-Day Avg Completion</div>
+                <div class="metric-value" id="avgCompletion7d">-</div>
+                <div class="metric-change">Average rate</div>
             </div>
         </div>
 
@@ -424,10 +467,34 @@
             const data = await fetchAPI('overview');
             if (!data) return;
 
+            // First row metrics
             document.getElementById('dau').textContent = formatNumber(data.dau);
             document.getElementById('totalPlayers').textContent = formatNumber(data.total_players);
-            document.getElementById('gamesToday').textContent = formatNumber(data.games_today);
+            document.getElementById('gamesStarted').textContent = formatNumber(data.games_started);
+            document.getElementById('gamesEnded').textContent = formatNumber(data.games_ended);
+            
+            // Second row metrics
+            const completionRate = data.completion_rate || 0;
+            const completionEl = document.getElementById('completionRate');
+            completionEl.textContent = completionRate.toFixed(1) + '%';
+            
+            // Color code completion rate
+            if (completionRate >= 80) {
+                completionEl.style.color = '#48bb78'; // Green - Great!
+            } else if (completionRate >= 60) {
+                completionEl.style.color = '#ed8936'; // Orange - OK
+            } else {
+                completionEl.style.color = '#f56565'; // Red - Low
+            }
+            
             document.getElementById('avgSession').textContent = formatTime(data.avg_session_seconds);
+            
+            // Calculate derived metrics
+            const avgGameTime = data.games_ended > 0 ? Math.floor(data.avg_session_seconds / (data.games_ended / Math.max(data.dau, 1))) : 0;
+            document.getElementById('avgGameTime').textContent = formatTime(avgGameTime);
+            
+            const gamesPerPlayer = data.dau > 0 ? (data.games_started / data.dau).toFixed(1) : '0.0';
+            document.getElementById('gamesPerPlayer').textContent = gamesPerPlayer;
             
             updateLastUpdate(data.last_updated);
         }
@@ -470,6 +537,78 @@
                             beginAtZero: true,
                             ticks: {
                                 precision: 0
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // COMPLETION RATE TREND CHART
+        // ============================================================================
+
+        async function loadCompletionTrend() {
+            const data = await fetchAPI('completion-trend?days=7');
+            if (!data) return;
+
+            const ctx = document.getElementById('completionTrendChart').getContext('2d');
+            
+            if (charts.completionTrend) charts.completionTrend.destroy();
+            
+            // Update the 7-day average metric
+            document.getElementById('avgCompletion7d').textContent = data.summary.avg_completion_rate.toFixed(1) + '%';
+            
+            charts.completionTrend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.trend.map(d => new Date(d.date).toLocaleDateString()),
+                    datasets: [{
+                        label: 'Completion Rate',
+                        data: data.trend.map(d => parseFloat(d.completion_rate) || 0),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        pointBackgroundColor: '#667eea',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
+                                afterTitle: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const dayData = data.trend[index];
+                                    return [
+                                        `Started: ${dayData.games_started}`,
+                                        `Ended: ${dayData.games_ended}`
+                                    ];
+                                },
+                                label: function(context) {
+                                    return `Completion Rate: ${context.parsed.y.toFixed(1)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: value => value + '%'
                             }
                         }
                     }
@@ -949,6 +1088,7 @@
             await Promise.all([
                 loadOverview(),
                 loadDAUTrend(),
+                loadCompletionTrend(),
                 loadLevelPerformance(),
                 loadRetention(),
                 loadEconomy(),

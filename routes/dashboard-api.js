@@ -90,11 +90,15 @@ module.exports = (db, cacheManager) => {
           `),
           
           // Total games played (today)
-          // ✅ FIX: Use correct event types from Flutter app
+          // ✅ Track both started and ended for completion rate
           db.query(`
-            SELECT COUNT(*) as games_today
+            SELECT 
+              COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
+              COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) as games_ended,
+              ROUND(100.0 * COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) / 
+                    NULLIF(COUNT(CASE WHEN event_type = 'game_started' THEN 1 END), 0), 1) as completion_rate
             FROM events
-            WHERE event_type = 'game_ended'
+            WHERE event_type IN ('game_started', 'game_ended')
               AND received_at >= CURRENT_DATE
           `)
         ]);
@@ -103,7 +107,9 @@ module.exports = (db, cacheManager) => {
           dau: parseInt(dauResult.rows[0]?.dau || 0),
           total_players: parseInt(totalPlayersResult.rows[0]?.total_players || 0),
           avg_session_seconds: parseInt(avgSessionResult.rows[0]?.avg_session_seconds || 0),
-          games_today: parseInt(gamesResult.rows[0]?.games_today || 0),
+          games_started: parseInt(gamesResult.rows[0]?.games_started || 0),
+          games_ended: parseInt(gamesResult.rows[0]?.games_ended || 0),
+          completion_rate: parseFloat(gamesResult.rows[0]?.completion_rate || 0),
           last_updated: new Date().toISOString()
         };
       });
@@ -153,7 +159,55 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
-  // 3. LEVEL PERFORMANCE
+  // 3. GAME COMPLETION RATE TREND
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/completion-trend?days=7
+   * Returns game completion rate trend over time
+   */
+  router.get('/completion-trend', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`completion-trend-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
+            COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) as games_ended,
+            ROUND(100.0 * COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) / 
+                  NULLIF(COUNT(CASE WHEN event_type = 'game_started' THEN 1 END), 0), 1) as completion_rate
+          FROM events
+          WHERE event_type IN ('game_started', 'game_ended')
+            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+          GROUP BY DATE(received_at)
+          ORDER BY date DESC
+          LIMIT ${days}
+        `);
+
+        return {
+          trend: result.rows.reverse(), // Oldest to newest for charts
+          summary: {
+            avg_completion_rate: result.rows.length > 0 
+              ? parseFloat((result.rows.reduce((sum, r) => sum + parseFloat(r.completion_rate || 0), 0) / result.rows.length).toFixed(1))
+              : 0,
+            total_started: result.rows.reduce((sum, r) => sum + parseInt(r.games_started || 0), 0),
+            total_ended: result.rows.reduce((sum, r) => sum + parseInt(r.games_ended || 0), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching completion trend:', error);
+      res.status(500).json({ error: 'Failed to fetch completion trend' });
+    }
+  });
+
+  // ============================================================================
+  // 4. LEVEL PERFORMANCE
   // ============================================================================
 
   /**
