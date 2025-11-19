@@ -986,20 +986,28 @@
             // Show top 5 items
             const topItems = data.top_items.slice(0, 5);
             
+            // Map rarity to colors
+            const rarityColors = {
+                'mythic': '#9f7aea',    // Purple
+                'legendary': '#ed8936', // Orange
+                'epic': '#667eea',      // Blue
+                'rare': '#48bb78',      // Green
+                'common': '#a0aec0'     // Gray
+            };
+            
             charts.purchases = new Chart(ctx, {
                 type: 'horizontalBar',
                 data: {
-                    labels: topItems.map(item => `${item.item_type}: ${item.item_id}`),
+                    labels: topItems.map(item => {
+                        const name = item.item_name || item.item_id || 'Unknown';
+                        const rarity = (item.rarity || '').toUpperCase();
+                        const type = item.purchase_type === 'gems' ? '💎' : '🪙';
+                        return `${name} (${rarity}) ${type}`;
+                    }),
                     datasets: [{
                         label: 'Purchases',
                         data: topItems.map(item => parseInt(item.purchase_count) || 0),
-                        backgroundColor: [
-                            '#9f7aea',
-                            '#667eea',
-                            '#48bb78',
-                            '#ed8936',
-                            '#f56565'
-                        ],
+                        backgroundColor: topItems.map(item => rarityColors[item.rarity] || '#a0aec0'),
                         borderRadius: 8
                     }]
                 },
@@ -1016,7 +1024,13 @@
                                 afterLabel: function(context) {
                                     const index = context.dataIndex;
                                     const item = topItems[index];
-                                    return `Unique Buyers: ${parseInt(item.unique_buyers) || 0}`;
+                                    const buyers = parseInt(item.unique_buyers) || 0;
+                                    const coins = parseInt(item.total_coins_spent) || 0;
+                                    const gems = parseInt(item.total_gems_spent) || 0;
+                                    let result = `Unique Buyers: ${buyers}`;
+                                    if (coins > 0) result += `\nCoins Spent: ${coins.toLocaleString()}`;
+                                    if (gems > 0) result += `\nGems Spent: ${gems.toLocaleString()} 💎`;
+                                    return result;
                                 }
                             }
                         }
