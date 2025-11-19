@@ -429,7 +429,315 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
-  // 8. CACHE MANAGEMENT
+  // 8. ECONOMY ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/economy
+   * Returns daily economy metrics: gems, coins, spending patterns
+   */
+  router.get('/economy', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`economy-${days}days`, async () => {
+        const [gemsResult, coinsResult, spendingResult] = await Promise.all([
+          // Gems earned vs spent
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              SUM(CASE WHEN event_type = 'currency_earned' AND payload->>'currency_type' = 'gems' 
+                  THEN (payload->>'amount')::int ELSE 0 END) as gems_earned,
+              SUM(CASE WHEN event_type = 'currency_spent' AND payload->>'currency_type' = 'gems' 
+                  THEN (payload->>'amount')::int ELSE 0 END) as gems_spent
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND event_type IN ('currency_earned', 'currency_spent')
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+            LIMIT ${days}
+          `),
+          
+          // Coins earned vs spent
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              SUM(CASE WHEN event_type = 'currency_earned' AND payload->>'currency_type' = 'coins' 
+                  THEN (payload->>'amount')::int ELSE 0 END) as coins_earned,
+              SUM(CASE WHEN event_type = 'currency_spent' AND payload->>'currency_type' = 'coins' 
+                  THEN (payload->>'amount')::int ELSE 0 END) as coins_spent
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND event_type IN ('currency_earned', 'currency_spent')
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+            LIMIT ${days}
+          `),
+          
+          // Spending breakdown (what are they buying?)
+          db.query(`
+            SELECT 
+              payload->>'item_type' as item_type,
+              payload->>'currency_type' as currency_type,
+              COUNT(*) as purchase_count,
+              SUM((payload->>'amount')::int) as total_spent
+            FROM events
+            WHERE event_type = 'currency_spent'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'item_type', payload->>'currency_type'
+            ORDER BY total_spent DESC
+          `)
+        ]);
+
+        return {
+          gems: gemsResult.rows,
+          coins: coinsResult.rows,
+          spending_breakdown: spendingResult.rows,
+          summary: {
+            total_gems_earned: gemsResult.rows.reduce((sum, r) => sum + parseInt(r.gems_earned || 0), 0),
+            total_gems_spent: gemsResult.rows.reduce((sum, r) => sum + parseInt(r.gems_spent || 0), 0),
+            total_coins_earned: coinsResult.rows.reduce((sum, r) => sum + parseInt(r.coins_earned || 0), 0),
+            total_coins_spent: coinsResult.rows.reduce((sum, r) => sum + parseInt(r.coins_spent || 0), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching economy data:', error);
+      res.status(500).json({ error: 'Failed to fetch economy data' });
+    }
+  });
+
+  // ============================================================================
+  // 9. CONTINUE USAGE ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/continues
+   * Returns continue usage: total, ad vs gems, success rates
+   */
+  router.get('/continues', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`continues-${days}days`, async () => {
+        const [dailyResult, typeResult, successResult] = await Promise.all([
+          // Daily continue usage
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as total_continues,
+              COUNT(CASE WHEN payload->>'continue_type' = 'ad' THEN 1 END) as ad_continues,
+              COUNT(CASE WHEN payload->>'continue_type' = 'gems' THEN 1 END) as gem_continues
+            FROM events
+            WHERE event_type = 'continue_used'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // Breakdown by type
+          db.query(`
+            SELECT 
+              payload->>'continue_type' as type,
+              COUNT(*) as count,
+              ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 1) as percentage
+            FROM events
+            WHERE event_type = 'continue_used'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'continue_type'
+          `),
+          
+          // Success rate after continue (did they survive longer?)
+          db.query(`
+            SELECT 
+              COUNT(DISTINCT user_id) as players_who_continued,
+              AVG((payload->>'score_after_continue')::int) as avg_score_after,
+              AVG((payload->>'survival_time_after')::int) as avg_survival_seconds_after
+            FROM events
+            WHERE event_type = 'continue_used'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND payload->>'score_after_continue' IS NOT NULL
+          `)
+        ]);
+
+        return {
+          daily: dailyResult.rows,
+          by_type: typeResult.rows,
+          success_metrics: successResult.rows[0] || {},
+          summary: {
+            total_continues: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.total_continues || 0), 0),
+            ad_continues: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.ad_continues || 0), 0),
+            gem_continues: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.gem_continues || 0), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching continue data:', error);
+      res.status(500).json({ error: 'Failed to fetch continue data' });
+    }
+  });
+
+  // ============================================================================
+  // 10. MISSION COMPLETION ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/missions
+   * Returns mission completion rates and popularity
+   */
+  router.get('/missions', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`missions-${days}days`, async () => {
+        const [dailyResult, missionTypesResult, popularResult] = await Promise.all([
+          // Daily mission completions
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as missions_completed,
+              COUNT(DISTINCT user_id) as unique_players
+            FROM events
+            WHERE event_type = 'mission_completed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // By mission type
+          db.query(`
+            SELECT 
+              payload->>'mission_type' as mission_type,
+              COUNT(*) as completions,
+              COUNT(DISTINCT user_id) as unique_completers,
+              ROUND(AVG((payload->>'reward_amount')::int), 0) as avg_reward
+            FROM events
+            WHERE event_type = 'mission_completed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'mission_type'
+            ORDER BY completions DESC
+          `),
+          
+          // Most popular specific missions
+          db.query(`
+            SELECT 
+              payload->>'mission_id' as mission_id,
+              payload->>'mission_type' as mission_type,
+              COUNT(*) as completions,
+              COUNT(DISTINCT user_id) as unique_completers
+            FROM events
+            WHERE event_type = 'mission_completed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'mission_id', payload->>'mission_type'
+            ORDER BY completions DESC
+            LIMIT 10
+          `)
+        ]);
+
+        return {
+          daily: dailyResult.rows,
+          by_type: missionTypesResult.rows,
+          top_missions: popularResult.rows,
+          summary: {
+            total_completions: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.missions_completed || 0), 0),
+            unique_players: Math.max(...dailyResult.rows.map(r => parseInt(r.unique_players || 0)), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching mission data:', error);
+      res.status(500).json({ error: 'Failed to fetch mission data' });
+    }
+  });
+
+  // ============================================================================
+  // 11. JET/SKIN PURCHASES
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/purchases
+   * Returns jet and skin purchase analytics
+   */
+  router.get('/purchases', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`purchases-${days}days`, async () => {
+        const [dailyResult, jetResult, currencyResult] = await Promise.all([
+          // Daily purchases
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as total_purchases,
+              COUNT(DISTINCT user_id) as unique_buyers
+            FROM events
+            WHERE event_type = 'item_purchased'
+              AND payload->>'item_type' IN ('jet', 'skin')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // Most popular jets/skins
+          db.query(`
+            SELECT 
+              payload->>'item_id' as item_id,
+              payload->>'item_type' as item_type,
+              COUNT(*) as purchase_count,
+              COUNT(DISTINCT user_id) as unique_buyers
+            FROM events
+            WHERE event_type = 'item_purchased'
+              AND payload->>'item_type' IN ('jet', 'skin')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'item_id', payload->>'item_type'
+            ORDER BY purchase_count DESC
+            LIMIT 10
+          `),
+          
+          // Purchases by currency type
+          db.query(`
+            SELECT 
+              payload->>'currency_type' as currency_type,
+              COUNT(*) as purchase_count,
+              SUM((payload->>'price')::int) as total_revenue
+            FROM events
+            WHERE event_type = 'item_purchased'
+              AND payload->>'item_type' IN ('jet', 'skin')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'currency_type'
+          `)
+        ]);
+
+        return {
+          daily: dailyResult.rows,
+          top_items: jetResult.rows,
+          by_currency: currencyResult.rows,
+          summary: {
+            total_purchases: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.total_purchases || 0), 0),
+            unique_buyers: Math.max(...dailyResult.rows.map(r => parseInt(r.unique_buyers || 0)), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching purchase data:', error);
+      res.status(500).json({ error: 'Failed to fetch purchase data' });
+    }
+  });
+
+  // ============================================================================
+  // 12. CACHE MANAGEMENT
   // ============================================================================
 
   /**
