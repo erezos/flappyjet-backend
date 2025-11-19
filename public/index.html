@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlappyJet Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        select, button {
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        select:focus, button:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            margin: 20px;
+            border-radius: 8px;
+            border: 1px solid #f5c6cb;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 30px;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e9ecef;
+            transition: transform 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .metric-title {
+            font-size: 0.9rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+
+        .metric-change {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .metric-change.positive {
+            color: #28a745;
+        }
+
+        .metric-change.negative {
+            color: #dc3545;
+        }
+
+        .metric-change.neutral {
+            color: #6c757d;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 30px;
+            padding: 0 30px 30px;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e9ecef;
+        }
+
+        .chart-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .chart-wrapper {
+            position: relative;
+            height: 300px;
+        }
+
+        .last-updated {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9rem;
+            border-top: 1px solid #e9ecef;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .control-group {
+                justify-content: space-between;
+            }
+            
+            .charts-grid {
+                grid-template-columns: 1fr;
+                padding: 0 20px 20px;
+            }
+            
+            .metrics-grid {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🚀 FlappyJet Analytics Dashboard</h1>
+            <p>Real-time game analytics and performance metrics</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="days">Time Period:</label>
+                <select id="days">
+                    <option value="7">Last 7 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="dashboard">Dashboard:</label>
+                <select id="dashboard">
+                    <option value="kpis" selected>Main KPIs</option>
+                    <option value="retention">Retention</option>
+                    <option value="monetization">Monetization</option>
+                </select>
+            </div>
+            <button onclick="loadDashboard()">🔄 Refresh Data</button>
+        </div>
+
+        <div id="content">
+            <div class="loading">
+                <h3>📊 Loading analytics data...</h3>
+                <p>Please wait while we fetch your game metrics</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://flappyjet-backend-production.up.railway.app/api/analytics/v2';
+        const API_KEY = 'flappyjet-analytics-2024';
+
+        let currentData = null;
+
+        async function loadDashboard() {
+            const days = document.getElementById('days').value;
+            const dashboard = document.getElementById('dashboard').value;
+            
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="loading">
+                    <h3>📊 Loading analytics data...</h3>
+                    <p>Fetching ${dashboard} data for the last ${days} days</p>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`${API_BASE}/dashboard/${dashboard}?api_key=${API_KEY}&days=${days}`);
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Failed to fetch data');
+                }
+
+                currentData = result;
+                renderDashboard(result, dashboard);
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Error Loading Dashboard</h3>
+                        <p>${error.message}</p>
+                        <p>Please check your connection and try again.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderDashboard(data, dashboardType) {
+            const content = document.getElementById('content');
+            
+            if (dashboardType === 'kpis') {
+                renderKPIsDashboard(data);
+            } else if (dashboardType === 'retention') {
+                renderRetentionDashboard(data);
+            } else if (dashboardType === 'monetization') {
+                renderMonetizationDashboard(data);
+            }
+        }
+
+        function renderKPIsDashboard(data) {
+            const content = document.getElementById('content');
+            const summary = data.summary;
+            const dailyData = data.data;
+
+            content.innerHTML = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">Daily Active Users</div>
+                        <div class="metric-value">${summary.avg_dau || 0}</div>
+                        <div class="metric-change neutral">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Total Games</div>
+                        <div class="metric-value">${summary.total_games || 0}</div>
+                        <div class="metric-change neutral">All Time</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Continue Usage</div>
+                        <div class="metric-value">${summary.total_continues || 0}</div>
+                        <div class="metric-change neutral">Total</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Ad Completion Rate</div>
+                        <div class="metric-value">${(summary.avg_ad_completion_rate * 100 || 0).toFixed(1)}%</div>
+                        <div class="metric-change ${summary.avg_ad_completion_rate > 0.7 ? 'positive' : 'neutral'}">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Total Revenue</div>
+                        <div class="metric-value">$${summary.total_revenue || '0.00'}</div>
+                        <div class="metric-change neutral">USD</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Total Purchases</div>
+                        <div class="metric-value">${summary.total_purchases || 0}</div>
+                        <div class="metric-change neutral">IAP Orders</div>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <div class="chart-title">📈 Daily Active Users</div>
+                        <div class="chart-wrapper">
+                            <canvas id="dauChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">🎮 Games Played Daily</div>
+                        <div class="chart-wrapper">
+                            <canvas id="gamesChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">🔄 Continue Usage</div>
+                        <div class="chart-wrapper">
+                            <canvas id="continuesChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">📺 Ad Performance</div>
+                        <div class="chart-wrapper">
+                            <canvas id="adsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="last-updated">
+                    Last updated: ${new Date(data.meta.generated_at).toLocaleString()}
+                </div>
+            `;
+
+            // Render charts
+            renderDAUChart(dailyData);
+            renderGamesChart(dailyData);
+            renderContinuesChart(dailyData);
+            renderAdsChart(dailyData);
+        }
+
+        function renderDAUChart(data) {
+            const ctx = document.getElementById('dauChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => new Date(d.date).toLocaleDateString()),
+                    datasets: [{
+                        label: 'Daily Active Users',
+                        data: data.map(d => parseInt(d.dau)),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderGamesChart(data) {
+            const ctx = document.getElementById('gamesChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => new Date(d.date).toLocaleDateString()),
+                    datasets: [{
+                        label: 'Games Played',
+                        data: data.map(d => parseInt(d.total_games)),
+                        backgroundColor: '#28a745',
+                        borderColor: '#20c997',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderContinuesChart(data) {
+            const ctx = document.getElementById('continuesChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Via Ads', 'Via Gems'],
+                    datasets: [{
+                        data: [
+                            data.reduce((sum, d) => sum + parseInt(d.continues_via_ad), 0),
+                            data.reduce((sum, d) => sum + parseInt(d.continues_via_gems), 0)
+                        ],
+                        backgroundColor: ['#ffc107', '#dc3545'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAdsChart(data) {
+            const ctx = document.getElementById('adsChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => new Date(d.date).toLocaleDateString()),
+                    datasets: [
+                        {
+                            label: 'Completed',
+                            data: data.map(d => parseInt(d.ads_completed)),
+                            backgroundColor: '#28a745'
+                        },
+                        {
+                            label: 'Abandoned',
+                            data: data.map(d => parseInt(d.ads_abandoned)),
+                            backgroundColor: '#dc3545'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRetentionDashboard(data) {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">Day 1 Retention</div>
+                        <div class="metric-value">${(data.summary?.day1_retention_rate * 100 || 0).toFixed(1)}%</div>
+                        <div class="metric-change neutral">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Day 7 Retention</div>
+                        <div class="metric-value">${(data.summary?.day7_retention_rate * 100 || 0).toFixed(1)}%</div>
+                        <div class="metric-change neutral">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Day 30 Retention</div>
+                        <div class="metric-value">${(data.summary?.day30_retention_rate * 100 || 0).toFixed(1)}%</div>
+                        <div class="metric-change neutral">Average</div>
+                    </div>
+                </div>
+                <div class="last-updated">
+                    Last updated: ${new Date(data.meta.generated_at).toLocaleString()}
+                </div>
+            `;
+        }
+
+        function renderMonetizationDashboard(data) {
+            const content = document.getElementById('content');
+            const summary = data.summary;
+            
+            content.innerHTML = `
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">Total Revenue</div>
+                        <div class="metric-value">$${summary.total_revenue || '0.00'}</div>
+                        <div class="metric-change neutral">USD</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">ARPU</div>
+                        <div class="metric-value">$${summary.avg_arpu || '0.00'}</div>
+                        <div class="metric-change neutral">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Paying Users</div>
+                        <div class="metric-value">${summary.paying_users || 0}</div>
+                        <div class="metric-change neutral">Total</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">Total Purchases</div>
+                        <div class="metric-value">${summary.total_purchases || 0}</div>
+                        <div class="metric-change neutral">Orders</div>
+                    </div>
+                </div>
+                <div class="last-updated">
+                    Last updated: ${new Date(data.meta.generated_at).toLocaleString()}
+                </div>
+            `;
+        }
+
+        // Load dashboard on page load
+        document.addEventListener('DOMContentLoaded', loadDashboard);
+    </script>
+</body>
+</html>
+
