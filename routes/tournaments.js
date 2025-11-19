@@ -680,4 +680,82 @@ router.get('/:tournamentId/prize-stats',
   }
 );
 
+// ============================================================================
+// ADMIN ENDPOINTS
+// ============================================================================
+
+/**
+ * Manually create a weekly tournament
+ * POST /api/tournaments/admin/create-weekly
+ * 
+ * ✅ TEMPORARY: No auth required for now (add auth later)
+ * This allows manual tournament creation if cron doesn't run
+ */
+router.post('/admin/create-weekly',
+  async (req, res) => {
+    try {
+      logger.info('🏆 🔧 Admin: Manual weekly tournament creation requested');
+      
+      const tournamentScheduler = req.app.locals.tournamentScheduler;
+      if (!tournamentScheduler) {
+        return res.status(503).json({
+          success: false,
+          error: 'Tournament scheduler not initialized'
+        });
+      }
+
+      // Check if there's already an active tournament
+      const tournamentManager = checkTournamentManager(req, res);
+      if (!tournamentManager) return;
+      
+      const currentResult = await tournamentManager.getCurrentTournament();
+      if (currentResult.success && currentResult.tournament) {
+        const tournament = currentResult.tournament;
+        if (tournament.status === 'active' || tournament.status === 'upcoming') {
+          return res.status(400).json({
+            success: false,
+            error: 'A tournament already exists',
+            tournament: {
+              id: tournament.id,
+              name: tournament.name,
+              status: tournament.status,
+              start_date: tournament.start_date,
+              end_date: tournament.end_date
+            }
+          });
+        }
+      }
+
+      // Create tournament
+      const result = await tournamentScheduler.createWeeklyTournamentNow({
+        prizePool: 1000,
+        name: null, // Auto-generated
+        startOffsetHours: 0
+      });
+
+      if (result.success) {
+        logger.info('🏆 ✅ Admin: Weekly tournament created successfully');
+        res.json({
+          success: true,
+          message: 'Weekly tournament created',
+          tournament: result.tournament
+        });
+      } else {
+        logger.error('🏆 ❌ Admin: Failed to create weekly tournament:', result.error);
+        res.status(500).json({
+          success: false,
+          error: result.error || 'Failed to create tournament'
+        });
+      }
+
+    } catch (error) {
+      logger.error('🏆 ❌ Admin: Error creating weekly tournament:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create tournament: ' + error.message
+      });
+    }
+  }
+);
+
 module.exports = router;
