@@ -316,7 +316,7 @@
             </div>
         </div>
 
-        <!-- Ad Performance & Retention -->
+        <!-- Retention & Activity -->
         <div class="charts-grid">
             <div class="chart-card">
                 <h3>🔄 Player Retention</h3>
@@ -332,6 +332,40 @@
                         <div class="spinner"></div>
                         Loading activity...
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Economy Analytics -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>💎 Economy Balance (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="economyChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <h3>🎮 Continue Usage (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="continuesChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Missions & Purchases -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>🎯 Mission Completion (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="missionsChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-card">
+                <h3>✈️ Top Jets/Skins Purchased</h3>
+                <div class="chart-container">
+                    <canvas id="purchasesChart"></canvas>
                 </div>
             </div>
         </div>
@@ -630,6 +664,235 @@
         }
 
         // ============================================================================
+        // ECONOMY CHART
+        // ============================================================================
+
+        async function loadEconomy() {
+            const data = await fetchAPI('economy?days=7');
+            if (!data) return;
+
+            const ctx = document.getElementById('economyChart').getContext('2d');
+            
+            if (charts.economy) charts.economy.destroy();
+            
+            // Reverse arrays to show chronologically (oldest to newest)
+            const dates = data.gems.map(d => new Date(d.date).toLocaleDateString()).reverse();
+            
+            charts.economy = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        {
+                            label: 'Gems Earned',
+                            data: data.gems.map(d => parseInt(d.gems_earned) || 0).reverse(),
+                            borderColor: '#9f7aea',
+                            backgroundColor: 'rgba(159, 122, 234, 0.1)',
+                            fill: false,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Gems Spent',
+                            data: data.gems.map(d => parseInt(d.gems_spent) || 0).reverse(),
+                            borderColor: '#f56565',
+                            backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                            fill: false,
+                            tension: 0.4,
+                            borderDash: [5, 5]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const index = context.dataIndex;
+                                    const coinsData = data.coins[data.coins.length - 1 - index];
+                                    return [
+                                        '',
+                                        `Coins Earned: ${parseInt(coinsData?.coins_earned) || 0}`,
+                                        `Coins Spent: ${parseInt(coinsData?.coins_spent) || 0}`
+                                    ];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // CONTINUES CHART
+        // ============================================================================
+
+        async function loadContinues() {
+            const data = await fetchAPI('continues?days=7');
+            if (!data) return;
+
+            const ctx = document.getElementById('continuesChart').getContext('2d');
+            
+            if (charts.continues) charts.continues.destroy();
+            
+            charts.continues = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Ad Continues', 'Gem Continues'],
+                    datasets: [{
+                        data: [
+                            data.summary.ad_continues,
+                            data.summary.gem_continues
+                        ],
+                        backgroundColor: [
+                            '#48bb78',
+                            '#ed8936'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = data.summary.total_continues;
+                                    const value = context.parsed;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${context.label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // MISSIONS CHART
+        // ============================================================================
+
+        async function loadMissions() {
+            const data = await fetchAPI('missions?days=7');
+            if (!data) return;
+
+            const ctx = document.getElementById('missionsChart').getContext('2d');
+            
+            if (charts.missions) charts.missions.destroy();
+            
+            const dates = data.daily.map(d => new Date(d.date).toLocaleDateString()).reverse();
+            
+            charts.missions = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Missions Completed',
+                        data: data.daily.map(d => parseInt(d.missions_completed) || 0).reverse(),
+                        backgroundColor: '#667eea',
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const index = context.dataIndex;
+                                    const dayData = data.daily[data.daily.length - 1 - index];
+                                    return `Unique Players: ${parseInt(dayData?.unique_players) || 0}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // PURCHASES CHART
+        // ============================================================================
+
+        async function loadPurchases() {
+            const data = await fetchAPI('purchases?days=7');
+            if (!data) return;
+
+            const ctx = document.getElementById('purchasesChart').getContext('2d');
+            
+            if (charts.purchases) charts.purchases.destroy();
+            
+            // Show top 5 items
+            const topItems = data.top_items.slice(0, 5);
+            
+            charts.purchases = new Chart(ctx, {
+                type: 'horizontalBar',
+                data: {
+                    labels: topItems.map(item => `${item.item_type}: ${item.item_id}`),
+                    datasets: [{
+                        label: 'Purchases',
+                        data: topItems.map(item => parseInt(item.purchase_count) || 0),
+                        backgroundColor: [
+                            '#9f7aea',
+                            '#667eea',
+                            '#48bb78',
+                            '#ed8936',
+                            '#f56565'
+                        ],
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const index = context.dataIndex;
+                                    const item = topItems[index];
+                                    return `Unique Buyers: ${parseInt(item.unique_buyers) || 0}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
         // ACTIVITY FEED
         // ============================================================================
 
@@ -688,6 +951,10 @@
                 loadDAUTrend(),
                 loadLevelPerformance(),
                 loadRetention(),
+                loadEconomy(),
+                loadContinues(),
+                loadMissions(),
+                loadPurchases(),
                 loadActivityFeed()
             ]);
 
