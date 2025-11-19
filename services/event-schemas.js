@@ -223,6 +223,37 @@ const currencySpentSchema = Joi.object({
   balance_after: Joi.number().integer().min(0).required(),
 });
 
+// 15a. skin_purchased - Skin/jet purchase with coins or gems
+const skinPurchasedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('skin_purchased').required(),
+  jet_id: Joi.string().required(),
+  jet_name: Joi.string().optional(),
+  purchase_type: Joi.string().valid('coins', 'gems').required(),
+  cost_coins: Joi.number().integer().min(0).required(),
+  cost_gems: Joi.number().integer().min(0).required(),
+  rarity: Joi.string().optional(),
+});
+
+// 15b. item_unlocked - Any item unlocked (skin, achievement, etc)
+const itemUnlockedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('item_unlocked').required(),
+  item_type: Joi.string().required(), // 'skin', 'achievement', 'booster', etc.
+  item_id: Joi.string().required(),
+  item_name: Joi.string().optional(),
+  unlock_method: Joi.string().optional(), // 'purchase', 'achievement', 'mission_reward', etc.
+});
+
+// 15c. item_equipped - Item equipped (skin, booster, etc)
+const itemEquippedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('item_equipped').required(),
+  item_type: Joi.string().required(), // 'skin', 'booster', etc.
+  item_id: Joi.string().required(),
+  item_name: Joi.string().optional(),
+});
+
 // 16. purchase_initiated - IAP start
 const purchaseInitiatedSchema = Joi.object({
   ...baseFields,
@@ -387,6 +418,9 @@ const schemaMap = {
   // Economy
   currency_earned: currencyEarnedSchema,
   currency_spent: currencySpentSchema,
+  skin_purchased: skinPurchasedSchema, // ✅ NEW: Skin purchase event
+  item_unlocked: itemUnlockedSchema,   // ✅ NEW: Item unlock event
+  item_equipped: itemEquippedSchema,   // ✅ NEW: Item equip event
   purchase_initiated: purchaseInitiatedSchema,
   purchase_completed: purchaseCompletedSchema,
   
@@ -468,6 +502,9 @@ module.exports = {
   levelFailedSchema,
   currencyEarnedSchema,
   currencySpentSchema,
+  skinPurchasedSchema,    // ✅ NEW: Export skin purchase schema
+  itemUnlockedSchema,     // ✅ NEW: Export item unlock schema
+  itemEquippedSchema,     // ✅ NEW: Export item equip schema
   purchaseInitiatedSchema,
   purchaseCompletedSchema,
   skinUnlockedSchema,
