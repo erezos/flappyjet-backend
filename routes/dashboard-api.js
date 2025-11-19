@@ -745,8 +745,7 @@ module.exports = (db, cacheManager) => {
               COUNT(*) as total_purchases,
               COUNT(DISTINCT user_id) as unique_buyers
             FROM events
-            WHERE event_type = 'item_purchased'
-              AND payload->>'item_type' IN ('jet', 'skin')
+            WHERE event_type = 'skin_purchased'
               AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
             GROUP BY DATE(received_at)
             ORDER BY date DESC
@@ -755,30 +754,33 @@ module.exports = (db, cacheManager) => {
           // Most popular jets/skins
           db.query(`
             SELECT 
-              payload->>'item_id' as item_id,
-              payload->>'item_type' as item_type,
+              payload->>'jet_id' as item_id,
+              payload->>'jet_name' as item_name,
+              payload->>'rarity' as rarity,
+              payload->>'purchase_type' as purchase_type,
               COUNT(*) as purchase_count,
-              COUNT(DISTINCT user_id) as unique_buyers
+              COUNT(DISTINCT user_id) as unique_buyers,
+              SUM((payload->>'cost_coins')::int) as total_coins_spent,
+              SUM((payload->>'cost_gems')::int) as total_gems_spent
             FROM events
-            WHERE event_type = 'item_purchased'
-              AND payload->>'item_type' IN ('jet', 'skin')
+            WHERE event_type = 'skin_purchased'
               AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            GROUP BY payload->>'item_id', payload->>'item_type'
+            GROUP BY payload->>'jet_id', payload->>'jet_name', payload->>'rarity', payload->>'purchase_type'
             ORDER BY purchase_count DESC
             LIMIT 10
           `),
           
-          // Purchases by currency type
+          // Purchases by currency type (coins vs gems)
           db.query(`
             SELECT 
-              payload->>'currency_type' as currency_type,
+              payload->>'purchase_type' as currency_type,
               COUNT(*) as purchase_count,
-              SUM((payload->>'price')::int) as total_revenue
+              SUM((payload->>'cost_coins')::int) as total_coins,
+              SUM((payload->>'cost_gems')::int) as total_gems
             FROM events
-            WHERE event_type = 'item_purchased'
-              AND payload->>'item_type' IN ('jet', 'skin')
+            WHERE event_type = 'skin_purchased'
               AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            GROUP BY payload->>'currency_type'
+            GROUP BY payload->>'purchase_type'
           `)
         ]);
 
