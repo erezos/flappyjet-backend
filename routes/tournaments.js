@@ -284,6 +284,15 @@ router.get('/:tournamentId/leaderboard',
       const tournamentManager = checkTournamentManager(req, res);
       if (!tournamentManager) return; // Error response already sent
       
+      // ✅ FIX: Check if tournament exists first
+      const tournament = await tournamentManager.getTournamentById(tournamentId);
+      if (!tournament || !tournament.success || !tournament.tournament) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tournament not found'
+        });
+      }
+      
       const result = await tournamentManager.getTournamentLeaderboard(tournamentId, {
         limit,
         offset

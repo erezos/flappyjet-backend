@@ -56,7 +56,7 @@ module.exports = (db, cacheManager) => {
         const today = new Date().toISOString().split('T')[0];
 
         // Query all metrics in parallel for speed
-        const [dauResult, totalPlayersResult, avgSessionResult, gamesResult] = await Promise.all([
+        const [dauResult, totalPlayersResult, avgSessionResult, gamesResult, avgGameDurationResult] = await Promise.all([
           // Daily Active Users (today)
           db.query(`
             SELECT COUNT(DISTINCT user_id) as dau
@@ -100,6 +100,16 @@ module.exports = (db, cacheManager) => {
             FROM events
             WHERE event_type IN ('game_started', 'game_ended')
               AND received_at >= CURRENT_DATE
+          `),
+          
+          // Average game duration from game_ended events (today)
+          db.query(`
+            SELECT 
+              ROUND(AVG((payload->>'duration_seconds')::int)) as avg_game_duration
+            FROM events
+            WHERE event_type = 'game_ended'
+              AND received_at >= CURRENT_DATE
+              AND (payload->>'duration_seconds')::int > 0
           `)
         ]);
 
@@ -107,6 +117,7 @@ module.exports = (db, cacheManager) => {
           dau: parseInt(dauResult.rows[0]?.dau || 0),
           total_players: parseInt(totalPlayersResult.rows[0]?.total_players || 0),
           avg_session_seconds: parseInt(avgSessionResult.rows[0]?.avg_session_seconds || 0),
+          avg_game_duration: parseInt(avgGameDurationResult.rows[0]?.avg_game_duration || 0),
           games_started: parseInt(gamesResult.rows[0]?.games_started || 0),
           games_ended: parseInt(gamesResult.rows[0]?.games_ended || 0),
           completion_rate: parseFloat(gamesResult.rows[0]?.completion_rate || 0),
