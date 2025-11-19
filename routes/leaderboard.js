@@ -38,8 +38,15 @@ router.get('/global',
       const offset = parseInt(req.query.offset) || 0;
       const requestingPlayerId = req.query.playerId;
 
-      const leaderboardManager = req.app.locals.leaderboardManager;
-      const result = await leaderboardManager.getGlobalLeaderboard({
+      const leaderboardAggregator = req.app.locals.leaderboardAggregator;
+      if (!leaderboardAggregator) {
+        return res.status(503).json({
+          success: false,
+          error: 'Leaderboard service temporarily unavailable'
+        });
+      }
+      
+      const result = await leaderboardAggregator.getGlobalLeaderboard({
         limit,
         offset,
         requestingPlayerId
