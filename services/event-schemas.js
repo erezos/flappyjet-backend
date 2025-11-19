@@ -44,6 +44,7 @@ const appLaunchedSchema = Joi.object({
   deviceModel: Joi.string().optional(),
   osVersion: Joi.string().optional(),
   appVersion: Joi.string().optional(),
+  nickname: Joi.string().max(50).optional(), // ✅ NEW: Player nickname (1-50 chars)
   // ✅ FIX: Flutter client sends these from getSessionMetadata()
   daysSinceInstall: Joi.number().integer().min(0).optional(),
   daysSinceLastSession: Joi.number().integer().min(0).optional(),
@@ -87,6 +88,7 @@ const userInstalledSchema = Joi.object({
   install_source: Joi.string().optional(),
   referrer: Joi.string().optional(),
   first_open: Joi.boolean().optional(),
+  nickname: Joi.string().max(50).optional(), // ✅ NEW: Player nickname (1-50 chars)
 }).unknown(true); // Allow additional fields
 
 // ============================================================================
