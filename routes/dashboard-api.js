@@ -594,8 +594,8 @@ module.exports = (db, cacheManager) => {
             SELECT 
               DATE(received_at) as date,
               COUNT(*) as total_continues,
-              COUNT(CASE WHEN payload->>'continue_type' = 'ad' THEN 1 END) as ad_continues,
-              COUNT(CASE WHEN payload->>'continue_type' = 'gems' THEN 1 END) as gem_continues
+              COUNT(CASE WHEN payload->>'continue_type' = 'ad_watch' THEN 1 END) as ad_continues,
+              COUNT(CASE WHEN payload->>'continue_type' = 'gem_purchase' THEN 1 END) as gem_continues
             FROM events
             WHERE event_type = 'continue_used'
               AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
