@@ -1096,14 +1096,21 @@
                 // Format user metadata badges
                 let badges = [];
                 if (userInfo) {
-                    if (userInfo.is_new_user) {
-                        badges.push('🆕 NEW');
-                    } else if (userInfo.days_since_install !== null && userInfo.days_since_install !== undefined) {
-                        badges.push(`${userInfo.days_since_install}d old`);
+                    // Show install age
+                    if (userInfo.days_since_install !== null && userInfo.days_since_install !== undefined) {
+                        if (userInfo.days_since_install === 0) {
+                            badges.push('🆕 TODAY');  // Installed today
+                        } else if (userInfo.days_since_install === 1) {
+                            badges.push('⭐ YESTERDAY');  // Installed yesterday (good retention!)
+                        } else {
+                            badges.push(`${userInfo.days_since_install}d old`);
+                        }
                     }
+                    // Show games played
                     if (userInfo.games_played > 0) {
                         badges.push(`${userInfo.games_played} games`);
                     }
+                    // Show device
                     if (userInfo.device && userInfo.device !== 'Unknown' && userInfo.device !== 'null') {
                         badges.push(userInfo.device);
                     }
