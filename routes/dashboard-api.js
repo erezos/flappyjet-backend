@@ -460,20 +460,16 @@ module.exports = (db, cacheManager) => {
             GROUP BY install_date
           )
           SELECT
-            days_since_install,
+            rs.days_since_install,
             COUNT(DISTINCT rs.user_id) as returned_users,
-            ROUND(100.0 * COUNT(DISTINCT rs.user_id) / 
-              SUM(CASE 
-                WHEN cs.install_date <= CURRENT_DATE - days_since_install 
-                THEN cs.cohort_size 
-                ELSE 0 
-              END), 1) as retention_rate
+            SUM(cs.cohort_size) as cohort_size,
+            ROUND(100.0 * COUNT(DISTINCT rs.user_id) / NULLIF(SUM(cs.cohort_size), 0), 1) as retention_rate
           FROM return_sessions rs
           JOIN cohort_sizes cs ON rs.install_date = cs.install_date
-          WHERE days_since_install IN (1, 3, 7, 14, 30)
-            AND rs.install_date <= CURRENT_DATE - days_since_install
-          GROUP BY days_since_install
-          ORDER BY days_since_install
+          WHERE rs.days_since_install IN (1, 3, 7, 14, 30)
+            AND rs.install_date <= CURRENT_DATE - rs.days_since_install
+          GROUP BY rs.days_since_install
+          ORDER BY rs.days_since_install
         `);
 
         return {
