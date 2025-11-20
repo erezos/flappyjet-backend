@@ -317,6 +317,15 @@
             </div>
             
             <div class="metric-card">
+                <div class="metric-label">Sessions per User</div>
+                <div class="metric-value" id="sessionsPerUser">-</div>
+                <div class="metric-change">Today</div>
+            </div>
+        </div>
+
+        <!-- Third Row of Metrics -->
+        <div class="metrics-grid">
+            <div class="metric-card">
                 <div class="metric-label">Games per Player</div>
                 <div class="metric-value" id="gamesPerPlayer">-</div>
                 <div class="metric-change">Today</div>
@@ -502,6 +511,10 @@
             
             // Use actual average game duration from backend
             document.getElementById('avgGameTime').textContent = formatTime(data.avg_game_duration || 0);
+            
+            // Sessions per user (from backend)
+            const sessionsPerUser = data.avg_sessions_per_user || 0;
+            document.getElementById('sessionsPerUser').textContent = sessionsPerUser.toFixed(1);
             
             const gamesPerPlayer = data.dau > 0 ? (data.games_started / data.dau).toFixed(1) : '0.0';
             document.getElementById('gamesPerPlayer').textContent = gamesPerPlayer;

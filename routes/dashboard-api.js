@@ -56,7 +56,7 @@ module.exports = (db, cacheManager) => {
         const today = new Date().toISOString().split('T')[0];
 
         // Query all metrics in parallel for speed
-        const [dauResult, totalPlayersResult, avgSessionResult, gamesResult, avgGameDurationResult] = await Promise.all([
+        const [dauResult, totalPlayersResult, avgSessionResult, gamesResult, avgGameDurationResult, sessionsPerUserResult] = await Promise.all([
           // Daily Active Users (today)
           db.query(`
             SELECT COUNT(DISTINCT user_id) as dau
@@ -112,6 +112,24 @@ module.exports = (db, cacheManager) => {
             WHERE event_type = 'game_ended'
               AND received_at >= CURRENT_DATE
               AND (payload->>'duration_seconds')::int > 0
+          `),
+
+          // Average sessions per user (today)
+          // ✅ Counts distinct session_id per user_id for today
+          // ✅ Uses Redis cache to avoid DB load
+          db.query(`
+            SELECT 
+              ROUND(AVG(session_count)::numeric, 1) as avg_sessions_per_user
+            FROM (
+              SELECT 
+                user_id,
+                COUNT(DISTINCT payload->>'session_id') as session_count
+              FROM events
+              WHERE received_at >= CURRENT_DATE
+                AND payload->>'session_id' IS NOT NULL
+              GROUP BY user_id
+              HAVING COUNT(DISTINCT payload->>'session_id') > 0
+            ) user_sessions
           `)
         ]);
 
@@ -120,6 +138,7 @@ module.exports = (db, cacheManager) => {
           total_players: parseInt(totalPlayersResult.rows[0]?.total_players || 0),
           avg_session_seconds: parseInt(avgSessionResult.rows[0]?.avg_session_seconds || 0),
           avg_game_duration: parseInt(avgGameDurationResult.rows[0]?.avg_game_duration || 0),
+          avg_sessions_per_user: parseFloat(sessionsPerUserResult.rows[0]?.avg_sessions_per_user || 0),
           games_started: parseInt(gamesResult.rows[0]?.games_started || 0),
           games_ended: parseInt(gamesResult.rows[0]?.games_ended || 0),
           completion_rate: parseFloat(gamesResult.rows[0]?.completion_rate || 0),
