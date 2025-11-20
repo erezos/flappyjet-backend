@@ -481,13 +481,23 @@ module.exports = (db, cacheManager) => {
           ORDER BY days_since_install
         `);
 
+        // Map SQL column names to API response format
+        const formatRetentionRow = (row) => {
+          if (!row) return { returned_users: 0, cohort_size: 0, retention_rate: 0 };
+          return {
+            returned_users: parseInt(row.total_returned_users) || 0,
+            cohort_size: parseInt(row.total_cohort_size) || 0,
+            retention_rate: parseFloat(row.retention_rate) || 0
+          };
+        };
+
         return {
           retention: {
-            day1: result.rows.find(r => r.days_since_install === 1) || { returned_users: 0, retention_rate: 0 },
-            day3: result.rows.find(r => r.days_since_install === 3) || { returned_users: 0, retention_rate: 0 },
-            day7: result.rows.find(r => r.days_since_install === 7) || { returned_users: 0, retention_rate: 0 },
-            day14: result.rows.find(r => r.days_since_install === 14) || { returned_users: 0, retention_rate: 0 },
-            day30: result.rows.find(r => r.days_since_install === 30) || { returned_users: 0, retention_rate: 0 }
+            day1: formatRetentionRow(result.rows.find(r => r.days_since_install === 1)),
+            day3: formatRetentionRow(result.rows.find(r => r.days_since_install === 3)),
+            day7: formatRetentionRow(result.rows.find(r => r.days_since_install === 7)),
+            day14: formatRetentionRow(result.rows.find(r => r.days_since_install === 14)),
+            day30: formatRetentionRow(result.rows.find(r => r.days_since_install === 30))
           },
           last_updated: new Date().toISOString()
         };
