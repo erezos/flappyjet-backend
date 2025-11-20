@@ -318,7 +318,7 @@ module.exports = (db, cacheManager) => {
             SELECT DISTINCT ON (user_id)
               user_id,
               payload->>'country' as country,
-              payload->>'device_model' as device,
+              COALESCE(payload->>'deviceModel', payload->>'device_model') as device,
               (payload->>'daysSinceInstall')::int as days_since_install,
               COALESCE(payload->>'nickname', 'Player') as nickname
             FROM events

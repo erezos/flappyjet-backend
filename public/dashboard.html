@@ -1089,29 +1089,34 @@
                 const userInfo = event.user_info;
                 
                 // Format user display name
-                const displayName = userInfo.nickname !== 'Player' ? userInfo.nickname : event.user;
+                const displayName = userInfo && userInfo.nickname && userInfo.nickname !== 'Player' 
+                    ? userInfo.nickname 
+                    : event.user;
                 
                 // Format user metadata badges
                 let badges = [];
-                if (userInfo.is_new_user) {
-                    badges.push('🆕 NEW');
-                } else if (userInfo.days_since_install !== null) {
-                    badges.push(`${userInfo.days_since_install}d old`);
-                }
-                if (userInfo.games_played > 0) {
-                    badges.push(`${userInfo.games_played} games`);
-                }
-                if (userInfo.device && userInfo.device !== 'Unknown') {
-                    badges.push(userInfo.device);
+                if (userInfo) {
+                    if (userInfo.is_new_user) {
+                        badges.push('🆕 NEW');
+                    } else if (userInfo.days_since_install !== null && userInfo.days_since_install !== undefined) {
+                        badges.push(`${userInfo.days_since_install}d old`);
+                    }
+                    if (userInfo.games_played > 0) {
+                        badges.push(`${userInfo.games_played} games`);
+                    }
+                    if (userInfo.device && userInfo.device !== 'Unknown' && userInfo.device !== 'null') {
+                        badges.push(userInfo.device);
+                    }
                 }
                 
                 const badgeText = badges.length > 0 ? badges.join(' • ') : '';
+                const countryFlag = userInfo && userInfo.country_flag ? userInfo.country_flag : '🌍';
                 
                 return `
                     <div class="activity-item">
                         <div>
                             ${icon} <strong>${formatEventType(event.type)}</strong>
-                            <span style="margin-left: 8px;">${userInfo.country_flag} ${displayName}</span>
+                            <span style="margin-left: 8px;">${countryFlag} ${displayName}</span>
                         </div>
                         <div class="time">${time}</div>
                         ${badgeText ? `<div class="user-badges">${badgeText}</div>` : ''}
