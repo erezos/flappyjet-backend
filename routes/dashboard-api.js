@@ -72,6 +72,7 @@ module.exports = (db, cacheManager) => {
           
           // Average session duration (last 7 days)
           // ✅ Measures: Total app engagement time (not just gameplay)
+          // ✅ Capped at 60 minutes to filter outliers (background sessions)
           // Uses: Events grouped by user_id + session_id
           db.query(`
             SELECT 
@@ -86,6 +87,7 @@ module.exports = (db, cacheManager) => {
                 AND payload->>'session_id' IS NOT NULL
               GROUP BY user_id, payload->>'session_id'
               HAVING EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) > 0
+                AND EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) <= 3600
             ) sessions
           `),
           
