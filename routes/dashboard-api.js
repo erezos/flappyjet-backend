@@ -441,35 +441,44 @@ module.exports = (db, cacheManager) => {
                OR event_type = 'app_launched'
             GROUP BY user_id
           ),
-          return_sessions AS (
-            SELECT DISTINCT
-              fs.user_id,
-              fs.install_date,
-              DATE(e.received_at) as return_date,
-              DATE(e.received_at) - fs.install_date as days_since_install
-            FROM first_sessions fs
-            JOIN events e ON fs.user_id = e.user_id
-            WHERE e.event_type IN ('app_launched', 'game_started', 'level_started')
-              AND DATE(e.received_at) > fs.install_date
-          ),
           cohort_sizes AS (
             SELECT 
               install_date,
               COUNT(DISTINCT user_id) as cohort_size
             FROM first_sessions
             GROUP BY install_date
+          ),
+          return_sessions AS (
+            SELECT DISTINCT
+              fs.user_id,
+              fs.install_date,
+              DATE(e.received_at) - fs.install_date as days_since_install
+            FROM first_sessions fs
+            JOIN events e ON fs.user_id = e.user_id
+            WHERE e.event_type IN ('app_launched', 'game_started', 'level_started')
+              AND DATE(e.received_at) > fs.install_date
+              AND DATE(e.received_at) - fs.install_date IN (1, 3, 7, 14, 30)
+          ),
+          cohort_retention AS (
+            SELECT
+              rs.install_date,
+              rs.days_since_install,
+              COUNT(DISTINCT rs.user_id) as returned_users,
+              cs.cohort_size,
+              ROUND(100.0 * COUNT(DISTINCT rs.user_id) / NULLIF(cs.cohort_size, 0), 1) as retention_rate
+            FROM return_sessions rs
+            JOIN cohort_sizes cs ON rs.install_date = cs.install_date
+            GROUP BY rs.install_date, rs.days_since_install, cs.cohort_size
           )
           SELECT
-            rs.days_since_install,
-            COUNT(DISTINCT rs.user_id) as returned_users,
-            SUM(cs.cohort_size) as cohort_size,
-            ROUND(100.0 * COUNT(DISTINCT rs.user_id) / NULLIF(SUM(cs.cohort_size), 0), 1) as retention_rate
-          FROM return_sessions rs
-          JOIN cohort_sizes cs ON rs.install_date = cs.install_date
-          WHERE rs.days_since_install IN (1, 3, 7, 14, 30)
-            AND rs.install_date <= CURRENT_DATE - rs.days_since_install
-          GROUP BY rs.days_since_install
-          ORDER BY rs.days_since_install
+            days_since_install,
+            SUM(returned_users) as total_returned_users,
+            SUM(cohort_size) as total_cohort_size,
+            ROUND(100.0 * SUM(returned_users) / NULLIF(SUM(cohort_size), 0), 1) as retention_rate
+          FROM cohort_retention
+          WHERE install_date <= CURRENT_DATE - days_since_install
+          GROUP BY days_since_install
+          ORDER BY days_since_install
         `);
 
         return {
