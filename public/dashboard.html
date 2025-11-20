@@ -173,6 +173,17 @@
         .activity-item .time {
             color: #a0aec0;
             font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .activity-item .user-badges {
+            color: #718096;
+            font-size: 11px;
+            margin-top: 4px;
+            padding: 4px 8px;
+            background: white;
+            border-radius: 4px;
+            display: inline-block;
         }
 
         /* Loading State */
@@ -1062,10 +1073,35 @@
             feed.innerHTML = data.events.map(event => {
                 const time = new Date(event.timestamp).toLocaleTimeString();
                 const icon = getEventIcon(event.type);
+                const userInfo = event.user_info;
+                
+                // Format user display name
+                const displayName = userInfo.nickname !== 'Player' ? userInfo.nickname : event.user;
+                
+                // Format user metadata badges
+                let badges = [];
+                if (userInfo.is_new_user) {
+                    badges.push('🆕 NEW');
+                } else if (userInfo.days_since_install !== null) {
+                    badges.push(`${userInfo.days_since_install}d old`);
+                }
+                if (userInfo.games_played > 0) {
+                    badges.push(`${userInfo.games_played} games`);
+                }
+                if (userInfo.device && userInfo.device !== 'Unknown') {
+                    badges.push(userInfo.device);
+                }
+                
+                const badgeText = badges.length > 0 ? badges.join(' • ') : '';
+                
                 return `
                     <div class="activity-item">
-                        <div>${icon} <strong>${formatEventType(event.type)}</strong></div>
-                        <div class="time">${time} • ${event.user}</div>
+                        <div>
+                            ${icon} <strong>${formatEventType(event.type)}</strong>
+                            <span style="margin-left: 8px;">${userInfo.country_flag} ${displayName}</span>
+                        </div>
+                        <div class="time">${time}</div>
+                        ${badgeText ? `<div class="user-badges">${badgeText}</div>` : ''}
                     </div>
                 `;
             }).join('');
@@ -1076,11 +1112,18 @@
                 'level_started': '🎮',
                 'level_completed': '✅',
                 'level_failed': '❌',
-                'game_end': '🏁',
+                'game_started': '🎮',
+                'game_ended': '🏁',
                 'currency_earned': '💰',
-                'rewarded_ad_watched': '📺',
-                'interstitial_shown': '📢',
-                'achievement_unlocked': '🏆'
+                'currency_spent': '💸',
+                'skin_purchased': '🛍️',
+                'achievement_unlocked': '🏆',
+                'mission_completed': '✨',
+                'daily_streak_claimed': '🔥',
+                'continue_used': '💎',
+                'ad_watched': '📺',
+                'user_installed': '👋',
+                'app_launched': '🚀'
             };
             return icons[type] || '📊';
         }

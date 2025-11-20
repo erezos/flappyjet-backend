@@ -281,36 +281,93 @@ module.exports = (db, cacheManager) => {
 
   /**
    * GET /api/dashboard/top-events?limit=10
-   * Returns most recent events for live activity feed
+   * Returns most recent events for live activity feed with enhanced user metadata
+   * ✅ Uses Redis cache (30s TTL) to minimize DB load
+   * ✅ Shows: country, games played, days since install, nickname, device
    */
   router.get('/top-events', async (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit || 10), 50);
       
       // Cache for only 30 seconds (this is for "live" feed)
+      // ✅ Redis caching reduces DB queries from every request to every 30s
       const data = await getCachedQuery(`top-events-${limit}`, async () => {
         const result = await db.query(`
+          WITH user_metadata AS (
+            -- Get latest user profile data (country, device, days since install, nickname)
+            -- Uses DISTINCT ON to get most recent record per user (fast!)
+            SELECT DISTINCT ON (user_id)
+              user_id,
+              payload->>'country' as country,
+              payload->>'device_model' as device,
+              (payload->>'daysSinceInstall')::int as days_since_install,
+              COALESCE(payload->>'nickname', 'Player') as nickname
+            FROM events
+            WHERE event_type IN ('user_installed', 'app_launched')
+              AND received_at >= CURRENT_DATE - INTERVAL '30 days'
+            ORDER BY user_id, received_at DESC
+          ),
+          user_game_counts AS (
+            -- Count total games played per user
+            SELECT 
+              user_id,
+              COUNT(*) as games_played
+            FROM events
+            WHERE event_type = 'game_started'
+              AND received_at >= CURRENT_DATE - INTERVAL '30 days'
+            GROUP BY user_id
+          )
           SELECT 
-            event_type,
-            user_id,
-            payload,
-            received_at
-          FROM events
-          WHERE received_at >= NOW() - INTERVAL '5 minutes'
-          ORDER BY received_at DESC
+            e.event_type,
+            e.user_id,
+            e.payload,
+            e.received_at,
+            um.country,
+            um.device,
+            um.days_since_install,
+            um.nickname,
+            COALESCE(ugc.games_played, 0) as games_played
+          FROM events e
+          LEFT JOIN user_metadata um ON e.user_id = um.user_id
+          LEFT JOIN user_game_counts ugc ON e.user_id = ugc.user_id
+          WHERE e.received_at >= NOW() - INTERVAL '5 minutes'
+          ORDER BY e.received_at DESC
           LIMIT $1
         `, [limit]);
+
+        // Country code to flag emoji mapping
+        const countryFlags = {
+          'US': '🇺🇸', 'GB': '🇬🇧', 'CA': '🇨🇦', 'AU': '🇦🇺',
+          'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹',
+          'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'IN': '🇮🇳',
+          'BR': '🇧🇷', 'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱',
+          'RU': '🇷🇺', 'UA': '🇺🇦', 'PL': '🇵🇱', 'NL': '🇳🇱',
+          'SE': '🇸🇪', 'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮',
+          'IL': '🇮🇱', 'SA': '🇸🇦', 'AE': '🇦🇪', 'TR': '🇹🇷',
+          'ZA': '🇿🇦', 'EG': '🇪🇬', 'NG': '🇳🇬', 'KE': '🇰🇪',
+          'SG': '🇸🇬', 'MY': '🇲🇾', 'TH': '🇹🇭', 'VN': '🇻🇳',
+          'PH': '🇵🇭', 'ID': '🇮🇩', 'NZ': '🇳🇿', 'PT': '🇵🇹'
+        };
 
         return {
           events: result.rows.map(r => ({
             type: r.event_type,
             user: r.user_id.substring(0, 20) + '...', // Truncate for privacy
+            user_info: {
+              nickname: r.nickname || 'Player',
+              country: r.country || 'Unknown',
+              country_flag: countryFlags[r.country] || '🌍',
+              games_played: parseInt(r.games_played) || 0,
+              days_since_install: r.days_since_install !== null ? parseInt(r.days_since_install) : null,
+              device: r.device || 'Unknown',
+              is_new_user: r.days_since_install !== null && r.days_since_install <= 1
+            },
             data: r.payload,
             timestamp: r.received_at
           })),
           last_updated: new Date().toISOString()
         };
-      }, 30); // 30 second cache
+      }, 30); // 30 second cache - Redis handles all requests for 30s without hitting DB
 
       res.json(data);
     } catch (error) {
