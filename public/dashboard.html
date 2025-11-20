@@ -996,7 +996,7 @@
             };
             
             charts.purchases = new Chart(ctx, {
-                type: 'horizontalBar',
+                type: 'bar',
                 data: {
                     labels: topItems.map(item => {
                         const name = item.item_name || item.item_id || 'Unknown';
