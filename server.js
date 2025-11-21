@@ -31,6 +31,7 @@ const healthRoutes = require('./routes/health');
 const fcmRoutes = require('./routes/fcm');
 const eventsRoutes = require('./routes/events'); // ✅ Event-driven architecture (PRIMARY)
 const prizesV2Routes = require('./routes/prizes-v2'); // ✅ Device-based prize distribution
+const notificationsRoutes = require('./routes/notifications'); // ✅ Push notifications (FCM V1 API)
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -266,6 +267,16 @@ let redisClient = null;
     app.locals.cacheManager = cacheManager;
     logger.info('💾 ✅ Cache Manager set in app.locals for routes');
     
+    // Initialize Firebase Admin SDK for Push Notifications
+    try {
+      const firebaseMessagingService = require('./services/firebase-messaging-service');
+      await firebaseMessagingService.initialize();
+      logger.info('🔥 ✅ Firebase Admin SDK initialized');
+    } catch (error) {
+      logger.warn('🔥 ⚠️ Firebase Admin SDK initialization failed:', error.message);
+      logger.warn('🔥 ⚠️ Push notifications will not be available');
+    }
+    
     // Initialize Event-Driven Aggregators
     let leaderboardAggregator = null;
     
@@ -448,6 +459,9 @@ if (db) {
   app.use('/api/purchase', purchaseRoutes(db));
   app.use('/api/health', healthRoutes);
   app.use('/api/fcm', fcmRoutes(db));
+  
+  // ✅ Push notification routes
+  app.use('/api/notifications', notificationsRoutes(db));
 
   logger.info('🚂 ✅ All API routes initialized (event-driven architecture)');
 } else {
