@@ -462,6 +462,10 @@ if (db) {
   
   // ✅ Push notification routes
   app.use('/api/notifications', notificationsRoutes(db));
+  
+  // ✅ Auth routes (lightweight device-based authentication)
+  const authRoutes = require('./routes/auth')(db);
+  app.use('/api/auth', authRoutes);
 
   logger.info('🚂 ✅ All API routes initialized (event-driven architecture)');
 } else {
