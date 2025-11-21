@@ -188,8 +188,8 @@ class NotificationScheduler {
           WHERE ft.is_active = true
             AND ft.platform = 'android'
             -- Last activity was X hours ago (within 15-min window)
-            AND ula.last_activity <= NOW() - make_interval(hours => $2::numeric)
-            AND ula.last_activity >= NOW() - make_interval(hours => $3::numeric)
+            AND ula.last_activity <= NOW() - ($2::text || ' hours')::INTERVAL
+            AND ula.last_activity >= NOW() - ($3::text || ' hours')::INTERVAL
             -- User hasn't received this notification type today
             AND NOT EXISTS (
               SELECT 1
