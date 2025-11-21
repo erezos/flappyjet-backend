@@ -928,6 +928,94 @@ module.exports = (db, cacheManager) => {
   // ============================================================================
 
   /**
+   * GET /api/dashboard/notifications
+   * Push notification analytics
+   */
+  router.get('/notifications', async (req, res) => {
+    try {
+      const NotificationTracker = require('../services/notification-tracker');
+      const notificationTracker = new NotificationTracker(db);
+
+      const data = await getCachedQuery('notifications', async () => {
+        const [todayStats, byCountry, trend] = await Promise.all([
+          notificationTracker.getTodayStats(),
+          notificationTracker.getStatsByCountry(),
+          notificationTracker.getNotificationTrend(),
+        ]);
+
+        // Get clicked counts by type
+        const clickedByType = await db.query(`
+          SELECT
+            notification_type,
+            COUNT(*) as clicked
+          FROM notification_events
+          WHERE event_type = 'clicked'
+            AND received_at >= CURRENT_DATE
+          GROUP BY notification_type
+        `);
+
+        const clickedMap = {};
+        clickedByType.rows.forEach(row => {
+          clickedMap[row.notification_type] = parseInt(row.clicked) || 0;
+        });
+
+        return {
+          today: {
+            total_sent: parseInt(todayStats?.total_sent || 0),
+            total_clicked: parseInt(todayStats?.total_clicked || 0),
+            total_failed: parseInt(todayStats?.total_failed || 0),
+            unique_users_sent: parseInt(todayStats?.unique_users_sent || 0),
+            unique_users_clicked: parseInt(todayStats?.unique_users_clicked || 0),
+            ctr_rate: parseFloat(todayStats?.ctr_rate || 0),
+            by_type: {
+              '1hour': {
+                sent: parseInt(todayStats?.sent_1hour || 0),
+                clicked: clickedMap['1hour'] || 0,
+                ctr: clickedMap['1hour'] > 0 && todayStats?.sent_1hour > 0
+                  ? parseFloat((clickedMap['1hour'] / todayStats.sent_1hour * 100).toFixed(2))
+                  : 0,
+              },
+              '24hour': {
+                sent: parseInt(todayStats?.sent_24hour || 0),
+                clicked: clickedMap['24hour'] || 0,
+                ctr: clickedMap['24hour'] > 0 && todayStats?.sent_24hour > 0
+                  ? parseFloat((clickedMap['24hour'] / todayStats.sent_24hour * 100).toFixed(2))
+                  : 0,
+              },
+              '46hour': {
+                sent: parseInt(todayStats?.sent_46hour || 0),
+                clicked: clickedMap['46hour'] || 0,
+                ctr: clickedMap['46hour'] > 0 && todayStats?.sent_46hour > 0
+                  ? parseFloat((clickedMap['46hour'] / todayStats.sent_46hour * 100).toFixed(2))
+                  : 0,
+              },
+            },
+          },
+          by_country: byCountry.map(row => ({
+            country: row.country,
+            sent: parseInt(row.sent || 0),
+            clicked: parseInt(row.clicked || 0),
+            ctr_rate: parseFloat(row.ctr_rate || 0),
+          })),
+          trend: trend.map(row => ({
+            date: row.date,
+            sent: parseInt(row.sent || 0),
+            clicked: parseInt(row.clicked || 0),
+            failed: parseInt(row.failed || 0),
+            ctr_rate: parseFloat(row.ctr_rate || 0),
+          })),
+          last_updated: new Date().toISOString(),
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching notification analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch notification analytics' });
+    }
+  });
+
+  /**
    * GET /api/dashboard/health
    * Check dashboard API health
    */

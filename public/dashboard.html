@@ -432,6 +432,56 @@
                 </div>
             </div>
         </div>
+
+        <!-- Push Notifications Section -->
+        <div class="section">
+            <h2>🔔 Push Notifications</h2>
+            
+            <!-- Notification Metrics -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Notifications Sent</div>
+                    <div class="metric-value" id="notificationsSent">-</div>
+                    <div class="metric-change">Today</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Click-Through Rate</div>
+                    <div class="metric-value" id="notificationCTR">-</div>
+                    <div class="metric-change">Today</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Unique Users Clicked</div>
+                    <div class="metric-value" id="notificationUsersClicked">-</div>
+                    <div class="metric-change">Today</div>
+                </div>
+                
+                <div class="metric-card">
+                    <div class="metric-label">Failed Sends</div>
+                    <div class="metric-value" id="notificationFailed">-</div>
+                    <div class="metric-change">Today</div>
+                </div>
+            </div>
+
+            <!-- Notification Charts -->
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3>Performance by Type</h3>
+                    <canvas id="notificationTypeChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>30-Day Trend</h3>
+                    <canvas id="notificationTrendChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>CTR by Country</h3>
+                    <canvas id="notificationCountryChart"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -1158,6 +1208,193 @@
         }
 
         // ============================================================================
+        // PUSH NOTIFICATIONS
+        // ============================================================================
+
+        async function loadNotifications() {
+            const data = await fetchAPI('notifications');
+            if (!data) return;
+
+            // Update metric cards
+            document.getElementById('notificationsSent').textContent = formatNumber(data.today.total_sent);
+            document.getElementById('notificationCTR').textContent = data.today.ctr_rate.toFixed(1) + '%';
+            document.getElementById('notificationUsersClicked').textContent = formatNumber(data.today.unique_users_clicked);
+            document.getElementById('notificationFailed').textContent = formatNumber(data.today.total_failed);
+
+            // Performance by Type Chart
+            const typeCtx = document.getElementById('notificationTypeChart').getContext('2d');
+            if (charts.notificationType) charts.notificationType.destroy();
+            
+            charts.notificationType = new Chart(typeCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['1 Hour', '24 Hours', '46 Hours'],
+                    datasets: [
+                        {
+                            label: 'Sent',
+                            data: [
+                                data.today.by_type['1hour'].sent,
+                                data.today.by_type['24hour'].sent,
+                                data.today.by_type['46hour'].sent
+                            ],
+                            backgroundColor: '#667eea',
+                        },
+                        {
+                            label: 'Clicked',
+                            data: [
+                                data.today.by_type['1hour'].clicked,
+                                data.today.by_type['24hour'].clicked,
+                                data.today.by_type['46hour'].clicked
+                            ],
+                            backgroundColor: '#48bb78',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const type = ['1hour', '24hour', '46hour'][context.dataIndex];
+                                    const ctr = data.today.by_type[type].ctr;
+                                    return `CTR: ${ctr.toFixed(1)}%`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // 30-Day Trend Chart
+            const trendCtx = document.getElementById('notificationTrendChart').getContext('2d');
+            if (charts.notificationTrend) charts.notificationTrend.destroy();
+            
+            const trendDates = data.trend.map(d => new Date(d.date).toLocaleDateString()).reverse();
+            
+            charts.notificationTrend = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: trendDates,
+                    datasets: [
+                        {
+                            label: 'Sent',
+                            data: data.trend.map(d => d.sent).reverse(),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Clicked',
+                            data: data.trend.map(d => d.clicked).reverse(),
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'CTR (%)',
+                            data: data.trend.map(d => d.ctr_rate).reverse(),
+                            borderColor: '#f6ad55',
+                            backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            position: 'left'
+                        },
+                        y1: {
+                            beginAtZero: true,
+                            position: 'right',
+                            ticks: {
+                                callback: value => value + '%'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    }
+                }
+            });
+
+            // CTR by Country Chart
+            const countryCtx = document.getElementById('notificationCountryChart').getContext('2d');
+            if (charts.notificationCountry) charts.notificationCountry.destroy();
+            
+            // Sort by sent count and take top 10
+            const topCountries = data.by_country
+                .sort((a, b) => b.sent - a.sent)
+                .slice(0, 10);
+            
+            charts.notificationCountry = new Chart(countryCtx, {
+                type: 'bar',
+                data: {
+                    labels: topCountries.map(c => c.country || 'Unknown'),
+                    datasets: [
+                        {
+                            label: 'CTR (%)',
+                            data: topCountries.map(c => c.ctr_rate),
+                            backgroundColor: topCountries.map(c => 
+                                c.ctr_rate > 15 ? '#48bb78' : 
+                                c.ctr_rate > 10 ? '#f6ad55' : '#fc8181'
+                            ),
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                afterLabel: function(context) {
+                                    const country = topCountries[context.dataIndex];
+                                    return `Sent: ${formatNumber(country.sent)} | Clicked: ${formatNumber(country.clicked)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => value + '%'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
         // REFRESH ALL
         // ============================================================================
 
@@ -1176,6 +1413,7 @@
                 loadContinues(),
                 loadMissions(),
                 loadPurchases(),
+                loadNotifications(),
                 loadActivityFeed()
             ]);
 

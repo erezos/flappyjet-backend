@@ -19,6 +19,7 @@ const Redis = require('ioredis'); // ✅ For Redis connection
 const TournamentManager = require('./services/tournament-manager');
 const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
+const NotificationScheduler = require('./services/notification-scheduler');
 const { CacheManager } = require('./services/cache-manager'); // ✅ Named export - destructure it!
 const LeaderboardAggregator = require('./services/leaderboard-aggregator');
 require('dotenv').config();
@@ -327,6 +328,31 @@ let redisClient = null;
       logger.error('🏆 ❌ Tournament Scheduler failed:', error.message);
     }
     
+    // Initialize Notification Scheduler (Push Notifications)
+    let notificationScheduler = null;
+    try {
+      const FCMTokenManager = require('./services/fcm-token-manager');
+      const NotificationTracker = require('./services/notification-tracker');
+      const firebaseMessagingService = require('./services/firebase-messaging-service');
+      
+      const fcmTokenManager = new FCMTokenManager(db);
+      const notificationTracker = new NotificationTracker(db);
+      
+      notificationScheduler = new NotificationScheduler({
+        db,
+        firebaseMessagingService,
+        fcmTokenManager,
+        notificationTracker,
+      });
+      
+      notificationScheduler.start();
+      app.locals.notificationScheduler = notificationScheduler;
+      logger.info('🔔 ✅ Notification Scheduler started');
+    } catch (error) {
+      logger.error('🔔 ❌ Notification Scheduler failed:', error.message);
+      logger.warn('🔔 ⚠️ Automated push notifications will not be sent');
+    }
+    
     logger.info('🔧 ✅ Service initialization completed');
     
     // ✅ START SERVER AFTER ALL SERVICES ARE INITIALIZED
@@ -346,6 +372,7 @@ let redisClient = null;
       logger.info(`   🏆 Tournaments: ${tournamentManager ? '✅ Active' : '❌ Inactive'}`);
       logger.info(`   📅 Scheduler: ${tournamentScheduler ? '✅ Active' : '❌ Inactive'}`);
       logger.info(`   🏅 Leaderboard: ${leaderboardAggregator ? '✅ Active' : '❌ Inactive'}`);
+      logger.info(`   🔔 Push Notifications: ${notificationScheduler ? '✅ Active' : '❌ Inactive'}`);
     });
 
     server.on('error', (error) => {
