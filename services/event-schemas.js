@@ -243,6 +243,7 @@ const itemUnlockedSchema = Joi.object({
   item_id: Joi.string().required(),
   item_name: Joi.string().optional(),
   unlock_method: Joi.string().optional(), // 'purchase', 'achievement', 'mission_reward', etc.
+  acquisition_method: Joi.string().optional(), // ✅ FIX: Accept acquisition_method (Flutter sends this)
 });
 
 // 15c. item_equipped - Item equipped (skin, booster, etc)
