@@ -500,8 +500,174 @@ module.exports = (db, cacheManager) => {
   // ============================================================================
 
   /**
+   * GET /api/dashboard/retention-table
+   * Returns cohort retention table: 30 rows (last 30 install dates) × 30 columns (D1-D30)
+   * Each cell shows retention % for that cohort on that day
+   */
+  router.get('/retention-table', async (req, res) => {
+    try {
+      const data = await getCachedQuery('retention-table', async () => {
+        // Get last 30 install dates and calculate retention for each cohort and day (D1-D30)
+        const result = await db.query(`
+          WITH last_30_install_dates AS (
+            -- Get last 30 unique install dates
+            SELECT DISTINCT install_date
+            FROM (
+              SELECT 
+                user_id,
+                MIN(DATE(received_at)) as install_date
+              FROM events
+              WHERE event_type IN ('user_installed', 'app_launched')
+              GROUP BY user_id
+            ) user_installs
+            WHERE install_date >= CURRENT_DATE - INTERVAL '30 days'
+            ORDER BY install_date DESC
+            LIMIT 30
+          ),
+          cohort_sizes AS (
+            -- Get cohort size for each install date
+            SELECT 
+              install_date,
+              COUNT(DISTINCT user_id) as cohort_size
+            FROM (
+              SELECT 
+                user_id,
+                MIN(DATE(received_at)) as install_date
+              FROM events
+              WHERE event_type IN ('user_installed', 'app_launched')
+              GROUP BY user_id
+            ) user_installs
+            WHERE install_date IN (SELECT install_date FROM last_30_install_dates)
+            GROUP BY install_date
+          ),
+          user_activity AS (
+            -- Get all user activity with days since install (D1-D30)
+            SELECT DISTINCT
+              fs.user_id,
+              fs.install_date,
+              DATE(e.received_at) - fs.install_date as days_since_install
+            FROM (
+              SELECT 
+                user_id,
+                MIN(DATE(received_at)) as install_date
+              FROM events
+              WHERE event_type IN ('user_installed', 'app_launched')
+              GROUP BY user_id
+            ) fs
+            JOIN events e ON fs.user_id = e.user_id
+            WHERE e.event_type IN ('app_launched', 'game_started', 'level_started')
+              AND DATE(e.received_at) > fs.install_date
+              AND fs.install_date IN (SELECT install_date FROM last_30_install_dates)
+              AND DATE(e.received_at) - fs.install_date BETWEEN 1 AND 30
+          ),
+          cohort_retention AS (
+            -- Calculate retention for each cohort and day
+            SELECT
+              ua.install_date,
+              ua.days_since_install,
+              COUNT(DISTINCT ua.user_id) as returned_users,
+              cs.cohort_size
+            FROM user_activity ua
+            JOIN cohort_sizes cs ON ua.install_date = cs.install_date
+            GROUP BY ua.install_date, ua.days_since_install, cs.cohort_size
+          )
+          SELECT
+            cr.install_date,
+            cr.days_since_install,
+            cr.returned_users,
+            cr.cohort_size,
+            ROUND(100.0 * cr.returned_users / NULLIF(cr.cohort_size, 0), 1) as retention_rate
+          FROM cohort_retention cr
+          ORDER BY cr.install_date DESC, cr.days_since_install ASC
+        `);
+
+        // Get all install dates with cohort sizes (last 30)
+        const installDatesWithSizes = await db.query(`
+          SELECT 
+            install_date,
+            COUNT(DISTINCT user_id) as cohort_size
+          FROM (
+            SELECT 
+              user_id,
+              MIN(DATE(received_at)) as install_date
+            FROM events
+            WHERE event_type IN ('user_installed', 'app_launched')
+            GROUP BY user_id
+          ) user_installs
+          WHERE install_date >= CURRENT_DATE - INTERVAL '30 days'
+          GROUP BY install_date
+          ORDER BY install_date DESC
+          LIMIT 30
+        `);
+
+        // Build cohort retention table
+        const cohorts = [];
+        const retentionMap = {};
+        const cohortSizeMap = {};
+
+        // Build cohort size map
+        installDatesWithSizes.rows.forEach(row => {
+          const date = row.install_date.toISOString().split('T')[0];
+          cohortSizeMap[date] = parseInt(row.cohort_size) || 0;
+        });
+
+        // Build retention map: install_date -> { d1: rate, d2: rate, ... }
+        result.rows.forEach(row => {
+          const date = row.install_date.toISOString().split('T')[0];
+          if (!retentionMap[date]) {
+            retentionMap[date] = {};
+          }
+          retentionMap[date][`d${row.days_since_install}`] = parseFloat(row.retention_rate) || 0;
+        });
+
+        // Build cohorts array with all D1-D30 columns
+        installDatesWithSizes.rows.forEach(row => {
+          const installDate = row.install_date.toISOString().split('T')[0];
+          const cohortData = retentionMap[installDate] || {};
+          const cohortSize = cohortSizeMap[installDate] || 0;
+
+          // Build retention object for D1-D30
+          const retention = {};
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const installDateObj = new Date(installDate);
+          installDateObj.setHours(0, 0, 0, 0);
+          const daysSinceInstall = Math.floor((today - installDateObj) / (1000 * 60 * 60 * 24));
+
+          for (let day = 1; day <= 30; day++) {
+            const key = `d${day}`;
+            // Only show data if enough time has passed
+            if (daysSinceInstall >= day) {
+              retention[key] = cohortData[key] ?? null;
+            } else {
+              retention[key] = null; // Not enough time has passed
+            }
+          }
+
+          cohorts.push({
+            install_date: installDate,
+            cohort_size: cohortSize,
+            retention,
+          });
+        });
+
+        return {
+          cohorts,
+          last_updated: new Date().toISOString(),
+        };
+      }, 10800); // Cache for 3 hours (10800 seconds)
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching retention table:', error);
+      res.status(500).json({ error: 'Failed to fetch retention table data' });
+    }
+  });
+
+  /**
    * GET /api/dashboard/retention
-   * Returns Day 1, Day 3, Day 7, Day 14, Day 30 retention rates
+   * Returns Day 1, Day 3, Day 7, Day 14, Day 30 retention rates (aggregated)
+   * @deprecated - Use /retention-table for cohort-based view
    */
   router.get('/retention', async (req, res) => {
     try {

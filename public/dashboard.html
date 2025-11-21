@@ -250,6 +250,114 @@
         .error-message.show {
             display: block;
         }
+
+        /* Retention Table Styles */
+        .retention-table-container {
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: 600px;
+            margin-top: 20px;
+        }
+
+        .retention-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            background: white;
+            min-width: 1200px; /* Ensure all 30 columns fit */
+        }
+
+        .retention-table th {
+            background: #667eea;
+            color: white;
+            padding: 10px 8px;
+            text-align: center;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border: 1px solid #5a67d8;
+        }
+
+        .retention-table th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 11;
+            background: #667eea;
+        }
+
+        .retention-table td {
+            padding: 8px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+
+        .retention-table tbody tr:hover {
+            background: #f7fafc;
+        }
+
+        .retention-table td:first-child {
+            position: sticky;
+            left: 0;
+            background: white;
+            font-weight: 500;
+            z-index: 1;
+            text-align: left;
+            padding-left: 12px;
+        }
+
+        .retention-table tbody tr:hover td:first-child {
+            background: #f7fafc;
+        }
+
+        /* Color coding for retention values */
+        .retention-cell {
+            font-weight: 600;
+            padding: 6px 4px;
+            border-radius: 4px;
+        }
+
+        .retention-cell.high {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .retention-cell.medium {
+            background: #fefcbf;
+            color: #744210;
+        }
+
+        .retention-cell.low {
+            background: #fed7d7;
+            color: #c53030;
+        }
+
+        .retention-cell.missing {
+            color: #a0aec0;
+            font-style: italic;
+        }
+
+        .retention-cell:hover {
+            cursor: help;
+        }
+
+        /* Tooltip */
+        .retention-tooltip {
+            position: absolute;
+            background: #2d3748;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .retention-tooltip.show {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -373,9 +481,12 @@
             </div>
 
             <div class="chart-card">
-                <h3>🔄 Player Retention</h3>
-                <div class="chart-container">
-                    <canvas id="retentionChart"></canvas>
+                <h3>🔄 Cohort Retention Table</h3>
+                <div class="retention-table-container" id="retentionTableContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading retention data...
+                    </div>
                 </div>
             </div>
         </div>
@@ -802,77 +913,97 @@
         }
 
         // ============================================================================
-        // RETENTION CHART
+        // RETENTION TABLE
         // ============================================================================
 
-        async function loadRetention() {
-            const data = await fetchAPI('retention');
-            if (!data) return;
+        let retentionTooltip = null;
 
-            const ctx = document.getElementById('retentionChart').getContext('2d');
+        async function loadRetention() {
+            const data = await fetchAPI('retention-table');
+            if (!data || !data.cohorts) return;
+
+            const container = document.getElementById('retentionTableContainer');
             
-            if (charts.retention) charts.retention.destroy();
-            
-            const retentionData = [
-                { day: 'Day 1', rate: parseFloat(data.retention.day1.retention_rate) || 0, users: parseInt(data.retention.day1.returned_users) || 0 },
-                { day: 'Day 3', rate: parseFloat(data.retention.day3.retention_rate) || 0, users: parseInt(data.retention.day3.returned_users) || 0 },
-                { day: 'Day 7', rate: parseFloat(data.retention.day7.retention_rate) || 0, users: parseInt(data.retention.day7.returned_users) || 0 },
-                { day: 'Day 14', rate: parseFloat(data.retention.day14.retention_rate) || 0, users: parseInt(data.retention.day14.returned_users) || 0 },
-                { day: 'Day 30', rate: parseFloat(data.retention.day30.retention_rate) || 0, users: parseInt(data.retention.day30.returned_users) || 0 }
-            ];
-            
-            charts.retention = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: retentionData.map(d => d.day),
-                    datasets: [{
-                        label: 'Retention Rate (%)',
-                        data: retentionData.map(d => d.rate),
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 6,
-                        pointHoverRadius: 8,
-                        pointBackgroundColor: '#667eea',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: function(context) {
-                                    const index = context[0].dataIndex;
-                                    return retentionData[index].day;
-                                },
-                                afterTitle: function(context) {
-                                    const index = context[0].dataIndex;
-                                    return `${retentionData[index].users} users returned`;
-                                },
-                                label: function(context) {
-                                    return `Retention: ${context.parsed.y.toFixed(1)}%`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: {
-                                callback: value => value + '%'
-                            }
-                        }
+            // Create table
+            let tableHTML = '<table class="retention-table"><thead><tr>';
+            tableHTML += '<th>Install Date</th>';
+            for (let day = 1; day <= 30; day++) {
+                tableHTML += `<th>D${day}</th>`;
+            }
+            tableHTML += '</tr></thead><tbody>';
+
+            // Add rows for each cohort
+            data.cohorts.forEach(cohort => {
+                tableHTML += '<tr>';
+                tableHTML += `<td>${cohort.install_date}<br><small style="color: #718096;">${cohort.cohort_size} users</small></td>`;
+                
+                for (let day = 1; day <= 30; day++) {
+                    const key = `d${day}`;
+                    const value = cohort.retention[key];
+                    
+                    if (value === null || value === undefined) {
+                        tableHTML += '<td class="retention-cell missing" title="Not enough time has passed">-</td>';
+                    } else {
+                        const cellClass = getRetentionCellClass(value);
+                        const tooltipText = `Cohort: ${cohort.install_date}\nDay ${day}\nRetention: ${value.toFixed(1)}%\nCohort Size: ${cohort.cohort_size}`;
+                        tableHTML += `<td class="retention-cell ${cellClass}" data-tooltip="${tooltipText.replace(/\n/g, ' | ')}" title="${tooltipText}">${value.toFixed(1)}%</td>`;
                     }
                 }
+                
+                tableHTML += '</tr>';
             });
+
+            tableHTML += '</tbody></table>';
+            container.innerHTML = tableHTML;
+
+            // Setup tooltips
+            setupRetentionTooltips();
+        }
+
+        function getRetentionCellClass(value) {
+            if (value === null || value === undefined) return 'missing';
+            if (value > 30) return 'high';
+            if (value >= 15) return 'medium';
+            return 'low';
+        }
+
+        function setupRetentionTooltips() {
+            // Create tooltip element if it doesn't exist
+            if (!retentionTooltip) {
+                retentionTooltip = document.createElement('div');
+                retentionTooltip.className = 'retention-tooltip';
+                document.body.appendChild(retentionTooltip);
+            }
+
+            // Add event listeners to all retention cells
+            const cells = document.querySelectorAll('.retention-cell');
+            cells.forEach(cell => {
+                cell.addEventListener('mouseenter', (e) => {
+                    const tooltipText = e.target.getAttribute('data-tooltip');
+                    if (tooltipText) {
+                        retentionTooltip.textContent = tooltipText;
+                        retentionTooltip.classList.add('show');
+                        positionTooltip(e, retentionTooltip);
+                    }
+                });
+
+                cell.addEventListener('mouseleave', () => {
+                    retentionTooltip.classList.remove('show');
+                });
+
+                cell.addEventListener('mousemove', (e) => {
+                    if (retentionTooltip.classList.contains('show')) {
+                        positionTooltip(e, retentionTooltip);
+                    }
+                });
+            });
+        }
+
+        function positionTooltip(event, tooltip) {
+            const x = event.clientX + 10;
+            const y = event.clientY + 10;
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
         }
 
         // ============================================================================
