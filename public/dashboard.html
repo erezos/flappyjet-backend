@@ -1082,26 +1082,43 @@
 
         async function loadContinues() {
             const data = await fetchAPI('continues?days=7');
-            if (!data) return;
+            if (!data || !data.daily) return;
 
             const ctx = document.getElementById('continuesChart').getContext('2d');
             
             if (charts.continues) charts.continues.destroy();
             
+            // Sort daily data by date (oldest first) for proper chart display
+            const sortedDaily = [...data.daily].sort((a, b) => 
+                new Date(a.date) - new Date(b.date)
+            );
+            
+            // Format dates for labels (e.g., "Nov 19")
+            const labels = sortedDaily.map(row => {
+                const date = new Date(row.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            
             charts.continues = new Chart(ctx, {
-                type: 'doughnut',
+                type: 'bar',
                 data: {
-                    labels: ['Ad Continues', 'Gem Continues'],
-                    datasets: [{
-                        data: [
-                            data.summary.ad_continues,
-                            data.summary.gem_continues
-                        ],
-                        backgroundColor: [
-                            '#48bb78',
-                            '#ed8936'
-                        ]
-                    }]
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Ad Continues',
+                            data: sortedDaily.map(row => parseInt(row.ad_continues || 0)),
+                            backgroundColor: '#48bb78',
+                            borderColor: '#38a169',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Gem Continues',
+                            data: sortedDaily.map(row => parseInt(row.gem_continues || 0)),
+                            backgroundColor: '#ed8936',
+                            borderColor: '#dd6b20',
+                            borderWidth: 1
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -1113,11 +1130,29 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    const total = data.summary.total_continues;
-                                    const value = context.parsed;
-                                    const percentage = ((value / total) * 100).toFixed(1);
-                                    return `${context.label}: ${value} (${percentage}%)`;
+                                    const value = context.parsed.y;
+                                    const total = sortedDaily[context.dataIndex]?.total_continues || 0;
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return `${context.dataset.label}: ${value} (${percentage}%)`;
+                                },
+                                afterLabel: function(context) {
+                                    const row = sortedDaily[context.dataIndex];
+                                    return `Total: ${parseInt(row?.total_continues || 0)}`;
                                 }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: false,
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
                             }
                         }
                     }
