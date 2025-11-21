@@ -100,6 +100,216 @@ module.exports = (db) => {
   });
 
   /**
+   * Find user by nickname
+   * 
+   * GET /api/notifications/find-user?nickname=xxx
+   * Returns user info including FCM token status
+   */
+  router.get('/find-user', async (req, res) => {
+    try {
+      const { nickname } = req.query;
+
+      if (!nickname) {
+        return res.status(400).json({
+          success: false,
+          error: 'nickname query parameter is required',
+        });
+      }
+
+      // Find user by nickname from events (most recent)
+      const userResult = await db.query(`
+        SELECT DISTINCT ON (user_id)
+          user_id,
+          payload->>'nickname' as nickname,
+          MAX(received_at) as last_seen
+        FROM events
+        WHERE payload->>'nickname' = $1
+           OR payload->>'nickname' ILIKE $1
+        GROUP BY user_id, payload->>'nickname'
+        ORDER BY user_id, MAX(received_at) DESC
+        LIMIT 10
+      `, [nickname]);
+
+      if (userResult.rows.length === 0) {
+        return res.json({
+          success: true,
+          found: false,
+          message: 'No user found with this nickname',
+        });
+      }
+
+      // Get FCM token info for each user
+      const usersWithFCM = await Promise.all(
+        userResult.rows.map(async (user) => {
+          const fcmToken = await fcmTokenManager.getActiveToken(user.user_id);
+          const tokenInfo = fcmToken ? await db.query(
+            'SELECT * FROM fcm_tokens WHERE user_id = $1 AND is_active = true',
+            [user.user_id]
+          ) : { rows: [] };
+
+          // Get last activity
+          const lastActivity = await db.query(`
+            SELECT 
+              MAX(received_at) as last_activity,
+              NOW() - MAX(received_at) as hours_inactive
+            FROM events
+            WHERE user_id = $1
+              AND event_type IN ('app_launched', 'game_started', 'level_started')
+          `, [user.user_id]);
+
+          return {
+            user_id: user.user_id,
+            nickname: user.nickname,
+            last_seen: user.last_seen,
+            fcm_token: {
+              registered: !!fcmToken,
+              token_preview: fcmToken ? fcmToken.substring(0, 30) + '...' : null,
+              platform: tokenInfo.rows[0]?.platform || null,
+              timezone: tokenInfo.rows[0]?.timezone || null,
+              is_active: tokenInfo.rows[0]?.is_active || false,
+              last_notification_sent: tokenInfo.rows[0]?.last_notification_sent || null,
+            },
+            activity: {
+              last_activity: lastActivity.rows[0]?.last_activity || null,
+              hours_inactive: lastActivity.rows[0]?.hours_inactive 
+                ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) 
+                : null,
+            },
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        found: true,
+        count: usersWithFCM.length,
+        users: usersWithFCM,
+      });
+    } catch (error) {
+      logger.error('❌ Failed to find user by nickname', {
+        error: error.message,
+      });
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  /**
+   * Diagnostic endpoint - Check user notification status
+   * 
+   * GET /api/notifications/diagnose?userId=xxx
+   * Returns detailed status about user's notification eligibility
+   */
+  router.get('/diagnose', async (req, res) => {
+    try {
+      const { userId } = req.query;
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'userId query parameter is required',
+        });
+      }
+
+      // Check FCM token
+      const fcmToken = await fcmTokenManager.getActiveToken(userId);
+      const tokenInfo = fcmToken ? await db.query(
+        'SELECT * FROM fcm_tokens WHERE user_id = $1 AND is_active = true',
+        [userId]
+      ) : { rows: [] };
+
+      // Check last activity
+      const lastActivity = await db.query(`
+        SELECT 
+          MAX(received_at) as last_activity,
+          NOW() - MAX(received_at) as hours_inactive
+        FROM events
+        WHERE user_id = $1
+          AND event_type IN ('app_launched', 'game_started', 'level_started')
+      `, [userId]);
+
+      // Check notification events today
+      const notificationsToday = await db.query(`
+        SELECT 
+          notification_type,
+          event_type,
+          COUNT(*) as count
+        FROM notification_events
+        WHERE user_id = $1
+          AND received_at >= CURRENT_DATE
+        GROUP BY notification_type, event_type
+      `, [userId]);
+
+      // Check daily limit
+      const dailyLimitCheck = await db.query(
+        'SELECT check_daily_notification_limit($1) as can_receive',
+        [userId]
+      );
+
+      // Check quiet hours (if timezone available)
+      let quietHoursCheck = { rows: [{ is_quiet: null }] };
+      if (tokenInfo.rows[0]?.timezone) {
+        quietHoursCheck = await db.query(
+          'SELECT is_in_quiet_hours($1, $2) as is_quiet',
+          [userId, tokenInfo.rows[0].timezone]
+        );
+      }
+
+      res.json({
+        success: true,
+        userId,
+        fcm_token: {
+          registered: !!fcmToken,
+          token: fcmToken ? fcmToken.substring(0, 20) + '...' : null,
+          platform: tokenInfo.rows[0]?.platform || null,
+          timezone: tokenInfo.rows[0]?.timezone || null,
+          last_sent: tokenInfo.rows[0]?.last_notification_sent || null,
+        },
+        activity: {
+          last_activity: lastActivity.rows[0]?.last_activity || null,
+          hours_inactive: lastActivity.rows[0]?.hours_inactive 
+            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) 
+            : null,
+        },
+        eligibility: {
+          can_receive_1hour: lastActivity.rows[0]?.hours_inactive 
+            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 0.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 1.25
+            : false,
+          can_receive_24hour: lastActivity.rows[0]?.hours_inactive 
+            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 23.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 24.25
+            : false,
+          can_receive_46hour: lastActivity.rows[0]?.hours_inactive 
+            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 45.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 46.25
+            : false,
+          within_daily_limit: dailyLimitCheck.rows[0]?.can_receive || false,
+          not_in_quiet_hours: !quietHoursCheck.rows[0]?.is_quiet,
+        },
+        notifications_today: notificationsToday.rows,
+        recommendations: {
+          needs_fcm_token: !fcmToken,
+          needs_inactivity: lastActivity.rows[0]?.hours_inactive 
+            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) < 0.75
+            : true,
+          in_quiet_hours: quietHoursCheck.rows[0]?.is_quiet || false,
+        },
+      });
+    } catch (error) {
+      logger.error('❌ Failed to diagnose user notification status', {
+        error: error.message,
+      });
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  /**
    * Track notification click
    * 
    * POST /api/notifications/clicked

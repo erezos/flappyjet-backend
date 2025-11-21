@@ -32,7 +32,13 @@ class EventProcessor {
     try {
       this.stats.total_received++;
 
-      // 1. Validate event schema
+      // 1. Normalize event data (fix common issues before validation)
+      if (event.event_type === 'game_ended' && typeof event.hearts_remaining === 'number') {
+        // Clamp hearts_remaining to 0 if negative (game over = 0 hearts)
+        event.hearts_remaining = Math.max(0, event.hearts_remaining);
+      }
+
+      // 2. Validate event schema
       const validation = validateEvent(event);
       
       if (!validation.valid) {
@@ -50,7 +56,7 @@ class EventProcessor {
         };
       }
 
-      // 2. Store raw event in database
+      // 3. Store raw event in database
       const eventId = await this.storeEvent(event);
       
       this.stats.total_processed++;

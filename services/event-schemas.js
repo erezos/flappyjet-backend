@@ -102,7 +102,7 @@ const gameStartedSchema = Joi.object({
   game_mode: Joi.string().valid('endless', 'story').required(),
   selected_jet: Joi.string().required(),
   selected_skin: Joi.string().optional(),
-  hearts_remaining: Joi.number().integer().min(0).max(10).required(),
+  hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   powerups_active: Joi.array().items(Joi.string()).default([]),
 });
 
@@ -116,7 +116,7 @@ const gameEndedSchema = Joi.object({
   obstacles_dodged: Joi.number().integer().min(0).required(),
   coins_collected: Joi.number().integer().min(0).required(),
   gems_collected: Joi.number().integer().min(0).required(),
-  hearts_remaining: Joi.number().integer().min(0).max(10).required(),
+  hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   cause_of_death: Joi.string().required(), // 'obstacle_collision', 'quit', etc.
   max_combo: Joi.number().integer().min(0).required(),
   powerups_used: Joi.array().items(Joi.string()).default([]),
@@ -162,7 +162,7 @@ const levelStartedSchema = Joi.object({
   difficulty: Joi.string().required(),
   objective_type: Joi.string().required(),
   attempt_number: Joi.number().integer().min(1).required(),
-  hearts_remaining: Joi.number().integer().min(0).max(10).required(),
+  hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   is_first_attempt: Joi.boolean().required(),
 });
 
@@ -175,7 +175,7 @@ const levelCompletedSchema = Joi.object({
   score: Joi.number().integer().min(0).required(),
   stars: Joi.number().integer().min(0).max(3).required(),
   time_seconds: Joi.number().integer().min(0).required(),
-  hearts_remaining: Joi.number().integer().min(0).max(10).required(),
+  hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   first_attempt: Joi.boolean().required(),
 });
 
@@ -191,7 +191,7 @@ const levelFailedSchema = Joi.object({
   objective_type: Joi.string().required(),
   cause_of_death: Joi.string().required(),
   time_survived_seconds: Joi.number().integer().min(0).required(),
-  hearts_remaining: Joi.number().integer().min(0).max(10).required(),
+  hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   continues_used: Joi.number().integer().min(0).required(),
 });
 
