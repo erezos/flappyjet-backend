@@ -680,6 +680,9 @@
             const gamesPerPlayer = data.dau > 0 ? (data.games_started / data.dau).toFixed(1) : '0.0';
             document.getElementById('gamesPerPlayer').textContent = gamesPerPlayer;
             
+            // Load 7-day trend for games per player
+            loadGamesPerPlayerTrend();
+            
             updateLastUpdate(data.last_updated);
         }
 
@@ -1069,6 +1072,86 @@
                     },
                     scales: {
                         y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // GAMES PER PLAYER TREND
+        // ============================================================================
+
+        async function loadGamesPerPlayerTrend() {
+            const data = await fetchAPI('games-per-player-trend?days=7');
+            if (!data || !data.daily) return;
+
+            const gamesPerPlayerCard = document.getElementById('gamesPerPlayer').closest('.metric-card');
+            if (!gamesPerPlayerCard) return;
+
+            // Update the "Today" label to show 7-day average
+            const changeElement = gamesPerPlayerCard.querySelector('.metric-change');
+            if (changeElement && data.avg_7days) {
+                changeElement.textContent = `Today • 7-day avg: ${data.avg_7days}`;
+            }
+
+            // Add a small sparkline chart below the value
+            let sparklineContainer = gamesPerPlayerCard.querySelector('.games-per-player-sparkline');
+            if (!sparklineContainer) {
+                sparklineContainer = document.createElement('div');
+                sparklineContainer.className = 'games-per-player-sparkline';
+                sparklineContainer.style.cssText = 'margin-top: 8px; height: 40px; width: 100%;';
+                gamesPerPlayerCard.appendChild(sparklineContainer);
+            }
+
+            // Destroy existing chart if it exists
+            if (charts.gamesPerPlayer) {
+                charts.gamesPerPlayer.destroy();
+            }
+
+            // Create mini chart
+            const ctx = document.createElement('canvas');
+            ctx.style.cssText = 'width: 100%; height: 100%;';
+            sparklineContainer.innerHTML = '';
+            sparklineContainer.appendChild(ctx);
+
+            // Simple sparkline chart
+            charts.gamesPerPlayer = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.daily.map(d => {
+                        const date = new Date(d.date);
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }),
+                    datasets: [{
+                        data: data.daily.map(d => d.games_per_player),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Games/Player: ${context.parsed.y.toFixed(1)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            display: false,
                             beginAtZero: true
                         }
                     }

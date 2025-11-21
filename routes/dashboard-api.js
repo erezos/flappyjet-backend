@@ -191,6 +191,59 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
+  // 2b. GAMES PER PLAYER TREND
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/games-per-player-trend?days=7
+   * Returns daily games per player for the last N days
+   */
+  router.get('/games-per-player-trend', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(`games-per-player-trend-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
+            COUNT(DISTINCT user_id) as dau
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type IN ('game_started', 'app_launched')
+          GROUP BY DATE(received_at)
+          ORDER BY date ASC
+        `);
+
+        const daily = result.rows.map(row => ({
+          date: row.date,
+          games_per_player: row.dau > 0 
+            ? parseFloat((parseInt(row.games_started || 0) / parseInt(row.dau || 1)).toFixed(1))
+            : 0,
+          games_started: parseInt(row.games_started || 0),
+          dau: parseInt(row.dau || 0)
+        }));
+
+        // Calculate 7-day average
+        const avgGamesPerPlayer = daily.length > 0
+          ? parseFloat((daily.reduce((sum, d) => sum + d.games_per_player, 0) / daily.length).toFixed(1))
+          : 0;
+
+        return {
+          daily,
+          avg_7days: avgGamesPerPlayer,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching games per player trend:', error);
+      res.status(500).json({ error: 'Failed to fetch games per player trend' });
+    }
+  });
+
+  // ============================================================================
   // 3. GAME COMPLETION RATE TREND
   // ============================================================================
 
