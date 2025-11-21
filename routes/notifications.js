@@ -224,7 +224,7 @@ module.exports = (db) => {
       const lastActivity = await db.query(`
         SELECT 
           MAX(received_at) as last_activity,
-          NOW() - MAX(received_at) as hours_inactive
+          EXTRACT(EPOCH FROM (NOW() - MAX(received_at))) / 3600.0 as hours_inactive
         FROM events
         WHERE user_id = $1
           AND event_type IN ('app_launched', 'game_started', 'level_started')
@@ -270,21 +270,21 @@ module.exports = (db) => {
         activity: {
           last_activity: lastActivity.rows[0]?.last_activity || null,
           hours_inactive: lastActivity.rows[0]?.hours_inactive 
-            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) 
+            ? parseFloat(lastActivity.rows[0].hours_inactive) 
             : null,
         },
         eligibility: {
           can_receive_1hour: lastActivity.rows[0]?.hours_inactive 
-            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 0.75 
-              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 1.25
+            ? parseFloat(lastActivity.rows[0].hours_inactive) >= 0.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive) <= 1.25
             : false,
           can_receive_24hour: lastActivity.rows[0]?.hours_inactive 
-            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 23.75 
-              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 24.25
+            ? parseFloat(lastActivity.rows[0].hours_inactive) >= 23.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive) <= 24.25
             : false,
           can_receive_46hour: lastActivity.rows[0]?.hours_inactive 
-            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) >= 45.75 
-              && parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) <= 46.25
+            ? parseFloat(lastActivity.rows[0].hours_inactive) >= 45.75 
+              && parseFloat(lastActivity.rows[0].hours_inactive) <= 46.25
             : false,
           within_daily_limit: dailyLimitCheck.rows[0]?.can_receive || false,
           not_in_quiet_hours: !quietHoursCheck.rows[0]?.is_quiet,
@@ -293,7 +293,7 @@ module.exports = (db) => {
         recommendations: {
           needs_fcm_token: !fcmToken,
           needs_inactivity: lastActivity.rows[0]?.hours_inactive 
-            ? parseFloat(lastActivity.rows[0].hours_inactive.split(' ')[0]) < 0.75
+            ? parseFloat(lastActivity.rows[0].hours_inactive) < 0.75
             : true,
           in_quiet_hours: quietHoursCheck.rows[0]?.is_quiet || false,
         },
