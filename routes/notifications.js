@@ -188,7 +188,9 @@ module.exports = (db) => {
    * Body: {
    *   userId: string,
    *   title?: string,
-   *   body?: string
+   *   body?: string,
+   *   reward_type?: 'coins' | 'gems',
+   *   reward_amount?: number
    * }
    */
   router.post('/test-send', async (req, res) => {
@@ -197,6 +199,8 @@ module.exports = (db) => {
         userId,
         title = '🎮 Test Notification',
         body = 'This is a test push notification from FlappyJet!',
+        reward_type,
+        reward_amount,
       } = req.body;
 
       if (!userId) {
@@ -219,15 +223,24 @@ module.exports = (db) => {
       // Initialize Firebase if needed
       await firebaseMessagingService.initialize();
 
+      // Build FCM data payload
+      const fcmData = {
+        type: 'test',
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Include reward data if provided
+      if (reward_type && reward_amount) {
+        fcmData.reward_type = reward_type;
+        fcmData.reward_amount = reward_amount.toString();
+      }
+
       // Send notification
       const sendResult = await firebaseMessagingService.sendNotification(fcmToken, {
         title,
         body,
-        data: {
-          type: 'test',
-          userId,
-          timestamp: new Date().toISOString(),
-        },
+        data: fcmData,
         channelId: 'retention_notifications',
       });
 
@@ -238,8 +251,8 @@ module.exports = (db) => {
           body,
           messageVariant: 'test',
           sentVia: 'fcm',
-          rewardType: 'none',
-          rewardAmount: 0,
+          rewardType: reward_type || 'none',
+          rewardAmount: reward_amount || 0,
           metadata: {
             fcmResponse: sendResult,
           },
