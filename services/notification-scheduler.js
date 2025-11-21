@@ -420,18 +420,18 @@ class NotificationScheduler {
    */
   _getRewardForNotification(notificationType) {
     // Smart distribution: Mix of coins and gems
-    // 1hour: 100 coins (70%) or 10 gems (30%)
-    // 24hour: 100 coins (60%) or 10 gems (40%)
-    // 46hour: 100 coins (50%) or 10 gems (50%) - more valuable for win-back
+    // 1hour: 50 coins (70%) or 5 gems (30%)
+    // 24hour: 100 coins (60%) or 5 gems (40%)
+    // 46hour: 200 coins (50%) or 10 gems (50%) - more valuable for win-back
     const random = Math.random();
 
     switch (notificationType) {
       case '1hour':
-        return random < 0.7 ? { type: 'coins', amount: 100 } : { type: 'gems', amount: 10 };
+        return random < 0.7 ? { type: 'coins', amount: 50 } : { type: 'gems', amount: 5 };
       case '24hour':
-        return random < 0.6 ? { type: 'coins', amount: 100 } : { type: 'gems', amount: 10 };
+        return random < 0.6 ? { type: 'coins', amount: 100 } : { type: 'gems', amount: 5 };
       case '46hour':
-        return random < 0.5 ? { type: 'coins', amount: 100 } : { type: 'gems', amount: 10 };
+        return random < 0.5 ? { type: 'coins', amount: 200 } : { type: 'gems', amount: 10 };
       default:
         return { type: 'coins', amount: 100 };
     }
