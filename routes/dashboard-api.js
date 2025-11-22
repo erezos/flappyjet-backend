@@ -23,7 +23,17 @@ module.exports = (db, cacheManager) => {
     try {
       // Check if cache manager is available
       if (!cacheManager || !cacheManager.redis) {
-        logger.warn(`📊 Cache unavailable for ${cacheKey} - querying database directly`);
+        logger.warn(`📊 Cache unavailable for ${cacheKey} - querying database directly`, {
+          hasCacheManager: !!cacheManager,
+          hasRedis: cacheManager?.redis ? true : false,
+          redisStatus: cacheManager?.redis?.status || 'null'
+        });
+        return await queryFn();
+      }
+      
+      // ✅ NEW: Check if Redis is actually ready (might have disconnected)
+      if (cacheManager.redis.status !== 'ready') {
+        logger.warn(`📊 Redis not ready for ${cacheKey} (status: ${cacheManager.redis.status}) - querying database directly`);
         return await queryFn();
       }
 
