@@ -173,32 +173,42 @@ let redisClient = null;
           url: redisUrl?.substring(0, 30) + '...',
           hasUrl: !!redisUrl 
         });
+        
+        // ✅ FIX: Use lazy connection - don't block startup waiting for Redis
         redisClient = new Redis(redisUrlWithIPv6, {
           maxRetriesPerRequest: 3,
-          enableReadyCheck: true, // ✅ Check if connection is ready
-          lazyConnect: false, // ✅ Connect immediately
-          connectTimeout: 15000, // ✅ Increased timeout for Railway network (was 10000)
+          enableReadyCheck: true,
+          lazyConnect: true, // ✅ Don't connect immediately - let it connect in background
+          connectTimeout: 30000, // ✅ Increased timeout to 30s for Railway network
           retryStrategy: (times) => {
-            if (times > 10) { // ✅ Increased max retries (was 5)
-              logger.error('💾 ❌ Redis: Max retry attempts reached (10)');
+            if (times > 20) { // ✅ Increased max retries to 20
+              logger.error('💾 ❌ Redis: Max retry attempts reached (20)');
               return null; // Stop retrying
             }
             const delay = Math.min(times * 200, 2000);
-            logger.info(`💾 🔄 Redis retry attempt ${times}/10, waiting ${delay}ms...`);
+            logger.info(`💾 🔄 Redis retry attempt ${times}/20, waiting ${delay}ms...`);
             return delay;
           }
         });
         
+        // ✅ Enhanced error logging with full details
         redisClient.on('connect', () => {
           logger.info('💾 🔌 Redis connection initiated...');
         });
         
-        redisClient.on('ready', () => {
-          logger.info('💾 ✅ Redis connected and READY!');
-        });
+        // ✅ Set up ready handler (will be called after cache manager is created)
+        // Ready handler will be set up after cache manager is created
         
         redisClient.on('error', (err) => {
-          logger.error('💾 ❌ Redis error:', err.message);
+          logger.error('💾 ❌ Redis error:', {
+            message: err.message,
+            code: err.code,
+            errno: err.errno,
+            syscall: err.syscall,
+            address: err.address,
+            port: err.port,
+            stack: err.stack
+          });
           // Don't crash the server
         });
         
@@ -210,31 +220,14 @@ let redisClient = null;
           logger.info('💾 🔄 Redis reconnecting...');
         });
         
-        // ✅ WAIT for Redis to be ready or timeout after 15 seconds
-        try {
-          logger.info(`💾 Waiting for Redis connection (current status: ${redisClient.status})...`);
-          await Promise.race([
-            new Promise((resolve) => {
-              if (redisClient.status === 'ready') {
-                logger.info('💾 Redis already ready!');
-                resolve();
-              } else {
-                logger.info('💾 Waiting for Redis ready event...');
-                redisClient.once('ready', () => {
-                  logger.info('💾 Redis ready event received!');
-                  resolve();
-                });
-              }
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Redis connection timeout after 15s')), 15000))
-          ]);
-          logger.info('💾 ✅ Redis client initialized and ready');
-        } catch (waitError) {
-          logger.error('💾 ❌ Redis ready check failed:', waitError.message);
-          logger.warn(`💾 ⚠️ Redis status: ${redisClient?.status || 'null'}`);
-          logger.warn('💾 ⚠️ Continuing without Redis (will retry in background)');
-          // Keep the client for background reconnection, but don't wait
-        }
+        // ✅ Don't wait for connection - let it happen in background
+        logger.info(`💾 Redis client initialized (lazy connect) - will connect in background`);
+        logger.info(`💾 Current status: ${redisClient.status}`);
+        
+        // ✅ Start connection attempt in background
+        redisClient.connect().catch(err => {
+          logger.warn('💾 ⚠️ Initial Redis connection attempt failed (will retry):', err.message);
+        });
       } else {
         logger.warn('💾 ⚠️ No Redis URL configured, running without Redis');
         logger.info('💾 Checking environment variables:');
@@ -267,20 +260,47 @@ let redisClient = null;
         // Create a no-op cache manager for graceful degradation
         cacheManager = createNoOpCacheManager();
         
-        // ✅ NEW: Set up Redis reconnection handler to upgrade cache manager
+        // ✅ CRITICAL: Set up Redis reconnection handler to upgrade cache manager
         if (redisClient) {
+          // Remove any existing 'ready' handler to avoid duplicates
+          redisClient.removeAllListeners('ready');
+          
+          // Set up upgrade handler
           redisClient.on('ready', async () => {
-            logger.info('💾 🔄 Redis reconnected! Upgrading cache manager...');
+            logger.info('💾 🔄 Redis ready event - upgrading cache manager...');
+            try {
+              await redisClient.ping();
+              const newCacheManager = new CacheManager(redisClient);
+              
+              // ✅ CRITICAL: Update both references
+              app.locals.cacheManager = newCacheManager;
+              cacheManager = newCacheManager;
+              
+              logger.info('💾 ✅ Cache Manager upgraded to Redis mode!', {
+                hasRedis: !!newCacheManager.redis,
+                redisStatus: newCacheManager.redis?.status || 'null'
+              });
+            } catch (upgradeError) {
+              logger.error('💾 ❌ Failed to upgrade cache manager:', {
+                error: upgradeError.message,
+                stack: upgradeError.stack
+              });
+            }
+          });
+          
+          // If Redis is already ready, upgrade immediately
+          if (redisClient.status === 'ready') {
+            logger.info('💾 Redis already ready - upgrading cache manager immediately...');
             try {
               await redisClient.ping();
               const newCacheManager = new CacheManager(redisClient);
               app.locals.cacheManager = newCacheManager;
               cacheManager = newCacheManager;
-              logger.info('💾 ✅ Cache Manager upgraded to Redis mode!');
+              logger.info('💾 ✅ Cache Manager upgraded to Redis mode (immediate)!');
             } catch (upgradeError) {
-              logger.error('💾 ❌ Failed to upgrade cache manager:', upgradeError.message);
+              logger.error('💾 ❌ Failed to upgrade cache manager (immediate):', upgradeError.message);
             }
-          });
+          }
         }
       }
     } catch (error) {
@@ -305,9 +325,16 @@ let redisClient = null;
     
     // ✅ NEW: Periodic Redis health check (upgrade cache manager if Redis connects later)
     if (redisClient && !cacheManager.redis) {
+      let checkCount = 0;
+      const maxChecks = 60; // Check for up to 30 minutes (60 * 30s)
+      
       const healthCheckInterval = setInterval(async () => {
+        checkCount++;
         try {
-          if (redisClient.status === 'ready') {
+          const status = redisClient.status;
+          logger.info(`💾 Redis health check #${checkCount}: status=${status}`);
+          
+          if (status === 'ready') {
             const pingResult = await redisClient.ping();
             if (pingResult === 'PONG') {
               logger.info('💾 🔄 Redis health check: Connected! Upgrading cache manager...');
@@ -317,18 +344,21 @@ let redisClient = null;
               logger.info('💾 ✅ Cache Manager upgraded to Redis mode via health check!');
               clearInterval(healthCheckInterval); // Stop checking once upgraded
             }
+          } else {
+            logger.debug(`💾 Redis health check #${checkCount}: Still not ready (status: ${status})`);
+          }
+          
+          // Stop after max checks
+          if (checkCount >= maxChecks) {
+            clearInterval(healthCheckInterval);
+            logger.warn(`💾 Redis health check stopped after ${maxChecks} checks (Redis never connected)`);
           }
         } catch (error) {
-          // Redis still not ready, continue checking
-          logger.debug(`💾 Redis health check: Still not ready (status: ${redisClient?.status || 'null'})`);
+          logger.debug(`💾 Redis health check #${checkCount} error:`, error.message);
         }
       }, 30000); // Check every 30 seconds
       
-      // Stop health check after 10 minutes (don't check forever)
-      setTimeout(() => {
-        clearInterval(healthCheckInterval);
-        logger.info('💾 Redis health check stopped (10 minute timeout)');
-      }, 600000);
+      logger.info('💾 ✅ Redis health check started (will check every 30s for up to 30 minutes)');
     }
     
     // Initialize Firebase Admin SDK for Push Notifications
