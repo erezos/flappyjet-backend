@@ -21,6 +21,12 @@ module.exports = (db, cacheManager) => {
    */
   async function getCachedQuery(cacheKey, queryFn, ttl = CACHE_TTL) {
     try {
+      // Check if cache manager is available
+      if (!cacheManager || !cacheManager.redis) {
+        logger.warn(`📊 Cache unavailable for ${cacheKey} - querying database directly`);
+        return await queryFn();
+      }
+
       // Try cache first
       const cached = await cacheManager.get(`${CACHE_PREFIX}${cacheKey}`);
       if (cached) {
@@ -32,13 +38,36 @@ module.exports = (db, cacheManager) => {
       logger.info(`📊 Cache MISS: ${cacheKey} - querying database`);
       const result = await queryFn();
       
-      // Store in cache
-      await cacheManager.set(`${CACHE_PREFIX}${cacheKey}`, result, ttl); // ✅ FIX: CacheManager handles serialization
+      // Store in cache and verify it succeeded
+      const cacheKeyFull = `${CACHE_PREFIX}${cacheKey}`;
+      const setSuccess = await cacheManager.set(cacheKeyFull, result, ttl);
+      
+      if (setSuccess) {
+        logger.info(`📊 Cache SET: ${cacheKey} (TTL: ${ttl}s)`);
+        
+        // Verify it was actually stored (for debugging)
+        const verifyCache = await cacheManager.get(cacheKeyFull);
+        if (verifyCache) {
+          logger.debug(`📊 Cache VERIFIED: ${cacheKey} stored successfully`);
+        } else {
+          logger.warn(`📊 Cache WARNING: ${cacheKey} set returned true but get returned null`);
+        }
+      } else {
+        logger.error(`📊 Cache SET FAILED: ${cacheKey} - cache.set() returned false`);
+      }
       
       return result;
     } catch (error) {
-      logger.error(`📊 Error in getCachedQuery for ${cacheKey}:`, error);
-      throw error;
+      logger.error(`📊 Error in getCachedQuery for ${cacheKey}:`, {
+        error: error.message,
+        stack: error.stack
+      });
+      // On error, still try to return data from query
+      try {
+        return await queryFn();
+      } catch (queryError) {
+        throw queryError;
+      }
     }
   }
 
@@ -1243,14 +1272,54 @@ module.exports = (db, cacheManager) => {
       // Test database connection
       await db.query('SELECT 1');
       
-      // Test cache connection
-      await cacheManager.set('health-check', 'ok', 10);
-      const cacheTest = await cacheManager.get('health-check');
+      // Test cache connection with detailed diagnostics
+      let cacheStatus = 'unavailable';
+      let cacheStats = null;
+      let redisStatus = null;
+      
+      if (cacheManager && cacheManager.redis) {
+        redisStatus = cacheManager.redis.status;
+        
+        if (cacheManager.redis.status === 'ready') {
+          try {
+            // Test cache write/read
+            const testKey = 'health-check-test';
+            const testValue = { timestamp: Date.now(), test: true };
+            const setResult = await cacheManager.set(testKey, testValue, 10);
+            const getResult = await cacheManager.get(testKey);
+            
+            if (setResult && getResult && getResult.test === true) {
+              cacheStatus = 'connected';
+            } else {
+              cacheStatus = 'degraded';
+              logger.warn('📊 Cache health check: set/get test failed', {
+                setResult,
+                getResult: getResult ? 'exists' : 'null'
+              });
+            }
+            
+            // Clean up test key
+            await cacheManager.delete(testKey);
+            
+            // Get cache statistics
+            cacheStats = cacheManager.getStats();
+          } catch (cacheError) {
+            cacheStatus = 'error';
+            logger.error('📊 Cache health check error:', cacheError);
+          }
+        } else {
+          cacheStatus = 'disconnected';
+        }
+      }
       
       res.json({
         status: 'healthy',
         database: 'connected',
-        cache: cacheTest === 'ok' ? 'connected' : 'degraded',
+        cache: {
+          status: cacheStatus,
+          redis_status: redisStatus,
+          stats: cacheStats
+        },
         timestamp: new Date().toISOString()
       });
     } catch (error) {

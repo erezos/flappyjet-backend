@@ -25,6 +25,16 @@ class CacheManager {
    */
   async get(key) {
     try {
+      // Check if Redis is available and ready
+      if (!this.redis || this.redis.status !== 'ready') {
+        logger.debug('💾 ⚠️ Cache get skipped: Redis not ready', {
+          status: this.redis?.status || 'null',
+          key: key.substring(0, 50)
+        });
+        this.stats.misses++;
+        return null;
+      }
+
       const prefixedKey = this._prefixKey(key);
       const value = await this.redis.get(prefixedKey);
       
@@ -33,7 +43,10 @@ class CacheManager {
         try {
           return JSON.parse(value);
         } catch (parseError) {
-          logger.warn('💾 ⚠️ Failed to parse cached value:', parseError.message);
+          logger.warn('💾 ⚠️ Failed to parse cached value:', {
+            error: parseError.message,
+            key: key.substring(0, 50)
+          });
           // Delete corrupted cache entry
           await this.redis.del(prefixedKey);
           this.stats.misses++;
@@ -44,7 +57,12 @@ class CacheManager {
       this.stats.misses++;
       return null;
     } catch (error) {
-      logger.error('💾 ❌ Cache get error:', error.message);
+      logger.error('💾 ❌ Cache get error:', {
+        error: error.message,
+        stack: error.stack,
+        key: key.substring(0, 50),
+        redisStatus: this.redis?.status || 'null'
+      });
       this.stats.errors++;
       return null;
     }
@@ -55,6 +73,15 @@ class CacheManager {
    */
   async set(key, value, ttl = null) {
     try {
+      // Check if Redis is available and ready
+      if (!this.redis || this.redis.status !== 'ready') {
+        logger.warn('💾 ⚠️ Cache set skipped: Redis not ready', {
+          status: this.redis?.status || 'null',
+          key: key.substring(0, 50)
+        });
+        return false;
+      }
+
       const prefixedKey = this._prefixKey(key);
       const serializedValue = JSON.stringify(value);
       const effectiveTTL = ttl || this.defaultTTL;
@@ -62,9 +89,20 @@ class CacheManager {
       await this.redis.setex(prefixedKey, effectiveTTL, serializedValue);
       this.stats.sets++;
       
+      logger.debug('💾 ✅ Cache set successful', {
+        key: key.substring(0, 50),
+        ttl: effectiveTTL,
+        valueSize: serializedValue.length
+      });
+      
       return true;
     } catch (error) {
-      logger.error('💾 ❌ Cache set error:', error.message);
+      logger.error('💾 ❌ Cache set error:', {
+        error: error.message,
+        stack: error.stack,
+        key: key.substring(0, 50),
+        redisStatus: this.redis?.status || 'null'
+      });
       this.stats.errors++;
       return false;
     }
