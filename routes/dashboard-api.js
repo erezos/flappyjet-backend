@@ -17,28 +17,39 @@ module.exports = (db, cacheManager) => {
   const CACHE_PREFIX = 'dashboard:';
 
   /**
+   * Helper: Get cache manager dynamically from app.locals (supports runtime upgrades)
+   */
+  function getCacheManager(req) {
+    // ✅ CRITICAL: Always get fresh reference from app.locals to support runtime upgrades
+    return req.app.locals.cacheManager || cacheManager;
+  }
+
+  /**
    * Helper: Get data from cache or database
    */
-  async function getCachedQuery(cacheKey, queryFn, ttl = CACHE_TTL) {
+  async function getCachedQuery(req, cacheKey, queryFn, ttl = CACHE_TTL) {
     try {
+      // ✅ Get fresh cache manager reference (supports runtime upgrades)
+      const currentCacheManager = getCacheManager(req);
+      
       // Check if cache manager is available
-      if (!cacheManager || !cacheManager.redis) {
+      if (!currentCacheManager || !currentCacheManager.redis) {
         logger.warn(`📊 Cache unavailable for ${cacheKey} - querying database directly`, {
-          hasCacheManager: !!cacheManager,
-          hasRedis: cacheManager?.redis ? true : false,
-          redisStatus: cacheManager?.redis?.status || 'null'
+          hasCacheManager: !!currentCacheManager,
+          hasRedis: currentCacheManager?.redis ? true : false,
+          redisStatus: currentCacheManager?.redis?.status || 'null'
         });
         return await queryFn();
       }
       
       // ✅ NEW: Check if Redis is actually ready (might have disconnected)
-      if (cacheManager.redis.status !== 'ready') {
-        logger.warn(`📊 Redis not ready for ${cacheKey} (status: ${cacheManager.redis.status}) - querying database directly`);
+      if (currentCacheManager.redis.status !== 'ready') {
+        logger.warn(`📊 Redis not ready for ${cacheKey} (status: ${currentCacheManager.redis.status}) - querying database directly`);
         return await queryFn();
       }
 
       // Try cache first
-      const cached = await cacheManager.get(`${CACHE_PREFIX}${cacheKey}`);
+      const cached = await currentCacheManager.get(`${CACHE_PREFIX}${cacheKey}`);
       if (cached) {
         logger.info(`📊 Cache HIT: ${cacheKey}`);
         return cached; // ✅ FIX: CacheManager already returns parsed JSON
@@ -50,13 +61,13 @@ module.exports = (db, cacheManager) => {
       
       // Store in cache and verify it succeeded
       const cacheKeyFull = `${CACHE_PREFIX}${cacheKey}`;
-      const setSuccess = await cacheManager.set(cacheKeyFull, result, ttl);
+      const setSuccess = await currentCacheManager.set(cacheKeyFull, result, ttl);
       
       if (setSuccess) {
         logger.info(`📊 Cache SET: ${cacheKey} (TTL: ${ttl}s)`);
         
         // Verify it was actually stored (for debugging)
-        const verifyCache = await cacheManager.get(cacheKeyFull);
+        const verifyCache = await currentCacheManager.get(cacheKeyFull);
         if (verifyCache) {
           logger.debug(`📊 Cache VERIFIED: ${cacheKey} stored successfully`);
         } else {
@@ -91,7 +102,7 @@ module.exports = (db, cacheManager) => {
    */
   router.get('/overview', async (req, res) => {
     try {
-      const data = await getCachedQuery('overview', async () => {
+      const data = await getCachedQuery(req, 'overview', async () => {
         const today = new Date().toISOString().split('T')[0];
 
         // Query all metrics in parallel for speed
@@ -204,7 +215,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 30), 90); // Max 90 days
       
-      const data = await getCachedQuery(`dau-trend-${days}`, async () => {
+      const data = await getCachedQuery(req, `dau-trend-${days}`, async () => {
         const result = await db.query(`
           SELECT 
             DATE(received_at) as date,
@@ -241,7 +252,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`games-per-player-trend-${days}`, async () => {
+      const data = await getCachedQuery(req, `games-per-player-trend-${days}`, async () => {
         const result = await db.query(`
           SELECT 
             DATE(received_at) as date,
@@ -294,7 +305,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`completion-trend-${days}`, async () => {
+      const data = await getCachedQuery(req, `completion-trend-${days}`, async () => {
         const result = await db.query(`
           SELECT 
             DATE(received_at) as date,
@@ -343,7 +354,7 @@ module.exports = (db, cacheManager) => {
     try {
       const zone = parseInt(req.query.zone || 1);
       
-      const data = await getCachedQuery(`level-performance-zone${zone}`, async () => {
+      const data = await getCachedQuery(req, `level-performance-zone${zone}`, async () => {
         // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
         const startLevel = (zone - 1) * 10 + 1;
         const endLevel = zone * 10;
@@ -402,7 +413,7 @@ module.exports = (db, cacheManager) => {
       
       // Cache for only 30 seconds (this is for "live" feed)
       // ✅ Redis caching reduces DB queries from every request to every 30s
-      const data = await getCachedQuery(`top-events-${limit}`, async () => {
+      const data = await getCachedQuery(req, `top-events-${limit}`, async () => {
         const result = await db.query(`
           WITH user_metadata AS (
             -- Get latest user profile data (country, device, days since install, nickname)
@@ -498,7 +509,7 @@ module.exports = (db, cacheManager) => {
    */
   router.get('/ad-performance', async (req, res) => {
     try {
-      const data = await getCachedQuery('ad-performance', async () => {
+      const data = await getCachedQuery(req, 'ad-performance', async () => {
         const [rewardedResult, interstitialResult] = await Promise.all([
           // Rewarded ads
           db.query(`
@@ -558,7 +569,7 @@ module.exports = (db, cacheManager) => {
       const level = req.query.level || '6';
       const date = req.query.date || new Date().toISOString().split('T')[0];
       
-      const data = await getCachedQuery(`level-ends-${level}-${date}`, async () => {
+      const data = await getCachedQuery(req, `level-ends-${level}-${date}`, async () => {
         const result = await db.query(`
           SELECT 
             COUNT(*) as total_games,
@@ -598,7 +609,7 @@ module.exports = (db, cacheManager) => {
    */
   router.get('/retention-table', async (req, res) => {
     try {
-      const data = await getCachedQuery('retention-table', async () => {
+      const data = await getCachedQuery(req, 'retention-table', async () => {
         // Get last 30 install dates and calculate retention for each cohort and day (D1-D30)
         const result = await db.query(`
           WITH last_30_install_dates AS (
@@ -763,7 +774,7 @@ module.exports = (db, cacheManager) => {
    */
   router.get('/retention', async (req, res) => {
     try {
-      const data = await getCachedQuery('retention-cohorts', async () => {
+      const data = await getCachedQuery(req, 'retention-cohorts', async () => {
         // Find users and their install date
         const result = await db.query(`
           WITH first_sessions AS (
@@ -856,7 +867,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`economy-${days}days`, async () => {
+      const data = await getCachedQuery(req, `economy-${days}days`, async () => {
         const [gemsResult, coinsResult, spendingResult] = await Promise.all([
           // Gems earned vs spent
           db.query(`
@@ -938,7 +949,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`continues-${days}days`, async () => {
+      const data = await getCachedQuery(req, `continues-${days}days`, async () => {
         const [dailyResult, typeResult, successResult] = await Promise.all([
           // Daily continue usage
           db.query(`
@@ -1011,7 +1022,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`missions-${days}days`, async () => {
+      const data = await getCachedQuery(req, `missions-${days}days`, async () => {
         const [dailyResult, missionTypesResult, popularResult] = await Promise.all([
           // Daily mission completions
           db.query(`
@@ -1087,7 +1098,7 @@ module.exports = (db, cacheManager) => {
     try {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
-      const data = await getCachedQuery(`purchases-${days}days`, async () => {
+      const data = await getCachedQuery(req, `purchases-${days}days`, async () => {
         const [dailyResult, jetResult, currencyResult] = await Promise.all([
           // Daily purchases
           db.query(`
@@ -1194,7 +1205,7 @@ module.exports = (db, cacheManager) => {
       const NotificationTracker = require('../services/notification-tracker');
       const notificationTracker = new NotificationTracker(db);
 
-      const data = await getCachedQuery('notifications', async () => {
+      const data = await getCachedQuery(req, 'notifications', async () => {
         const [todayStats, byCountry, trend] = await Promise.all([
           notificationTracker.getTodayStats(),
           notificationTracker.getStatsByCountry(),
@@ -1287,16 +1298,19 @@ module.exports = (db, cacheManager) => {
       let cacheStats = null;
       let redisStatus = null;
       
-      if (cacheManager && cacheManager.redis) {
-        redisStatus = cacheManager.redis.status;
+      // ✅ Get fresh cache manager reference (supports runtime upgrades)
+      const currentCacheManager = getCacheManager(req);
+      
+      if (currentCacheManager && currentCacheManager.redis) {
+        redisStatus = currentCacheManager.redis.status;
         
-        if (cacheManager.redis.status === 'ready') {
+        if (currentCacheManager.redis.status === 'ready') {
           try {
             // Test cache write/read
             const testKey = 'health-check-test';
             const testValue = { timestamp: Date.now(), test: true };
-            const setResult = await cacheManager.set(testKey, testValue, 10);
-            const getResult = await cacheManager.get(testKey);
+            const setResult = await currentCacheManager.set(testKey, testValue, 10);
+            const getResult = await currentCacheManager.get(testKey);
             
             if (setResult && getResult && getResult.test === true) {
               cacheStatus = 'connected';
@@ -1309,10 +1323,10 @@ module.exports = (db, cacheManager) => {
             }
             
             // Clean up test key
-            await cacheManager.delete(testKey);
+            await currentCacheManager.delete(testKey);
             
             // Get cache statistics
-            cacheStats = cacheManager.getStats();
+            cacheStats = currentCacheManager.getStats();
           } catch (cacheError) {
             cacheStatus = 'error';
             logger.error('📊 Cache health check error:', cacheError);
