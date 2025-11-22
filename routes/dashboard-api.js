@@ -253,15 +253,39 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
       const data = await getCachedQuery(req, `games-per-player-trend-${days}`, async () => {
+        // Use CTE to calculate both metrics correctly:
+        // - DAU: all unique users (consistent with DAU chart)
+        // - games_started: only 'game_started' events
         const result = await db.query(`
+          WITH daily_events AS (
+            SELECT 
+              DATE(received_at) as date,
+              user_id,
+              event_type
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+          ),
+          daily_games AS (
+            SELECT 
+              date,
+              COUNT(*) as games_started
+            FROM daily_events
+            WHERE event_type = 'game_started'
+            GROUP BY date
+          ),
+          daily_dau AS (
+            SELECT 
+              date,
+              COUNT(DISTINCT user_id) as dau
+            FROM daily_events
+            GROUP BY date
+          )
           SELECT 
-            DATE(received_at) as date,
-            COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
-            COUNT(DISTINCT user_id) as dau
-          FROM events
-          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            AND event_type IN ('game_started', 'app_launched')
-          GROUP BY DATE(received_at)
+            COALESCE(dg.date, dd.date) as date,
+            COALESCE(dg.games_started, 0) as games_started,
+            COALESCE(dd.dau, 0) as dau
+          FROM daily_dau dd
+          LEFT JOIN daily_games dg ON dd.date = dg.date
           ORDER BY date ASC
         `);
 
