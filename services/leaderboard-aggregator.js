@@ -382,6 +382,99 @@ class LeaderboardAggregator {
   }
 
   /**
+   * Get global leaderboard with pagination
+   * Used by API routes to serve leaderboard data
+   * 
+   * @param {Object} options - Query options
+   * @param {number} options.limit - Number of entries to return
+   * @param {number} options.offset - Offset for pagination
+   * @param {string} options.requestingPlayerId - Optional player ID to include their position
+   * @returns {Promise<Object>} - { success, leaderboard, userPosition }
+   */
+  async getGlobalLeaderboard({ limit = 15, offset = 0, requestingPlayerId = null }) {
+    try {
+      // Get leaderboard entries with ranks
+      const leaderboardQuery = `
+        SELECT 
+          lg.user_id,
+          lg.nickname,
+          lg.high_score as score,
+          lg.last_played_at as timestamp,
+          lg.jet_skin,
+          lg.theme,
+          ROW_NUMBER() OVER (ORDER BY lg.high_score DESC, lg.last_played_at DESC) as rank
+        FROM leaderboard_global lg
+        ORDER BY lg.high_score DESC, lg.last_played_at DESC
+        LIMIT $1 OFFSET $2
+      `;
+
+      const leaderboardResult = await this.db.query(leaderboardQuery, [limit, offset]);
+      
+      const leaderboard = leaderboardResult.rows.map(row => ({
+        rank: parseInt(row.rank) + offset, // Adjust rank for offset
+        user_id: row.user_id,
+        nickname: row.nickname || 'Anonymous',
+        score: parseInt(row.score) || 0,
+        timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
+        jet_skin: row.jet_skin || null,
+        theme: row.theme || null,
+      }));
+
+      // Get user's position if requested
+      let userPosition = null;
+      if (requestingPlayerId) {
+        const userRankQuery = `
+          SELECT 
+            lg.user_id,
+            lg.nickname,
+            lg.high_score as score,
+            lg.last_played_at as timestamp,
+            lg.jet_skin,
+            lg.theme,
+            (SELECT COUNT(*) + 1 
+             FROM leaderboard_global lg2 
+             WHERE lg2.high_score > lg.high_score 
+                OR (lg2.high_score = lg.high_score AND lg2.last_played_at > lg.last_played_at)
+            ) as rank
+          FROM leaderboard_global lg
+          WHERE lg.user_id = $1
+          LIMIT 1
+        `;
+
+        const userResult = await this.db.query(userRankQuery, [requestingPlayerId]);
+        
+        if (userResult.rows.length > 0) {
+          const row = userResult.rows[0];
+          userPosition = {
+            rank: parseInt(row.rank),
+            user_id: row.user_id,
+            nickname: row.nickname || 'Anonymous',
+            score: parseInt(row.score) || 0,
+            timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
+            jet_skin: row.jet_skin || null,
+            theme: row.theme || null,
+          };
+        }
+      }
+
+      return {
+        success: true,
+        leaderboard,
+        userPosition,
+      };
+    } catch (error) {
+      logger.error('❌ Error getting global leaderboard', {
+        error: error.message,
+        stack: error.stack,
+      });
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Rebuild entire global leaderboard from scratch
    * WARNING: This is expensive! Only use for migrations or major fixes
    * @returns {Promise<Object>}

@@ -368,21 +368,15 @@ class NotificationScheduler {
             },
           });
 
-          // Update token last sent timestamp
-          await this.fcmTokenManager.updateLastNotificationSent({
-            userId: notif.userId,
-            fcmToken: notif.token,
-          });
+          // Update token last sent timestamp (expects just the token string)
+          await this.fcmTokenManager.updateLastNotificationSent(notif.token);
 
           successCount++;
         } else {
           // Handle failure
           if (sendResult.isInvalidToken) {
-            // Deactivate invalid token
-            await this.fcmTokenManager.deactivateToken({
-              userId: notif.userId,
-              fcmToken: notif.token,
-            });
+            // Deactivate invalid token (expects just the token string)
+            await this.fcmTokenManager.deactivateToken(notif.token);
           }
 
           // Track failed event

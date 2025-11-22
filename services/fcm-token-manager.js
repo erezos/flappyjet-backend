@@ -126,6 +126,13 @@ class FCMTokenManager {
    */
   async deactivateToken(fcmToken) {
     try {
+      if (!fcmToken || typeof fcmToken !== 'string') {
+        logger.error('❌ Failed to deactivate FCM token: invalid token', {
+          token: fcmToken,
+        });
+        return false;
+      }
+
       await this.db.query(
         `UPDATE fcm_tokens 
          SET is_active = false, 
@@ -142,6 +149,8 @@ class FCMTokenManager {
     } catch (error) {
       logger.error('❌ Failed to deactivate FCM token', {
         error: error.message,
+        stack: error.stack,
+        token: fcmToken ? fcmToken.substring(0, 20) + '...' : 'null',
       });
       return false;
     }

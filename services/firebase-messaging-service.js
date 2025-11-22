@@ -114,15 +114,16 @@ class FirebaseMessagingService {
       };
     } catch (error) {
       logger.error('❌ Failed to send push notification', {
-        token: fcmToken.substring(0, 20) + '...',
-        error: error.message,
-        errorCode: error.code,
+        token: fcmToken ? fcmToken.substring(0, 20) + '...' : 'null',
+        error: error.message || 'Unknown error',
+        errorCode: error.code || 'unknown',
+        stack: error.stack,
       });
 
       return {
         success: false,
-        error: error.message,
-        errorCode: error.code,
+        error: error.message || 'Unknown error',
+        errorCode: error.code || 'unknown',
         isInvalidToken: this.isInvalidTokenError(error),
       };
     }
