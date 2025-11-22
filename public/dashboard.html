@@ -455,6 +455,13 @@
                     <canvas id="completionTrendChart"></canvas>
                 </div>
             </div>
+            
+            <div class="chart-card">
+                <h3>🎮 Games per Player (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="gamesPerPlayerChart"></canvas>
+                </div>
+            </div>
         </div>
 
         <!-- Level Performance -->
@@ -1080,7 +1087,7 @@
         }
 
         // ============================================================================
-        // GAMES PER PLAYER TREND
+        // GAMES PER PLAYER TREND (Metric Card Update)
         // ============================================================================
 
         async function loadGamesPerPlayerTrend() {
@@ -1096,63 +1103,84 @@
                 changeElement.textContent = `Today • 7-day avg: ${data.avg_7days}`;
             }
 
-            // Add a small sparkline chart below the value
-            let sparklineContainer = gamesPerPlayerCard.querySelector('.games-per-player-sparkline');
-            if (!sparklineContainer) {
-                sparklineContainer = document.createElement('div');
-                sparklineContainer.className = 'games-per-player-sparkline';
-                sparklineContainer.style.cssText = 'margin-top: 8px; height: 40px; width: 100%;';
-                gamesPerPlayerCard.appendChild(sparklineContainer);
+            // Remove any existing sparkline chart
+            const sparklineContainer = gamesPerPlayerCard.querySelector('.games-per-player-sparkline');
+            if (sparklineContainer) {
+                sparklineContainer.remove();
             }
-
-            // Destroy existing chart if it exists
             if (charts.gamesPerPlayer) {
                 charts.gamesPerPlayer.destroy();
+                charts.gamesPerPlayer = null;
             }
+        }
 
-            // Create mini chart
-            const ctx = document.createElement('canvas');
-            ctx.style.cssText = 'width: 100%; height: 100%;';
-            sparklineContainer.innerHTML = '';
-            sparklineContainer.appendChild(ctx);
+        // ============================================================================
+        // GAMES PER PLAYER CHART (Full Chart)
+        // ============================================================================
 
-            // Simple sparkline chart
-            charts.gamesPerPlayer = new Chart(ctx, {
+        async function loadGamesPerPlayerChart() {
+            const data = await fetchAPI('games-per-player-trend?days=7');
+            if (!data || !data.daily) return;
+
+            const ctx = document.getElementById('gamesPerPlayerChart').getContext('2d');
+            
+            if (charts.gamesPerPlayerChart) charts.gamesPerPlayerChart.destroy();
+            
+            // Sort daily data by date (oldest first) for proper chart display
+            const sortedDaily = [...data.daily].sort((a, b) => 
+                new Date(a.date) - new Date(b.date)
+            );
+            
+            charts.gamesPerPlayerChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: data.daily.map(d => {
-                        const date = new Date(d.date);
-                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    }),
+                    labels: sortedDaily.map(d => new Date(d.date).toLocaleDateString()),
                     datasets: [{
-                        data: data.daily.map(d => d.games_per_player),
+                        label: 'Games per Player',
+                        data: sortedDaily.map(d => parseFloat(d.games_per_player) || 0),
                         borderColor: '#667eea',
                         backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 2,
                         fill: true,
                         tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 4
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        pointBackgroundColor: '#667eea',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: false
+                        },
                         tooltip: {
                             callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
+                                afterTitle: function(context) {
+                                    const index = context[0].dataIndex;
+                                    const dayData = sortedDaily[index];
+                                    return [
+                                        `Games Started: ${dayData.games_started || 0}`,
+                                        `Daily Active Users: ${dayData.dau || 0}`
+                                    ];
+                                },
                                 label: function(context) {
-                                    return `Games/Player: ${context.parsed.y.toFixed(1)}`;
+                                    return `Games per Player: ${context.parsed.y.toFixed(1)}`;
                                 }
                             }
                         }
                     },
                     scales: {
-                        x: { display: false },
-                        y: { 
-                            display: false,
-                            beginAtZero: true
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => value.toFixed(1)
+                            }
                         }
                     }
                 }
@@ -1656,6 +1684,7 @@
                 loadOverview(),
                 loadDAUTrend(),
                 loadCompletionTrend(),
+                loadGamesPerPlayerChart(),
                 loadLevelPerformance(),
                 loadRetention(),
                 loadEconomy(),
