@@ -431,15 +431,6 @@
             </div>
         </div>
 
-        <!-- Third Row of Metrics -->
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="metric-label">Games per Player</div>
-                <div class="metric-value" id="gamesPerPlayer">-</div>
-                <div class="metric-change">Today</div>
-            </div>
-        </div>
-
         <!-- Charts -->
         <div class="charts-grid">
             <div class="chart-card">
@@ -683,12 +674,6 @@
             // Sessions per user (from backend)
             const sessionsPerUser = data.avg_sessions_per_user || 0;
             document.getElementById('sessionsPerUser').textContent = sessionsPerUser.toFixed(1);
-            
-            const gamesPerPlayer = data.dau > 0 ? (data.games_started / data.dau).toFixed(1) : '0.0';
-            document.getElementById('gamesPerPlayer').textContent = gamesPerPlayer;
-            
-            // Load 7-day trend for games per player
-            loadGamesPerPlayerTrend();
             
             updateLastUpdate(data.last_updated);
         }
@@ -1084,34 +1069,6 @@
                     }
                 }
             });
-        }
-
-        // ============================================================================
-        // GAMES PER PLAYER TREND (Metric Card Update)
-        // ============================================================================
-
-        async function loadGamesPerPlayerTrend() {
-            const data = await fetchAPI('games-per-player-trend?days=7');
-            if (!data || !data.daily) return;
-
-            const gamesPerPlayerCard = document.getElementById('gamesPerPlayer').closest('.metric-card');
-            if (!gamesPerPlayerCard) return;
-
-            // Update the "Today" label to show 7-day average
-            const changeElement = gamesPerPlayerCard.querySelector('.metric-change');
-            if (changeElement && data.avg_7days) {
-                changeElement.textContent = `Today • 7-day avg: ${data.avg_7days}`;
-            }
-
-            // Remove any existing sparkline chart
-            const sparklineContainer = gamesPerPlayerCard.querySelector('.games-per-player-sparkline');
-            if (sparklineContainer) {
-                sparklineContainer.remove();
-            }
-            if (charts.gamesPerPlayer) {
-                charts.gamesPerPlayer.destroy();
-                charts.gamesPerPlayer = null;
-            }
         }
 
         // ============================================================================
