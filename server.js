@@ -161,43 +161,87 @@ let redisClient = null;
     
     // Initialize Redis Client (optional, graceful degradation)
     try {
+      // ✅ Railway provides both REDIS_URL and individual variables (REDISHOST, REDISPORT, etc.)
+      // Try individual variables first (more reliable for Railway), then fall back to URL
+      const redisHost = process.env.REDISHOST;
+      const redisPort = process.env.REDISPORT;
+      const redisUser = process.env.REDISUSER;
+      const redisPassword = process.env.REDISPASSWORD;
       const redisUrl = process.env.REDIS_URL || process.env.REDIS_PRIVATE_URL;
       
-      if (redisUrl) {
-        // ✅ FIX: Railway uses IPv6 - add ?family=0 for dual-stack DNS resolution
+      const commonOptions = {
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        lazyConnect: false, // Connect immediately
+        connectTimeout: 30000,
+        retryStrategy: (times) => {
+          if (times > 20) {
+            logger.error('💾 ❌ Redis: Max retry attempts reached (20)');
+            return null;
+          }
+          const delay = Math.min(times * 200, 2000);
+          logger.info(`💾 🔄 Redis retry attempt ${times}/20, waiting ${delay}ms...`);
+          return delay;
+        }
+      };
+      
+      // ✅ METHOD 1: Use individual Railway variables (preferred for Railway)
+      if (redisHost && redisPort) {
+        logger.info('💾 Redis connection using Railway individual variables', {
+          host: redisHost,
+          port: redisPort,
+          hasUser: !!redisUser,
+          hasPassword: !!redisPassword
+        });
+        
+        redisClient = new Redis({
+          host: redisHost,
+          port: parseInt(redisPort, 10),
+          username: redisUser || undefined,
+          password: redisPassword || undefined,
+          // ✅ Railway uses IPv6 - enable IPv6 support
+          family: 0, // 0 = IPv4 and IPv6 (dual-stack)
+          ...commonOptions
+        });
+      }
+      // ✅ METHOD 2: Fall back to REDIS_URL (if individual vars not available)
+      else if (redisUrl) {
+        logger.info('💾 Redis connection using REDIS_URL', {
+          url: redisUrl?.substring(0, 30) + '...',
+          hasUrl: !!redisUrl
+        });
+        
+        // ✅ Parse URL and add IPv6 support
         const redisUrlWithIPv6 = redisUrl.includes('?') 
           ? `${redisUrl}&family=0` 
           : `${redisUrl}?family=0`;
         
-        logger.info('💾 Redis URL found, initializing client...', { 
-          url: redisUrl?.substring(0, 30) + '...',
-          hasUrl: !!redisUrl 
-        });
-        
-        // ✅ FIX: Use lazy connection - don't block startup waiting for Redis
+        // Create Redis instance with URL and options
         redisClient = new Redis(redisUrlWithIPv6, {
-          maxRetriesPerRequest: 3,
-          enableReadyCheck: true,
-          lazyConnect: true, // ✅ Don't connect immediately - let it connect in background
-          connectTimeout: 30000, // ✅ Increased timeout to 30s for Railway network
-          retryStrategy: (times) => {
-            if (times > 20) { // ✅ Increased max retries to 20
-              logger.error('💾 ❌ Redis: Max retry attempts reached (20)');
-              return null; // Stop retrying
-            }
-            const delay = Math.min(times * 200, 2000);
-            logger.info(`💾 🔄 Redis retry attempt ${times}/20, waiting ${delay}ms...`);
-            return delay;
-          }
+          family: 0, // Dual-stack IPv4/IPv6
+          ...commonOptions
         });
-        
-        // ✅ Enhanced error logging with full details
+      } else {
+        logger.warn('💾 ⚠️ No Redis configuration found');
+        logger.info('💾 Checking environment variables:');
+        logger.info(`   REDISHOST: ${redisHost ? 'Set' : 'Not set'}`);
+        logger.info(`   REDISPORT: ${redisPort ? 'Set' : 'Not set'}`);
+        logger.info(`   REDISUSER: ${redisUser ? 'Set' : 'Not set'}`);
+        logger.info(`   REDISPASSWORD: ${redisPassword ? 'Set' : 'Not set'}`);
+        logger.info(`   REDIS_URL: ${redisUrl ? 'Set' : 'Not set'}`);
+        logger.info(`   REDIS_PRIVATE_URL: ${process.env.REDIS_PRIVATE_URL ? 'Set' : 'Not set'}`);
+        redisClient = null;
+      }
+      
+      // ✅ Set up event handlers
+      if (redisClient) {
         redisClient.on('connect', () => {
           logger.info('💾 🔌 Redis connection initiated...');
         });
         
-        // ✅ Set up ready handler (will be called after cache manager is created)
-        // Ready handler will be set up after cache manager is created
+        redisClient.on('ready', () => {
+          logger.info('💾 ✅ Redis connected and READY!');
+        });
         
         redisClient.on('error', (err) => {
           logger.error('💾 ❌ Redis error:', {
@@ -209,7 +253,6 @@ let redisClient = null;
             port: err.port,
             stack: err.stack
           });
-          // Don't crash the server
         });
         
         redisClient.on('close', () => {
@@ -220,23 +263,19 @@ let redisClient = null;
           logger.info('💾 🔄 Redis reconnecting...');
         });
         
-        // ✅ Don't wait for connection - let it happen in background
-        logger.info(`💾 Redis client initialized (lazy connect) - will connect in background`);
+        logger.info(`💾 Redis client initialized, connecting...`);
         logger.info(`💾 Current status: ${redisClient.status}`);
         
-        // ✅ Start connection attempt in background
-        redisClient.connect().catch(err => {
-          logger.warn('💾 ⚠️ Initial Redis connection attempt failed (will retry):', err.message);
-        });
-      } else {
-        logger.warn('💾 ⚠️ No Redis URL configured, running without Redis');
-        logger.info('💾 Checking environment variables:');
-        logger.info(`   REDIS_URL: ${process.env.REDIS_URL ? 'Set' : 'Not set'}`);
-        logger.info(`   REDIS_PRIVATE_URL: ${process.env.REDIS_PRIVATE_URL ? 'Set' : 'Not set'}`);
-        redisClient = null;
+        // ✅ Wait briefly for initial connection (non-blocking)
+        setTimeout(() => {
+          logger.info(`💾 Redis status after 2s: ${redisClient.status}`);
+        }, 2000);
       }
     } catch (error) {
-      logger.error('💾 ❌ Redis initialization failed:', error.message);
+      logger.error('💾 ❌ Redis initialization failed:', {
+        error: error.message,
+        stack: error.stack
+      });
       logger.warn('💾 ⚠️ Continuing without Redis (dashboard will not have caching)');
       redisClient = null;
     }
