@@ -1200,7 +1200,7 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
       const data = await getCachedQuery(req, `purchases-${days}days`, async () => {
-        const [dailyResult, jetResult, currencyResult] = await Promise.all([
+        const [dailyResult, jetResult, currencyResult, dailyBySkinResult] = await Promise.all([
           // Daily purchases
           db.query(`
             SELECT 
@@ -1244,13 +1244,61 @@ module.exports = (db, cacheManager) => {
             WHERE event_type = 'skin_purchased'
               AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
             GROUP BY payload->>'purchase_type'
+          `),
+          
+          // Daily breakdown by jet skin (for stacked bar chart)
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              payload->>'jet_id' as jet_id,
+              payload->>'jet_name' as jet_name,
+              payload->>'rarity' as rarity,
+              COUNT(*) as purchase_count
+            FROM events
+            WHERE event_type = 'skin_purchased'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at), payload->>'jet_id', payload->>'jet_name', payload->>'rarity'
+            ORDER BY date DESC, purchase_count DESC
           `)
         ]);
+
+        // Process daily breakdown by skin for stacked bar chart
+        // Group by date, then by jet_id
+        const dailyBySkin = {};
+        dailyBySkinResult.rows.forEach(row => {
+          const date = row.date;
+          const jetId = row.jet_id || 'unknown';
+          const jetName = row.jet_name || jetId;
+          const rarity = row.rarity || 'common';
+          const count = parseInt(row.purchase_count || 0);
+          
+          if (!dailyBySkin[date]) {
+            dailyBySkin[date] = {};
+          }
+          
+          if (!dailyBySkin[date][jetId]) {
+            dailyBySkin[date][jetId] = {
+              jet_id: jetId,
+              jet_name: jetName,
+              rarity: rarity,
+              purchase_count: 0
+            };
+          }
+          
+          dailyBySkin[date][jetId].purchase_count += count;
+        });
+
+        // Convert to array format for frontend
+        const dailyBreakdown = Object.keys(dailyBySkin).map(date => ({
+          date: date,
+          skins: Object.values(dailyBySkin[date])
+        })).sort((a, b) => new Date(a.date) - new Date(b.date)); // Sort chronologically
 
         return {
           daily: dailyResult.rows,
           top_items: jetResult.rows,
           by_currency: currencyResult.rows,
+          daily_by_skin: dailyBreakdown, // New: Daily breakdown by skin for stacked chart
           summary: {
             total_purchases: dailyResult.rows.reduce((sum, r) => sum + parseInt(r.total_purchases || 0), 0),
             unique_buyers: Math.max(...dailyResult.rows.map(r => parseInt(r.unique_buyers || 0)), 0)

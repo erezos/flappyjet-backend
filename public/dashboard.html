@@ -553,6 +553,16 @@
             </div>
         </div>
 
+        <!-- Jet Skins Purchased Daily Breakdown (Stacked Bar Chart) -->
+        <div class="charts-grid-fullwidth">
+            <div class="chart-card">
+                <h3>✈️ Jet Skins Purchased (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="jetSkinsDailyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Push Notifications Section -->
         <div class="section">
             <h2>🔔 Push Notifications</h2>
@@ -1306,7 +1316,7 @@
         }
 
         // ============================================================================
-        // PURCHASES CHART
+        // PURCHASES CHART (Top Purchased)
         // ============================================================================
 
         async function loadPurchases() {
@@ -1372,6 +1382,136 @@
                     scales: {
                         x: {
                             beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // JET SKINS DAILY BREAKDOWN (Stacked Bar Chart)
+        // ============================================================================
+
+        async function loadJetSkinsDaily() {
+            const data = await fetchAPI('purchases?days=7');
+            if (!data || !data.daily_by_skin) return;
+
+            const ctx = document.getElementById('jetSkinsDailyChart').getContext('2d');
+            
+            if (charts.jetSkinsDaily) charts.jetSkinsDaily.destroy();
+            
+            // Get all unique jet skins across all days
+            const allJetIds = new Set();
+            data.daily_by_skin.forEach(day => {
+                day.skins.forEach(skin => {
+                    allJetIds.add(skin.jet_id);
+                });
+            });
+            
+            // Create a map of jet_id to display name and rarity
+            const jetInfo = {};
+            data.daily_by_skin.forEach(day => {
+                day.skins.forEach(skin => {
+                    if (!jetInfo[skin.jet_id]) {
+                        jetInfo[skin.jet_id] = {
+                            name: skin.jet_name || skin.jet_id,
+                            rarity: skin.rarity || 'common'
+                        };
+                    }
+                });
+            });
+            
+            // Map rarity to colors
+            const rarityColors = {
+                'mythic': '#9f7aea',    // Purple
+                'legendary': '#ed8936', // Orange
+                'epic': '#667eea',      // Blue
+                'rare': '#48bb78',      // Green
+                'common': '#a0aec0'     // Gray
+            };
+            
+            // Generate colors for each jet (use rarity-based colors)
+            const jetColors = {};
+            Array.from(allJetIds).forEach(jetId => {
+                const rarity = jetInfo[jetId]?.rarity || 'common';
+                jetColors[jetId] = rarityColors[rarity] || '#a0aec0';
+            });
+            
+            // Prepare data for Chart.js stacked bar chart
+            const dates = data.daily_by_skin.map(day => {
+                const date = new Date(day.date);
+                return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+            });
+            
+            // Create datasets for each jet skin
+            const datasets = Array.from(allJetIds).map(jetId => {
+                const jetName = jetInfo[jetId]?.name || jetId;
+                const rarity = jetInfo[jetId]?.rarity || 'common';
+                
+                return {
+                    label: `${jetName} (${rarity.toUpperCase()})`,
+                    data: data.daily_by_skin.map(day => {
+                        const skinData = day.skins.find(s => s.jet_id === jetId);
+                        return skinData ? parseInt(skinData.purchase_count || 0) : 0;
+                    }),
+                    backgroundColor: jetColors[jetId],
+                    borderColor: jetColors[jetId],
+                    borderWidth: 1
+                };
+            });
+            
+            charts.jetSkinsDaily = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12,
+                                padding: 8,
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
+                                label: function(context) {
+                                    const value = context.parsed.y;
+                                    if (value === 0) return null; // Don't show zero values
+                                    return `${context.dataset.label}: ${value}`;
+                                },
+                                footer: function(tooltipItems) {
+                                    const total = tooltipItems.reduce((sum, item) => sum + item.parsed.y, 0);
+                                    return `Total: ${total}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1,
+                                precision: 0
+                            }
                         }
                     }
                 }
@@ -1674,6 +1814,7 @@
                 loadContinues(),
                 loadMissions(),
                 loadPurchases(),
+                loadJetSkinsDaily(),
                 loadNotifications(),
                 loadActivityFeed()
             ]);
