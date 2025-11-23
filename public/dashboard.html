@@ -125,6 +125,14 @@
             margin-bottom: 30px;
         }
 
+        /* Full-width stacked layout for tables */
+        .charts-grid-fullwidth {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
         .chart-card {
             background: white;
             padding: 25px;
@@ -455,8 +463,8 @@
             </div>
         </div>
 
-        <!-- Level Performance -->
-        <div class="charts-grid">
+        <!-- Level Performance & Retention - Stacked vertically for full width -->
+        <div class="charts-grid-fullwidth">
             <div class="chart-card">
                 <h3>
                     🎮 Level Completion Rate (7 Days)
