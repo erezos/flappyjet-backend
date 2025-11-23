@@ -459,7 +459,7 @@
         <div class="charts-grid">
             <div class="chart-card">
                 <h3>
-                    🎮 Level Completion Rate 
+                    🎮 Level Completion Rate (7 Days)
                     <select id="zoneSelector" onchange="loadLevelPerformance()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
                         <option value="1">Zone 1</option>
                         <option value="2">Zone 2</option>
@@ -473,8 +473,11 @@
                         <option value="10">Zone 10</option>
                     </select>
                 </h3>
-                <div class="chart-container">
-                    <canvas id="levelChart"></canvas>
+                <div class="retention-table-container" id="levelPerformanceTableContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading level performance data...
+                    </div>
                 </div>
             </div>
 
@@ -801,69 +804,84 @@
 
         async function loadLevelPerformance() {
             const zone = document.getElementById('zoneSelector').value;
-            const data = await fetchAPI(`level-performance?zone=${zone}`);
-            if (!data) return;
-
-            const ctx = document.getElementById('levelChart').getContext('2d');
+            const container = document.getElementById('levelPerformanceTableContainer');
             
-            if (charts.level) charts.level.destroy();
-            
-            charts.level = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.levels.map(l => `Level ${l.level}`),
-                    datasets: [{
-                        label: 'Completion Rate (%)',
-                        data: data.levels.map(l => l.completion_rate),
-                        backgroundColor: data.levels.map(l => 
-                            l.completion_rate >= 70 ? '#48bb78' : 
-                            l.completion_rate >= 40 ? '#ed8936' : '#f56565'
-                        ),
-                        borderRadius: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            callbacks: {
-                                title: function(context) {
-                                    const index = context[0].dataIndex;
-                                    const level = data.levels[index];
-                                    return `Level ${level.level}`;
-                                },
-                                afterTitle: function(context) {
-                                    const index = context[0].dataIndex;
-                                    const level = data.levels[index];
-                                    return [
-                                        `Started: ${level.started} players`,
-                                        `Failed: ${level.failed} players`,
-                                        `Completed: ${level.completed} players`
-                                    ];
-                                },
-                                label: function(context) {
-                                    return `Completion Rate: ${context.parsed.y.toFixed(1)}%`;
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: {
-                                callback: function(value) {
-                                    return value + '%';
-                                }
-                            }
-                        }
-                    }
+            try {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading level performance data...</div>';
+                
+                const data = await fetchAPI(`level-performance?zone=${zone}&daily=true`);
+                if (!data || !data.daily) {
+                    container.innerHTML = '<div class="loading">No data available</div>';
+                    return;
                 }
-            });
+
+                // Calculate level range for zone
+                const startLevel = (zone - 1) * 10 + 1;
+                const endLevel = zone * 10;
+                const levels = [];
+                for (let i = startLevel; i <= endLevel; i++) {
+                    levels.push(i);
+                }
+
+                // Build table HTML
+                let tableHTML = '<table class="retention-table" style="width: 100%;">';
+                
+                // Header row
+                tableHTML += '<thead><tr>';
+                tableHTML += '<th>Date</th>';
+                levels.forEach(level => {
+                    tableHTML += `<th>Level ${level}</th>`;
+                });
+                tableHTML += '</tr></thead>';
+                
+                // Data rows
+                tableHTML += '<tbody>';
+                data.daily.forEach(day => {
+                    const date = new Date(day.date);
+                    const dateStr = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                    tableHTML += '<tr>';
+                    tableHTML += `<td style="font-weight: 600;">${dateStr}</td>`;
+                    
+                    levels.forEach(level => {
+                        const levelData = day.levels[level];
+                        const started = levelData.started || 0;
+                        const completed = levelData.completed || 0;
+                        const rate = levelData.completion_rate || 0;
+                        
+                        // Color coding
+                        let color = '#f56565'; // red
+                        if (rate >= 70) color = '#48bb78'; // green
+                        else if (rate >= 40) color = '#ed8936'; // orange
+                        
+                        const displayText = started > 0 
+                            ? `${completed}/${started} <span style="color: ${color}; font-weight: 600;">${rate}%</span>`
+                            : '<span style="color: #999;">-</span>';
+                        
+                        tableHTML += `<td style="text-align: center;">${displayText}</td>`;
+                    });
+                    tableHTML += '</tr>';
+                });
+                
+                // Average row
+                tableHTML += '<tr style="background-color: rgba(102, 126, 234, 0.1); font-weight: 600; border-top: 2px solid #667eea;">';
+                tableHTML += '<td>Avg</td>';
+                levels.forEach(level => {
+                    const avgRate = data.averages[level] || 0;
+                    let color = '#f56565';
+                    if (avgRate >= 70) color = '#48bb78';
+                    else if (avgRate >= 40) color = '#ed8936';
+                    
+                    tableHTML += `<td style="text-align: center; color: ${color};">${avgRate}%</td>`;
+                });
+                tableHTML += '</tr>';
+                
+                tableHTML += '</tbody></table>';
+                container.innerHTML = tableHTML;
+                
+            } catch (error) {
+                console.error('Error loading level performance:', error);
+                container.innerHTML = '<div class="loading">Error loading data</div>';
+            }
         }
 
         // ============================================================================

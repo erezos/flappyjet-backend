@@ -370,48 +370,125 @@ module.exports = (db, cacheManager) => {
   // ============================================================================
 
   /**
-   * GET /api/dashboard/level-performance?zone=1
+   * GET /api/dashboard/level-performance?zone=1&daily=true
    * Returns completion rates for levels in a zone
+   * If daily=true, returns daily breakdown for last 7 days with averages
    * ✅ FIX: Use actual events from Flutter app (level_started, level_failed, game_ended)
    */
   router.get('/level-performance', async (req, res) => {
     try {
       const zone = parseInt(req.query.zone || 1);
+      const daily = req.query.daily === 'true';
       
-      const data = await getCachedQuery(req, `level-performance-zone${zone}`, async () => {
+      const cacheKey = daily ? `level-performance-daily-zone${zone}` : `level-performance-zone${zone}`;
+      
+      const data = await getCachedQuery(req, cacheKey, async () => {
         // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
         const startLevel = (zone - 1) * 10 + 1;
         const endLevel = zone * 10;
+        const levelIds = Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',');
         
-        // ✅ FIX: Your app sends level_started and level_failed
-        // We'll calculate completion rate as: (started - failed) / started
-        const result = await db.query(`
-          SELECT 
-            payload->>'level_id' as level,
-            COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) as players_started,
-            COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END) as players_failed,
-            ROUND(100.0 * (COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) - 
-                           COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END)) / 
-                  NULLIF(COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END), 0), 1) as completion_rate
-          FROM events
-          WHERE payload->>'level_id' IN (${Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',')})
-            AND event_type IN ('level_started', 'level_failed')
-            AND received_at >= CURRENT_DATE - INTERVAL '7 days'
-          GROUP BY payload->>'level_id'
-          ORDER BY CAST(payload->>'level_id' AS INTEGER)
-        `);
+        if (daily) {
+          // Daily breakdown for last 7 days
+          const result = await db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              payload->>'level_id' as level,
+              COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) as players_started,
+              COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END) as players_failed
+            FROM events
+            WHERE payload->>'level_id' IN (${levelIds})
+              AND event_type IN ('level_started', 'level_failed')
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY DATE(received_at), payload->>'level_id'
+            ORDER BY DATE(received_at) DESC, CAST(payload->>'level_id' AS INTEGER)
+          `);
 
-        return {
-          zone,
-          levels: result.rows.map(r => ({
-            level: parseInt(r.level),
-            started: parseInt(r.players_started),
-            failed: parseInt(r.players_failed),
-            completed: parseInt(r.players_started) - parseInt(r.players_failed),
-            completion_rate: parseFloat(r.completion_rate) || 0
-          })),
-          last_updated: new Date().toISOString()
-        };
+          // Group by date
+          const dailyData = {};
+          result.rows.forEach(row => {
+            const date = row.date.toISOString().split('T')[0];
+            if (!dailyData[date]) {
+              dailyData[date] = {};
+            }
+            const level = parseInt(row.level);
+            const started = parseInt(row.players_started || 0);
+            const failed = parseInt(row.players_failed || 0);
+            const completed = started - failed;
+            const completionRate = started > 0 ? parseFloat(((completed / started) * 100).toFixed(1)) : 0;
+            
+            dailyData[date][level] = {
+              level,
+              started,
+              completed,
+              failed,
+              completion_rate: completionRate
+            };
+          });
+
+          // Convert to array format and fill missing dates/levels
+          const dates = Object.keys(dailyData).sort((a, b) => new Date(b) - new Date(a));
+          const dailyArray = dates.map(date => {
+            const levels = {};
+            for (let level = startLevel; level <= endLevel; level++) {
+              levels[level] = dailyData[date][level] || {
+                level,
+                started: 0,
+                completed: 0,
+                failed: 0,
+                completion_rate: 0
+              };
+            }
+            return { date, levels };
+          });
+
+          // Calculate averages
+          const averages = {};
+          for (let level = startLevel; level <= endLevel; level++) {
+            const rates = dailyArray
+              .map(d => d.levels[level].completion_rate)
+              .filter(r => r > 0);
+            averages[level] = rates.length > 0
+              ? parseFloat((rates.reduce((sum, r) => sum + r, 0) / rates.length).toFixed(1))
+              : 0;
+          }
+
+          return {
+            zone,
+            daily: dailyArray,
+            averages,
+            last_updated: new Date().toISOString()
+          };
+        } else {
+          // Original aggregated format
+          const result = await db.query(`
+            SELECT 
+              payload->>'level_id' as level,
+              COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) as players_started,
+              COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END) as players_failed,
+              ROUND(100.0 * (COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) - 
+                             COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END)) / 
+                    NULLIF(COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END), 0), 1) as completion_rate
+            FROM events
+            WHERE payload->>'level_id' IN (${levelIds})
+              AND event_type IN ('level_started', 'level_failed')
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY payload->>'level_id'
+            ORDER BY CAST(payload->>'level_id' AS INTEGER)
+          `);
+
+          return {
+            zone,
+            levels: result.rows.map(r => ({
+              level: parseInt(r.level),
+              started: parseInt(r.players_started),
+              failed: parseInt(r.players_failed),
+              completed: parseInt(r.players_started) - parseInt(r.players_failed),
+              completion_rate: parseFloat(r.completion_rate) || 0
+            })),
+            last_updated: new Date().toISOString()
+          };
+        }
       });
 
       res.json(data);
