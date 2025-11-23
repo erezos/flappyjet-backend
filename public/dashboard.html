@@ -563,6 +563,16 @@
             </div>
         </div>
 
+        <!-- Interstitial Ads Daily Chart -->
+        <div class="charts-grid-fullwidth">
+            <div class="chart-card">
+                <h3>📺 Interstitial Ads Shown (7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="interstitialAdsDailyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Push Notifications Section -->
         <div class="section">
             <h2>🔔 Push Notifications</h2>
@@ -1519,6 +1529,72 @@
         }
 
         // ============================================================================
+        // INTERSTITIAL ADS DAILY CHART
+        // ============================================================================
+
+        async function loadInterstitialAdsDaily() {
+            const data = await fetchAPI('ad-performance');
+            if (!data || !data.interstitial || !data.interstitial.daily) return;
+
+            const ctx = document.getElementById('interstitialAdsDailyChart').getContext('2d');
+            
+            if (charts.interstitialAdsDaily) charts.interstitialAdsDaily.destroy();
+            
+            // Sort daily data by date (oldest first) for proper chart display
+            const sortedDaily = [...data.interstitial.daily].sort((a, b) => 
+                new Date(a.date) - new Date(b.date)
+            );
+            
+            charts.interstitialAdsDaily = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedDaily.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: 'Interstitial Ads Shown',
+                        data: sortedDaily.map(d => parseInt(d.shown) || 0),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 5,
+                        pointHoverRadius: 7,
+                        pointBackgroundColor: '#667eea',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
+                                label: function(context) {
+                                    return `Ads Shown: ${context.parsed.y}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0,
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
         // ACTIVITY FEED
         // ============================================================================
 
@@ -1815,6 +1891,7 @@
                 loadMissions(),
                 loadPurchases(),
                 loadJetSkinsDaily(),
+                loadInterstitialAdsDaily(),
                 loadNotifications(),
                 loadActivityFeed()
             ]);

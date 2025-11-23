@@ -611,7 +611,7 @@ module.exports = (db, cacheManager) => {
   router.get('/ad-performance', async (req, res) => {
     try {
       const data = await getCachedQuery(req, 'ad-performance', async () => {
-        const [rewardedResult, interstitialResult] = await Promise.all([
+        const [rewardedResult, interstitialResult, interstitialDailyResult] = await Promise.all([
           // Rewarded ads
           db.query(`
             SELECT 
@@ -624,13 +624,25 @@ module.exports = (db, cacheManager) => {
               AND received_at >= CURRENT_DATE - INTERVAL '7 days'
           `),
           
-          // Interstitial ads
+          // Interstitial ads (total)
           db.query(`
             SELECT 
               COUNT(*) as shown
             FROM events
             WHERE event_type = 'interstitial_shown'
               AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+          `),
+          
+          // Interstitial ads daily breakdown (7 days)
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as shown
+            FROM events
+            WHERE event_type = 'interstitial_shown'
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY DATE(received_at)
+            ORDER BY date ASC
           `)
         ]);
 
@@ -641,7 +653,11 @@ module.exports = (db, cacheManager) => {
             completion_rate: parseFloat(rewardedResult.rows[0]?.completion_rate || 0)
           },
           interstitial: {
-            shown: parseInt(interstitialResult.rows[0]?.shown || 0)
+            shown: parseInt(interstitialResult.rows[0]?.shown || 0),
+            daily: interstitialDailyResult.rows.map(row => ({
+              date: row.date,
+              shown: parseInt(row.shown || 0)
+            }))
           },
           message: (parseInt(rewardedResult.rows[0]?.shown || 0) === 0 && parseInt(interstitialResult.rows[0]?.shown || 0) === 0) 
             ? 'No ad events tracked yet. Add ad event tracking to Flutter app to see data.' 
@@ -1507,4 +1523,5 @@ module.exports = (db, cacheManager) => {
 
   return router;
 };
+
 

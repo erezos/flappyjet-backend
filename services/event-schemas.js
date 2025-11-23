@@ -375,7 +375,23 @@ const adWatchedSchema = Joi.object({
   reward_amount: Joi.number().integer().min(0).optional(),
 });
 
-// 27. share_clicked - Social share
+// 27. interstitial_shown - Interstitial ad displayed
+const interstitialShownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('interstitial_shown').required(),
+  wins_this_session: Joi.number().integer().min(0).optional(),
+  lifetime_wins: Joi.number().integer().min(0).optional(),
+  time_since_last_ad: Joi.number().integer().min(0).allow(null).optional(), // seconds
+});
+
+// 28. interstitial_dismissed - Interstitial ad closed
+const interstitialDismissedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('interstitial_dismissed').required(),
+  wins_this_session: Joi.number().integer().min(0).optional(),
+});
+
+// 29. share_clicked - Social share
 const shareClickedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('share_clicked').required(),
@@ -437,6 +453,8 @@ const schemaMap = {
   leaderboard_viewed: leaderboardViewedSchema,
   tournament_entered: tournamentEnteredSchema,
   ad_watched: adWatchedSchema,
+  interstitial_shown: interstitialShownSchema,
+  interstitial_dismissed: interstitialDismissedSchema,
   share_clicked: shareClickedSchema,
   notification_received: notificationReceivedSchema,
 };
