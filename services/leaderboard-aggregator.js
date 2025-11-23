@@ -400,8 +400,6 @@ class LeaderboardAggregator {
           lg.nickname,
           lg.high_score as score,
           lg.last_played_at as timestamp,
-          lg.jet_skin,
-          lg.theme,
           ROW_NUMBER() OVER (ORDER BY lg.high_score DESC, lg.last_played_at DESC) as rank
         FROM leaderboard_global lg
         ORDER BY lg.high_score DESC, lg.last_played_at DESC
@@ -416,8 +414,8 @@ class LeaderboardAggregator {
         nickname: row.nickname || 'Anonymous',
         score: parseInt(row.score) || 0,
         timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
-        jet_skin: row.jet_skin || null,
-        theme: row.theme || null,
+        jet_skin: null, // Column doesn't exist in leaderboard_global table
+        theme: null, // Column doesn't exist in leaderboard_global table
       }));
 
       // Get user's position if requested
@@ -429,8 +427,6 @@ class LeaderboardAggregator {
             lg.nickname,
             lg.high_score as score,
             lg.last_played_at as timestamp,
-            lg.jet_skin,
-            lg.theme,
             (SELECT COUNT(*) + 1 
              FROM leaderboard_global lg2 
              WHERE lg2.high_score > lg.high_score 
@@ -451,8 +447,8 @@ class LeaderboardAggregator {
             nickname: row.nickname || 'Anonymous',
             score: parseInt(row.score) || 0,
             timestamp: row.timestamp ? new Date(row.timestamp).getTime() : Date.now(),
-            jet_skin: row.jet_skin || null,
-            theme: row.theme || null,
+            jet_skin: null, // Column doesn't exist in leaderboard_global table
+            theme: null, // Column doesn't exist in leaderboard_global table
           };
         }
       }
