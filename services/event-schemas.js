@@ -45,6 +45,7 @@ const appLaunchedSchema = Joi.object({
   osVersion: Joi.string().optional(),
   appVersion: Joi.string().optional(),
   nickname: Joi.string().max(50).optional(), // ✅ NEW: Player nickname (1-50 chars)
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
   // ✅ FIX: Flutter client sends these from getSessionMetadata()
   daysSinceInstall: Joi.number().integer().min(0).optional(),
   daysSinceLastSession: Joi.number().integer().min(0).optional(),
@@ -59,6 +60,7 @@ const userRegisteredSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('user_registered').required(),
   registration_method: Joi.string().valid('device_id', 'anonymous').required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 4. settings_changed - User preferences updated
@@ -68,6 +70,7 @@ const settingsChangedSchema = Joi.object({
   setting_name: Joi.string().required(),
   old_value: Joi.any().optional(),
   new_value: Joi.any().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 5. app_uninstalled - Tracked via backend (no Flutter payload)
@@ -75,6 +78,7 @@ const appUninstalledSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('app_uninstalled').required(),
   last_seen_at: Joi.string().isoDate().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 6. user_installed - User installation event (similar to app_installed)
@@ -104,6 +108,7 @@ const gameStartedSchema = Joi.object({
   selected_skin: Joi.string().optional(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   powerups_active: Joi.array().items(Joi.string()).default([]),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 7. game_ended - Game over (HIGH PRIORITY - updates leaderboards!)
@@ -120,6 +125,7 @@ const gameEndedSchema = Joi.object({
   cause_of_death: Joi.string().required(), // 'obstacle_collision', 'quit', etc.
   max_combo: Joi.number().integer().min(0).required(),
   powerups_used: Joi.array().items(Joi.string()).default([]),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 8. game_paused - Mid-game pause
@@ -129,6 +135,7 @@ const gamePausedSchema = Joi.object({
   game_mode: Joi.string().valid('endless', 'story').required(),
   score_at_pause: Joi.number().integer().min(0).required(),
   time_played_seconds: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 9. game_resumed - Resume from pause
@@ -137,6 +144,7 @@ const gameResumedSchema = Joi.object({
   event_type: Joi.string().valid('game_resumed').required(),
   game_mode: Joi.string().valid('endless', 'story').required(),
   pause_duration_seconds: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 10. continue_used - Ad watch/continue purchase (NEW)
@@ -150,6 +158,7 @@ const continueUsedSchema = Joi.object({
   cost_gems: Joi.number().integer().min(0).required(),
   lives_restored: Joi.number().integer().min(1).required(),
   continues_used_this_run: Joi.number().integer().min(1).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 11. level_started - Story mode level start (NEW)
@@ -164,6 +173,7 @@ const levelStartedSchema = Joi.object({
   attempt_number: Joi.number().integer().min(1).required(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   is_first_attempt: Joi.boolean().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 12. level_completed - Story mode level done
@@ -177,6 +187,7 @@ const levelCompletedSchema = Joi.object({
   time_seconds: Joi.number().integer().min(0).required(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   first_attempt: Joi.boolean().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 13. level_failed - Story mode level failed (NEW)
@@ -193,6 +204,7 @@ const levelFailedSchema = Joi.object({
   time_survived_seconds: Joi.number().integer().min(0).required(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   continues_used: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // ============================================================================
@@ -209,6 +221,7 @@ const currencyEarnedSchema = Joi.object({
   source_id: Joi.string().required(), // mission_id, level_id, prize_id, etc.
   balance_before: Joi.number().integer().min(0).required(),
   balance_after: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 15. currency_spent - Coins/gems spent (NEW)
@@ -221,6 +234,7 @@ const currencySpentSchema = Joi.object({
   item_id: Joi.string().required(), // jet_id, booster_id, etc.
   balance_before: Joi.number().integer().min(0).required(),
   balance_after: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 15a. skin_purchased - Skin/jet purchase with coins or gems
@@ -233,6 +247,7 @@ const skinPurchasedSchema = Joi.object({
   cost_coins: Joi.number().integer().min(0).required(),
   cost_gems: Joi.number().integer().min(0).required(),
   rarity: Joi.string().optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 15b. item_unlocked - Any item unlocked (skin, achievement, etc)
@@ -244,6 +259,7 @@ const itemUnlockedSchema = Joi.object({
   item_name: Joi.string().optional(),
   unlock_method: Joi.string().optional(), // 'purchase', 'achievement', 'mission_reward', etc.
   acquisition_method: Joi.string().optional(), // ✅ FIX: Accept acquisition_method (Flutter sends this)
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 15c. item_equipped - Item equipped (skin, booster, etc)
@@ -253,6 +269,7 @@ const itemEquippedSchema = Joi.object({
   item_type: Joi.string().required(), // 'skin', 'booster', etc.
   item_id: Joi.string().required(),
   item_name: Joi.string().optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 16. purchase_initiated - IAP start
@@ -263,6 +280,7 @@ const purchaseInitiatedSchema = Joi.object({
   product_type: Joi.string().valid('consumable', 'non_consumable', 'subscription').required(),
   price_usd: Joi.number().min(0).required(),
   currency_code: Joi.string().length(3).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 17. purchase_completed - IAP success
@@ -276,6 +294,7 @@ const purchaseCompletedSchema = Joi.object({
   transaction_id: Joi.string().required(),
   gems_granted: Joi.number().integer().min(0).optional(),
   coins_granted: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // ============================================================================
@@ -291,6 +310,7 @@ const skinUnlockedSchema = Joi.object({
   unlock_method: Joi.string().valid('purchase', 'reward', 'achievement').required(),
   cost_coins: Joi.number().integer().min(0).optional(),
   cost_gems: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 19. skin_equipped - Jet equipped
@@ -300,6 +320,7 @@ const skinEquippedSchema = Joi.object({
   skin_id: Joi.string().required(),
   skin_name: Joi.string().required(),
   previous_skin_id: Joi.string().optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 20. achievement_unlocked - Achievement earned (NEW)
@@ -312,6 +333,7 @@ const achievementUnlockedSchema = Joi.object({
   achievement_category: Joi.string().required(), // 'AchievementCategory.gameplay', etc.
   reward_coins: Joi.number().integer().min(0).required(),
   reward_gems: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 21. mission_completed - Daily mission done (NEW)
@@ -323,6 +345,7 @@ const missionCompletedSchema = Joi.object({
   mission_difficulty: Joi.string().required(), // 'MissionDifficulty.easy', etc.
   reward_coins: Joi.number().integer().min(0).required(),
   completion_time_seconds: Joi.number().integer().min(0).required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 22. daily_streak_claimed - Daily reward claimed
@@ -333,6 +356,7 @@ const dailyStreakClaimedSchema = Joi.object({
   coins_reward: Joi.number().integer().min(0).required(),
   gems_reward: Joi.number().integer().min(0).optional(),
   streak_reset: Joi.boolean().optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 23. level_unlocked - Story level unlocked
@@ -343,6 +367,7 @@ const levelUnlockedSchema = Joi.object({
   zone_id: Joi.number().integer().min(1).required(),
   level_name: Joi.string().required(),
   unlock_method: Joi.string().valid('progression', 'purchase').required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // ============================================================================
@@ -355,6 +380,7 @@ const leaderboardViewedSchema = Joi.object({
   event_type: Joi.string().valid('leaderboard_viewed').required(),
   leaderboard_type: Joi.string().valid('global', 'tournament', 'friends').required(),
   user_rank: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 25. tournament_entered - Implicit from game_ended in endless mode
@@ -363,6 +389,7 @@ const tournamentEnteredSchema = Joi.object({
   event_type: Joi.string().valid('tournament_entered').required(),
   tournament_id: Joi.string().required(),
   tournament_name: Joi.string().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 26. ad_watched - Rewarded ad
@@ -373,6 +400,7 @@ const adWatchedSchema = Joi.object({
   ad_placement: Joi.string().required(), // 'game_over', 'store', etc.
   reward_type: Joi.string().optional(), // 'coins', 'gems', 'continue'
   reward_amount: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 27. interstitial_shown - Interstitial ad displayed
@@ -382,6 +410,7 @@ const interstitialShownSchema = Joi.object({
   wins_this_session: Joi.number().integer().min(0).optional(),
   lifetime_wins: Joi.number().integer().min(0).optional(),
   time_since_last_ad: Joi.number().integer().min(0).allow(null).optional(), // seconds
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 28. interstitial_dismissed - Interstitial ad closed
@@ -389,6 +418,7 @@ const interstitialDismissedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('interstitial_dismissed').required(),
   wins_this_session: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 29. share_clicked - Social share
@@ -398,6 +428,7 @@ const shareClickedSchema = Joi.object({
   share_type: Joi.string().valid('score', 'achievement', 'invite').required(),
   platform: Joi.string().optional(), // 'facebook', 'twitter', etc.
   score_shared: Joi.number().integer().min(0).optional(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // 28. notification_received - Push notification
@@ -407,6 +438,7 @@ const notificationReceivedSchema = Joi.object({
   notification_type: Joi.string().required(),
   notification_title: Joi.string().optional(),
   opened: Joi.boolean().required(),
+  country: Joi.string().length(2).optional(), // ✅ NEW: Country code (2-letter ISO, optional)
 });
 
 // ============================================================================
