@@ -4,12 +4,18 @@
  * 
  * POST /api/events - Accept events (batch or single)
  * GET /api/events/stats - Get event ingestion stats
+ * 
+ * Features:
+ * - Server-side country detection via IP geolocation
+ * - Redis caching of user countries (7-day TTL)
+ * - PostgreSQL persistence for analytics
  */
 
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 const EventProcessor = require('../services/event-processor');
+const GeolocationService = require('../services/geolocation-service');
 
 /**
  * POST /api/events
@@ -46,9 +52,35 @@ router.post('/', async (req, res) => {
       events = events.slice(0, MAX_BATCH_SIZE);
     }
     
+    // 🌍 Server-side country detection via IP geolocation
+    // Get country for the user (all events in batch have same user_id)
+    const userId = events[0]?.user_id;
+    let detectedCountry = null;
+    
+    if (userId) {
+      try {
+        const geoService = new GeolocationService(
+          req.app.locals.redisClient, 
+          req.app.locals.db
+        );
+        detectedCountry = await geoService.getCountryForUser(userId, req);
+      } catch (geoError) {
+        logger.debug(`🌍 GeoIP lookup failed: ${geoError.message}`);
+      }
+    }
+
+    // Inject country into all events (server-side, authoritative)
+    if (detectedCountry) {
+      events = events.map(event => ({
+        ...event,
+        country: detectedCountry, // Server-detected country (overrides any client value)
+      }));
+    }
+
     logger.info('📥 Events received', { 
       count: events.length,
       from_ip: req.ip,
+      country: detectedCountry || 'unknown',
       user_agent: req.get('user-agent')
     });
 

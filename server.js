@@ -358,9 +358,10 @@ let redisClient = null;
       };
     }
     
-    // ✅ Store cacheManager in app.locals for route access
+    // ✅ Store cacheManager and redisClient in app.locals for route access
     app.locals.cacheManager = cacheManager;
-    logger.info('💾 ✅ Cache Manager set in app.locals for routes');
+    app.locals.redisClient = redisClient; // For geolocation caching in events.js
+    logger.info('💾 ✅ Cache Manager and Redis Client set in app.locals for routes');
     
     // ✅ NEW: Periodic Redis health check (upgrade cache manager if Redis connects later)
     if (redisClient && !cacheManager.redis) {
@@ -533,6 +534,10 @@ let redisClient = null;
     logger.error(`🚂 ⚠️ Server started with initialization errors on port ${PORT}`);
   });
 });
+
+// Trust Railway's proxy for correct client IP extraction
+// This ensures req.ip returns the real client IP, not the proxy's IP
+app.set('trust proxy', true);
 
 // Middleware
 app.use(helmet({
