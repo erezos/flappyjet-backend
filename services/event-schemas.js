@@ -75,6 +75,16 @@ const settingsChangedSchema = Joi.object({
   new_value: Joi.any().required(),
 });
 
+// 4b. nickname_changed - Player nickname updated
+// ✅ CRITICAL: Backend updates `users` table when receiving this event
+// This ensures push notifications use the correct personalized nickname
+const nicknameChangedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('nickname_changed').required(),
+  new_nickname: Joi.string().min(2).max(20).required(),
+  old_nickname: Joi.string().max(20).optional(),
+});
+
 // 5. app_uninstalled - Tracked via backend (no Flutter payload)
 const appUninstalledSchema = Joi.object({
   ...baseFields,
@@ -534,6 +544,7 @@ const schemaMap = {
   app_launched: appLaunchedSchema,
   user_registered: userRegisteredSchema,
   settings_changed: settingsChangedSchema,
+  nickname_changed: nicknameChangedSchema, // ✅ NEW: Nickname updates (updates users table)
   app_uninstalled: appUninstalledSchema,
   user_installed: userInstalledSchema, // ✅ NEW: Add user_installed event
   
@@ -633,6 +644,7 @@ module.exports = {
   appLaunchedSchema,
   userRegisteredSchema,
   settingsChangedSchema,
+  nicknameChangedSchema, // ✅ NEW: Nickname change event
   appUninstalledSchema,
   userInstalledSchema, // ✅ NEW: Export user_installed schema
   gameStartedSchema,

@@ -499,9 +499,13 @@ module.exports = (db, cacheManager) => {
   });
 
   /**
-   * GET /api/dashboard/level-completion-stats?zone=1
+   * GET /api/dashboard/level-completion-stats?zone=1&date=2024-11-28
    * Returns actual completion metrics using level_completed events
    * More accurate than level-performance which uses "started - failed" approximation
+   * 
+   * Query params:
+   * - zone: Zone number (1-3), default 1
+   * - date: Specific date (YYYY-MM-DD), or 'all' for all-time, default is last 7 days
    * 
    * Returns:
    * - total_completions: Total level_completed events
@@ -514,7 +518,26 @@ module.exports = (db, cacheManager) => {
   router.get('/level-completion-stats', async (req, res) => {
     try {
       const zone = parseInt(req.query.zone || 1);
-      const cacheKey = `level-completion-stats-zone${zone}`;
+      const dateParam = req.query.date; // 'YYYY-MM-DD', 'all', or undefined (default: 7 days)
+      
+      // Build date filter
+      let dateFilter = '';
+      let dateLabel = 'Last 7 Days';
+      
+      if (dateParam === 'all') {
+        dateFilter = ''; // No date filter
+        dateLabel = 'All Time';
+      } else if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        // Specific date: filter for that day only
+        dateFilter = `AND DATE(received_at) = '${dateParam}'`;
+        dateLabel = dateParam;
+      } else {
+        // Default: last 7 days
+        dateFilter = `AND received_at >= CURRENT_DATE - INTERVAL '7 days'`;
+        dateLabel = 'Last 7 Days';
+      }
+      
+      const cacheKey = `level-completion-stats-zone${zone}-${dateParam || '7days'}`;
       
       const data = await getCachedQuery(req, cacheKey, async () => {
         // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
@@ -534,7 +557,7 @@ module.exports = (db, cacheManager) => {
           FROM events
           WHERE event_type = 'level_completed'
             AND payload->>'level_id' IN (${levelIds})
-            AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+            ${dateFilter}
           GROUP BY payload->>'level_id'
           ORDER BY CAST(payload->>'level_id' AS INTEGER)
         `);
@@ -547,7 +570,7 @@ module.exports = (db, cacheManager) => {
           FROM events
           WHERE event_type = 'level_started'
             AND payload->>'level_id' IN (${levelIds})
-            AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+            ${dateFilter}
           GROUP BY payload->>'level_id'
         `);
 
@@ -604,6 +627,7 @@ module.exports = (db, cacheManager) => {
 
         return {
           zone,
+          date_filter: dateLabel, // ✅ NEW: Show which date filter is active
           levels: allLevels,
           summary: {
             total_completions: allLevels.reduce((sum, l) => sum + l.total_completions, 0),

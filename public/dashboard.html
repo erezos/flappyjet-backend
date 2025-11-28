@@ -543,6 +543,15 @@
                         <option value="4">Zone 4</option>
                         <option value="5">Zone 5</option>
                     </select>
+                    <select id="levelStatsDateSelector" onchange="loadLevelCompletionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="7days">Last 7 Days</option>
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="all">All Time</option>
+                        <option value="custom">Custom Date...</option>
+                    </select>
+                    <input type="date" id="levelStatsCustomDate" onchange="loadLevelCompletionStats()" style="margin-left: 5px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white; display: none;">
+                    <span id="levelStatsDateLabel" style="margin-left: 10px; font-size: 12px; color: #666; font-weight: normal;"></span>
                     <span style="margin-left: 15px; font-size: 12px; color: #888; font-weight: normal;">
                         ℹ️ Based on actual level_completed events (more accurate than started-failed)
                     </span>
@@ -1026,16 +1035,51 @@
 
         async function loadLevelCompletionStats() {
             const zone = document.getElementById('levelStatsZoneSelector').value;
+            const dateSelector = document.getElementById('levelStatsDateSelector');
+            const customDateInput = document.getElementById('levelStatsCustomDate');
+            const dateLabelSpan = document.getElementById('levelStatsDateLabel');
             const container = document.getElementById('levelCompletionStatsContainer');
+            
+            // Handle date selection
+            let dateParam = '';
+            const dateValue = dateSelector.value;
+            
+            if (dateValue === 'custom') {
+                customDateInput.style.display = 'inline-block';
+                if (customDateInput.value) {
+                    dateParam = `&date=${customDateInput.value}`;
+                } else {
+                    // Default to today if no custom date selected yet
+                    const today = new Date().toISOString().split('T')[0];
+                    customDateInput.value = today;
+                    dateParam = `&date=${today}`;
+                }
+            } else {
+                customDateInput.style.display = 'none';
+                if (dateValue === 'today') {
+                    const today = new Date().toISOString().split('T')[0];
+                    dateParam = `&date=${today}`;
+                } else if (dateValue === 'yesterday') {
+                    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+                    dateParam = `&date=${yesterday}`;
+                } else if (dateValue === 'all') {
+                    dateParam = '&date=all';
+                }
+                // '7days' = no param (default)
+            }
             
             try {
                 container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading level completion stats...</div>';
                 
-                const data = await fetchAPI(`level-completion-stats?zone=${zone}`);
+                const data = await fetchAPI(`level-completion-stats?zone=${zone}${dateParam}`);
                 if (!data || !data.levels) {
                     container.innerHTML = '<div class="loading">No completion data yet. Fire level_completed events to see stats.</div>';
+                    dateLabelSpan.textContent = '';
                     return;
                 }
+                
+                // Display the date filter being used
+                dateLabelSpan.textContent = data.date_filter ? `📅 ${data.date_filter}` : '';
 
                 // Build table HTML with 3 key metrics
                 let tableHTML = '<table class="retention-table" style="width: 100%;">';

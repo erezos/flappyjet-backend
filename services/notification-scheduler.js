@@ -226,17 +226,27 @@ class NotificationScheduler {
   /**
    * Get user context for personalization
    * 
+   * ✅ CRITICAL: Reads nickname from `users` table FIRST (authoritative source)
+   * This ensures nickname updates from the app are used in notifications
+   * 
    * @param {string} userId - User ID
    * @returns {Promise<Object>} - User context (nickname, lastLevel, streak, gamesPlayed)
    */
   async _getUserContext(userId) {
     try {
       const result = await this.db.query(`
-        WITH user_metadata AS (
-          -- Get latest user profile data
+        WITH user_profile AS (
+          -- ✅ AUTHORITATIVE: Get nickname from users table (updated via /api/player/profile)
+          SELECT 
+            user_id,
+            COALESCE(nickname, 'Player') as nickname
+          FROM users
+          WHERE user_id = $1
+        ),
+        user_metadata AS (
+          -- Get game-related data from events (level, streak)
           SELECT DISTINCT ON (user_id)
             user_id,
-            COALESCE(payload->>'nickname', 'Player') as nickname,
             COALESCE((payload->>'currentLevel')::int, (payload->>'level')::int, 1) as last_level,
             COALESCE((payload->>'currentStreak')::int, (payload->>'streak')::int, 0) as current_streak
           FROM events
@@ -255,18 +265,30 @@ class NotificationScheduler {
           GROUP BY user_id
         )
         SELECT 
-          COALESCE(um.nickname, 'Player') as nickname,
+          -- ✅ Nickname from users table takes priority (authoritative source)
+          COALESCE(up.nickname, 'Player') as nickname,
           COALESCE(um.last_level, 1) as last_level,
           COALESCE(um.current_streak, 0) as current_streak,
           COALESCE(ugc.games_played, 0) as games_played
-        FROM user_metadata um
-        LEFT JOIN user_game_count ugc ON um.user_id = ugc.user_id
+        FROM user_profile up
+        LEFT JOIN user_metadata um ON up.user_id = um.user_id
+        LEFT JOIN user_game_count ugc ON up.user_id = ugc.user_id
         LIMIT 1
       `, [userId]);
 
       if (result.rows.length === 0) {
+        // Fallback: User not in users table, try events table for nickname
+        const fallbackResult = await this.db.query(`
+          SELECT DISTINCT ON (user_id)
+            COALESCE(payload->>'nickname', 'Player') as nickname
+          FROM events
+          WHERE user_id = $1
+          ORDER BY user_id, received_at DESC
+          LIMIT 1
+        `, [userId]);
+
         return {
-          nickname: 'Player',
+          nickname: fallbackResult.rows[0]?.nickname || 'Player',
           lastLevel: 1,
           currentStreak: 0,
           gamesPlayed: 0,

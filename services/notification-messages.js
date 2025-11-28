@@ -13,9 +13,9 @@ class NotificationMessages {
   constructor() {
     // Cache for variant selection (ensures good distribution)
     this.variantCounters = {
-      '1hour': { A: 0, B: 0, C: 0 },
-      '24hour': { A: 0, B: 0, C: 0 },
-      '46hour': { A: 0, B: 0, C: 0 },
+      '1hour': { A: 0, B: 0, C: 0, D: 0, E: 0 },
+      '24hour': { A: 0, B: 0, C: 0, D: 0, E: 0 },
+      '46hour': { A: 0, B: 0, C: 0, D: 0, E: 0 },
     };
   }
 
@@ -63,33 +63,34 @@ class NotificationMessages {
   /**
    * 1 Hour Notification Templates
    * Goal: Immediate re-engagement (12-18% CTR target)
+   * ✅ OPTIMIZED: All variants now lead with specific reward value
    */
   _get1HourTemplates() {
     return [
       {
         variant: 'A',
-        title: 'Quick! Your jet is ready! 🚀',
-        body: '{{nickname}}, level {{lastLevel}} is waiting!',
+        title: '50 coins waiting! 🚀',
+        body: '{{nickname}}, tap now to claim before they expire!',
       },
       {
         variant: 'B',
-        title: "Don't lose your streak! 🔥",
-        body: 'Keep your {{currentStreak}}-day streak alive!',
+        title: 'Claim 50 coins + streak! 🔥',
+        body: '{{nickname}}, keep your {{currentStreak}}-day streak alive!',
       },
       {
         variant: 'C',
-        title: 'Ready for another flight? ✈️',
-        body: '{{nickname}}, come back and keep flying!',
+        title: 'Free 50 coins inside! ✈️',
+        body: '{{nickname}}, your bonus expires soon - claim now!',
       },
       {
         variant: 'D',
-        title: 'Your jet misses you! 🛩️',
-        body: 'Level {{lastLevel}} needs your skills!',
+        title: '{{nickname}}, 50 coins ready! 🛩️',
+        body: 'Tap to claim + continue level {{lastLevel}}!',
       },
       {
         variant: 'E',
-        title: 'Quick break? Time to fly! 🚀',
-        body: '{{nickname}}, claim your reward now!',
+        title: '50 coins + bonus gems! 💎',
+        body: '{{nickname}}, claim now before time runs out!',
       },
     ];
   }
@@ -97,33 +98,34 @@ class NotificationMessages {
   /**
    * 24 Hour Notification Templates
    * Goal: Daily habit building (8-12% CTR target)
+   * ✅ OPTIMIZED: All variants lead with specific reward value
    */
   _get24HourTemplates() {
     return [
       {
         variant: 'A',
-        title: 'Miss flying today? 🛩️',
-        body: 'Claim your daily bonus of 100 coins! ✨',
+        title: '100 coins - claim now! 💰',
+        body: '{{nickname}}, your daily bonus expires at midnight!',
       },
       {
         variant: 'B',
-        title: 'Daily reward waiting! 🎁',
-        body: '{{nickname}}, don\'t miss your free gems!',
+        title: 'Free 100 coins + gems! 🎁',
+        body: '{{nickname}}, don\'t miss today\'s daily reward!',
       },
       {
         variant: 'C',
-        title: 'Your daily bonus is here! 💰',
-        body: 'Come back and collect your reward!',
+        title: '{{nickname}}: 100 coins ready! ✨',
+        body: 'Tap to collect your daily bonus now!',
       },
       {
         variant: 'D',
-        title: 'Time for your daily flight! ✈️',
-        body: '{{nickname}}, level {{lastLevel}} awaits!',
+        title: 'Daily 100 coins waiting! 🛩️',
+        body: '{{nickname}}, claim + continue level {{lastLevel}}!',
       },
       {
         variant: 'E',
-        title: 'Daily challenge ready! 🎯',
-        body: 'Keep your streak going, Pilot!',
+        title: '100 coins + streak bonus! 🔥',
+        body: '{{nickname}}, collect before your streak resets!',
       },
     ];
   }
@@ -131,33 +133,34 @@ class NotificationMessages {
   /**
    * 46 Hour Notification Templates
    * Goal: Win-back campaign (5-8% CTR target)
+   * ✅ OPTIMIZED: Big rewards + personalization + urgency
    */
   _get46HourTemplates() {
     return [
       {
         variant: 'A',
-        title: 'We miss you, Pilot! 😢',
-        body: 'Special comeback: 500 coins + 10 gems!',
+        title: '500 coins + 10 gems FREE! 🎁',
+        body: '{{nickname}}, your comeback gift expires soon!',
       },
       {
         variant: 'B',
-        title: 'Your jets are lonely! ✈️',
-        body: 'Come back and unlock a FREE premium jet!',
+        title: 'FREE premium jet unlock! ✈️',
+        body: '{{nickname}}, claim your exclusive comeback reward!',
       },
       {
         variant: 'C',
-        title: 'Comeback bonus waiting! 🎁',
-        body: '{{nickname}}, we saved a reward for you!',
+        title: '{{nickname}}: 500 coins saved! 💰',
+        body: 'We held your comeback bonus - claim it now!',
       },
       {
         variant: 'D',
-        title: 'Ready to fly again? 🚀',
-        body: 'Special welcome back gift inside!',
+        title: 'Special: 500 coins + gems! 🚀',
+        body: '{{nickname}}, your welcome back gift is waiting!',
       },
       {
         variant: 'E',
-        title: 'Your progress is waiting! 📈',
-        body: 'Level {{lastLevel}} + bonus rewards!',
+        title: '{{nickname}}, 500+ coins! 🔥',
+        body: 'Comeback bonus + level {{lastLevel}} rewards!',
       },
     ];
   }

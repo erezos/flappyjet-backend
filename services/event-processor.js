@@ -67,7 +67,11 @@ class EventProcessor {
         user_id: event.user_id
       });
 
-      // 3. Return success immediately (fire-and-forget)
+      // 4. ✅ SPECIAL HANDLING: Update users table for certain events
+      // This ensures authoritative data is synced for push notifications
+      await this._handleSpecialEvents(event);
+
+      // 5. Return success immediately (fire-and-forget)
       return { 
         success: true, 
         event_id: eventId 
@@ -121,6 +125,95 @@ class EventProcessor {
       logger.error('❌ Database error storing event', {
         event_type: event.event_type,
         user_id: event.user_id,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Handle special events that need additional processing
+   * ✅ CRITICAL: Updates authoritative data (e.g., users table) for certain events
+   * This ensures push notification personalization uses correct data
+   * 
+   * @param {Object} event - Processed event object
+   */
+  async _handleSpecialEvents(event) {
+    try {
+      switch (event.event_type) {
+        case 'nickname_changed':
+          // ✅ Update users table with new nickname (authoritative source for push notifications)
+          await this._updateUserNickname(event.user_id, event.new_nickname);
+          break;
+        
+        case 'user_installed':
+        case 'app_launched':
+          // Update user's nickname if provided in payload (for new users or app launches)
+          if (event.nickname) {
+            await this._updateUserNickname(event.user_id, event.nickname);
+          }
+          break;
+      }
+    } catch (error) {
+      // Don't fail the event processing if special handling fails
+      // Just log the error - the event is already stored
+      logger.error('⚠️ Special event handling failed (non-blocking)', {
+        event_type: event.event_type,
+        user_id: event.user_id,
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Update user's nickname in the users table
+   * ✅ CRITICAL: This is the authoritative source for push notification personalization
+   * 
+   * @param {string} userId - User ID
+   * @param {string} nickname - New nickname
+   */
+  async _updateUserNickname(userId, nickname) {
+    if (!userId || !nickname) return;
+
+    const cleanNickname = nickname.trim();
+    if (cleanNickname.length < 2 || cleanNickname.length > 20) {
+      logger.warn('⚠️ Invalid nickname length, skipping update', { userId, nickname });
+      return;
+    }
+
+    try {
+      const result = await this.db.query(`
+        UPDATE users 
+        SET nickname = $1, last_seen = NOW()
+        WHERE user_id = $2
+        RETURNING user_id
+      `, [cleanNickname, userId]);
+
+      if (result.rows.length > 0) {
+        logger.info('✅ User nickname updated', { 
+          user_id: userId, 
+          nickname: cleanNickname,
+          message: 'Push notifications will now use this nickname'
+        });
+      } else {
+        // User doesn't exist in users table yet - create them
+        await this.db.query(`
+          INSERT INTO users (user_id, nickname, created_at, last_seen)
+          VALUES ($1, $2, NOW(), NOW())
+          ON CONFLICT (user_id) DO UPDATE SET
+            nickname = EXCLUDED.nickname,
+            last_seen = NOW()
+        `, [userId, cleanNickname]);
+        
+        logger.info('✅ User created with nickname', { 
+          user_id: userId, 
+          nickname: cleanNickname 
+        });
+      }
+    } catch (error) {
+      logger.error('❌ Failed to update user nickname', {
+        user_id: userId,
+        nickname: cleanNickname,
         error: error.message
       });
       throw error;
