@@ -626,6 +626,214 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
+  // 3b. COHORT ROI ANALYSIS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/cohort-roi?days=30&country=US
+   * Returns ROI metrics by daily install cohort
+   * 
+   * Parameters:
+   * - days: Number of days to look back for cohorts (default: 30)
+   * - country: Optional 2-letter country code to filter (e.g., "US", "IL")
+   * 
+   * Returns per cohort (install date):
+   * - users: Number of users installed that day
+   * - ad_revenue: Cumulative ad revenue from that cohort
+   * - estimated_cost: Estimated acquisition cost (users × manual CPI)
+   * - roi: Return on investment percentage
+   * - arpu: Average revenue per user
+   */
+  router.get('/cohort-roi', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      const country = req.query.country?.toUpperCase() || null;
+      const cpi = parseFloat(req.query.cpi || 3.0); // Default CPI estimate
+      
+      const cacheKey = country 
+        ? `cohort-roi-${days}d-${country}-cpi${cpi}` 
+        : `cohort-roi-${days}d-all-cpi${cpi}`;
+      
+      const data = await getCachedQuery(req, cacheKey, async () => {
+        // Build country filter clause
+        const countryFilter = country 
+          ? `AND payload->>'country' = '${country}'` 
+          : '';
+        
+        // Get daily installs by cohort
+        const installsResult = await db.query(`
+          SELECT 
+            DATE(received_at) as install_date,
+            COUNT(DISTINCT user_id) as users,
+            payload->>'country' as country
+          FROM events
+          WHERE event_type IN ('user_installed', 'app_installed')
+            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            ${countryFilter}
+          GROUP BY DATE(received_at), payload->>'country'
+          ORDER BY DATE(received_at) DESC
+        `);
+
+        // Get cumulative ad revenue by user install date
+        const revenueResult = await db.query(`
+          WITH user_install_dates AS (
+            SELECT DISTINCT ON (user_id)
+              user_id,
+              DATE(received_at) as install_date,
+              payload->>'country' as country
+            FROM events
+            WHERE event_type IN ('user_installed', 'app_installed')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              ${countryFilter}
+            ORDER BY user_id, received_at ASC
+          )
+          SELECT 
+            uid.install_date,
+            uid.country,
+            COUNT(DISTINCT e.user_id) as users_with_revenue,
+            SUM((e.payload->>'estimated_revenue_usd')::float) as total_revenue,
+            AVG((e.payload->>'estimated_revenue_usd')::float) as avg_revenue_per_event
+          FROM user_install_dates uid
+          JOIN events e ON e.user_id = uid.user_id
+          WHERE e.event_type = 'ad_revenue'
+            AND e.received_at >= uid.install_date::timestamp
+          GROUP BY uid.install_date, uid.country
+          ORDER BY uid.install_date DESC
+        `);
+
+        // Create lookup for revenue by date
+        const revenueByDate = {};
+        revenueResult.rows.forEach(row => {
+          const key = country ? row.install_date : `${row.install_date}`;
+          if (!revenueByDate[key]) {
+            revenueByDate[key] = { total_revenue: 0, users_with_revenue: 0 };
+          }
+          revenueByDate[key].total_revenue += parseFloat(row.total_revenue || 0);
+          revenueByDate[key].users_with_revenue += parseInt(row.users_with_revenue || 0);
+        });
+
+        // Aggregate installs by date (across countries if no filter)
+        const installsByDate = {};
+        installsResult.rows.forEach(row => {
+          const date = row.install_date;
+          if (!installsByDate[date]) {
+            installsByDate[date] = { users: 0, countries: {} };
+          }
+          installsByDate[date].users += parseInt(row.users || 0);
+          if (row.country) {
+            installsByDate[date].countries[row.country] = 
+              (installsByDate[date].countries[row.country] || 0) + parseInt(row.users || 0);
+          }
+        });
+
+        // Build cohort data
+        const cohorts = Object.entries(installsByDate)
+          .map(([date, data]) => {
+            const revenue = revenueByDate[date] || { total_revenue: 0, users_with_revenue: 0 };
+            const users = data.users;
+            const estimatedCost = users * cpi;
+            const totalRevenue = revenue.total_revenue;
+            const roi = estimatedCost > 0 ? ((totalRevenue / estimatedCost) * 100) : 0;
+            const arpu = users > 0 ? (totalRevenue / users) : 0;
+            const daysSinceInstall = Math.floor(
+              (new Date() - new Date(date)) / (1000 * 60 * 60 * 24)
+            );
+            
+            return {
+              install_date: date,
+              days_since_install: daysSinceInstall,
+              users,
+              users_with_revenue: revenue.users_with_revenue,
+              total_revenue_usd: parseFloat(totalRevenue.toFixed(4)),
+              estimated_cost_usd: parseFloat(estimatedCost.toFixed(2)),
+              roi_percent: parseFloat(roi.toFixed(1)),
+              arpu_usd: parseFloat(arpu.toFixed(4)),
+              is_profitable: totalRevenue >= estimatedCost,
+              top_countries: Object.entries(data.countries)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([code, count]) => ({ code, count }))
+            };
+          })
+          .sort((a, b) => new Date(b.install_date) - new Date(a.install_date));
+
+        // Calculate summary stats
+        const totalUsers = cohorts.reduce((sum, c) => sum + c.users, 0);
+        const totalRevenue = cohorts.reduce((sum, c) => sum + c.total_revenue_usd, 0);
+        const totalCost = cohorts.reduce((sum, c) => sum + c.estimated_cost_usd, 0);
+        const profitableCohorts = cohorts.filter(c => c.is_profitable).length;
+
+        return {
+          config: {
+            days_lookback: days,
+            country_filter: country,
+            cpi_estimate: cpi,
+          },
+          summary: {
+            total_cohorts: cohorts.length,
+            total_users: totalUsers,
+            total_revenue_usd: parseFloat(totalRevenue.toFixed(2)),
+            total_estimated_cost_usd: parseFloat(totalCost.toFixed(2)),
+            overall_roi_percent: totalCost > 0 
+              ? parseFloat(((totalRevenue / totalCost) * 100).toFixed(1)) 
+              : 0,
+            overall_arpu_usd: totalUsers > 0 
+              ? parseFloat((totalRevenue / totalUsers).toFixed(4)) 
+              : 0,
+            profitable_cohorts: profitableCohorts,
+            profitable_percent: cohorts.length > 0 
+              ? parseFloat(((profitableCohorts / cohorts.length) * 100).toFixed(1)) 
+              : 0,
+          },
+          cohorts,
+          last_updated: new Date().toISOString()
+        };
+      }, 300); // 5 minute cache
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching cohort ROI:', error);
+      res.status(500).json({ error: 'Failed to fetch cohort ROI data' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/countries
+   * Returns list of countries with user counts for filtering
+   */
+  router.get('/countries', async (req, res) => {
+    try {
+      const data = await getCachedQuery(req, 'countries-list', async () => {
+        const result = await db.query(`
+          SELECT 
+            payload->>'country' as country,
+            COUNT(DISTINCT user_id) as users
+          FROM events
+          WHERE event_type IN ('user_installed', 'app_installed')
+            AND payload->>'country' IS NOT NULL
+            AND received_at >= CURRENT_DATE - INTERVAL '90 days'
+          GROUP BY payload->>'country'
+          ORDER BY COUNT(DISTINCT user_id) DESC
+          LIMIT 50
+        `);
+        
+        return {
+          countries: result.rows.map(r => ({
+            code: r.country,
+            users: parseInt(r.users || 0)
+          })),
+          last_updated: new Date().toISOString()
+        };
+      }, 3600); // 1 hour cache
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching countries:', error);
+      res.status(500).json({ error: 'Failed to fetch countries' });
+    }
+  });
+
+  // ============================================================================
   // 4. TOP EVENTS (Real-time activity)
   // ============================================================================
 
@@ -685,18 +893,22 @@ module.exports = (db, cacheManager) => {
           LIMIT $1
         `, [limit]);
 
-        // Country code to flag emoji mapping
-        const countryFlags = {
-          'US': '🇺🇸', 'GB': '🇬🇧', 'CA': '🇨🇦', 'AU': '🇦🇺',
-          'DE': '🇩🇪', 'FR': '🇫🇷', 'ES': '🇪🇸', 'IT': '🇮🇹',
-          'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'IN': '🇮🇳',
-          'BR': '🇧🇷', 'MX': '🇲🇽', 'AR': '🇦🇷', 'CL': '🇨🇱',
-          'RU': '🇷🇺', 'UA': '🇺🇦', 'PL': '🇵🇱', 'NL': '🇳🇱',
-          'SE': '🇸🇪', 'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮',
-          'IL': '🇮🇱', 'SA': '🇸🇦', 'AE': '🇦🇪', 'TR': '🇹🇷',
-          'ZA': '🇿🇦', 'EG': '🇪🇬', 'NG': '🇳🇬', 'KE': '🇰🇪',
-          'SG': '🇸🇬', 'MY': '🇲🇾', 'TH': '🇹🇭', 'VN': '🇻🇳',
-          'PH': '🇵🇭', 'ID': '🇮🇩', 'NZ': '🇳🇿', 'PT': '🇵🇹'
+        // Country code to name mapping
+        const countryNames = {
+          'US': 'United States', 'GB': 'United Kingdom', 'CA': 'Canada', 'AU': 'Australia',
+          'DE': 'Germany', 'FR': 'France', 'ES': 'Spain', 'IT': 'Italy',
+          'JP': 'Japan', 'KR': 'South Korea', 'CN': 'China', 'IN': 'India',
+          'BR': 'Brazil', 'MX': 'Mexico', 'AR': 'Argentina', 'CL': 'Chile',
+          'RU': 'Russia', 'UA': 'Ukraine', 'PL': 'Poland', 'NL': 'Netherlands',
+          'SE': 'Sweden', 'NO': 'Norway', 'DK': 'Denmark', 'FI': 'Finland',
+          'IL': 'Israel', 'SA': 'Saudi Arabia', 'AE': 'UAE', 'TR': 'Turkey',
+          'ZA': 'South Africa', 'EG': 'Egypt', 'NG': 'Nigeria', 'KE': 'Kenya',
+          'SG': 'Singapore', 'MY': 'Malaysia', 'TH': 'Thailand', 'VN': 'Vietnam',
+          'PH': 'Philippines', 'ID': 'Indonesia', 'NZ': 'New Zealand', 'PT': 'Portugal',
+          'BE': 'Belgium', 'AT': 'Austria', 'CH': 'Switzerland', 'IE': 'Ireland',
+          'HK': 'Hong Kong', 'TW': 'Taiwan', 'CZ': 'Czech Republic', 'HU': 'Hungary',
+          'RO': 'Romania', 'GR': 'Greece', 'SK': 'Slovakia', 'BG': 'Bulgaria',
+          'HR': 'Croatia', 'CO': 'Colombia', 'PE': 'Peru', 'VE': 'Venezuela'
         };
 
         return {
@@ -706,7 +918,7 @@ module.exports = (db, cacheManager) => {
             user_info: {
               nickname: r.nickname || 'Player',
               country: r.country || 'Unknown',
-              country_flag: countryFlags[r.country] || '🌍',
+              country_name: countryNames[r.country] || r.country || 'Unknown',
               games_played: parseInt(r.games_played) || 0,
               days_since_install: r.days_since_install !== null ? parseInt(r.days_since_install) : null,
               device: r.device || 'Unknown',
@@ -780,7 +992,7 @@ module.exports = (db, cacheManager) => {
             FROM events
             WHERE event_type = 'interstitial_dismissed'
               AND received_at >= CURRENT_DATE - INTERVAL '7 days'
-              AND (event_data->>'is_early_dismissal')::boolean = true
+              AND (payload->>'is_early_dismissal')::boolean = true
             GROUP BY DATE(received_at)
             ORDER BY date ASC
           `)

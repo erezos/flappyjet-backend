@@ -314,7 +314,7 @@ const skinEquippedSchema = Joi.object({
   previous_skin_id: Joi.string().optional(),
 });
 
-// 20. achievement_unlocked - Achievement earned (NEW)
+// 20. achievement_unlocked - Achievement criteria met (can be claimed)
 const achievementUnlockedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('achievement_unlocked').required(),
@@ -326,7 +326,33 @@ const achievementUnlockedSchema = Joi.object({
   reward_gems: Joi.number().integer().min(0).required(),
 });
 
-// 21. mission_completed - Daily mission done (NEW)
+// 20b. achievement_claimed - Achievement reward claimed by user (NEW)
+const achievementClaimedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('achievement_claimed').required(),
+  achievement_id: Joi.string().required(),
+  achievement_name: Joi.string().required(),
+  achievement_tier: Joi.string().required(), // 'AchievementRarity.common', etc.
+  achievement_category: Joi.string().required(), // 'AchievementCategory.gameplay', etc.
+  reward_coins: Joi.number().integer().min(0).required(),
+  reward_gems: Joi.number().integer().min(0).required(),
+  time_to_claim_seconds: Joi.number().integer().min(0).required(), // Time between unlock and claim
+});
+
+// 21. mission_unlocked - Mission criteria met (can be claimed) (NEW)
+const missionUnlockedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('mission_unlocked').required(),
+  mission_id: Joi.string().required(),
+  mission_type: Joi.string().required(), // 'MissionType.playGames', etc.
+  mission_difficulty: Joi.string().required(), // 'MissionDifficulty.easy', etc.
+  mission_title: Joi.string().required(),
+  reward_coins: Joi.number().integer().min(0).required(),
+  target: Joi.number().integer().min(1).required(),
+  progress: Joi.number().integer().min(0).required(),
+});
+
+// 21b. mission_completed - Mission reward claimed by user (renamed from "mission done")
 const missionCompletedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('mission_completed').required(),
@@ -334,17 +360,46 @@ const missionCompletedSchema = Joi.object({
   mission_type: Joi.string().required(), // 'MissionType.playGames', etc.
   mission_difficulty: Joi.string().required(), // 'MissionDifficulty.easy', etc.
   reward_coins: Joi.number().integer().min(0).required(),
-  completion_time_seconds: Joi.number().integer().min(0).required(),
+  completion_time_seconds: Joi.number().integer().min(0).required(), // Time between unlock and claim
 });
 
-// 22. daily_streak_claimed - Daily reward claimed
+// 22. daily_streak_claimed - Daily reward claimed (UPDATED to match Flutter EventBus)
 const dailyStreakClaimedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('daily_streak_claimed').required(),
-  streak_day: Joi.number().integer().min(1).max(7).required(),
-  coins_reward: Joi.number().integer().min(0).required(),
-  gems_reward: Joi.number().integer().min(0).optional(),
-  streak_reset: Joi.boolean().optional(),
+  day_in_cycle: Joi.number().integer().min(1).max(7).required(), // 1-7
+  current_streak: Joi.number().integer().min(1).required(),       // Total consecutive days
+  current_cycle: Joi.number().integer().min(0).required(),        // Which 7-day cycle (0-indexed)
+  reward_type: Joi.string().required(),                            // 'coins', 'gems', 'heartBooster', etc.
+  reward_amount: Joi.number().integer().min(0).required(),        // Numeric value
+  reward_set: Joi.string().valid('new_player', 'experienced').required(),
+});
+
+// 22b. daily_streak_milestone - Special streak milestones (7, 14, 30, 60, 100 days)
+const dailyStreakMilestoneSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('daily_streak_milestone').required(),
+  milestone_days: Joi.number().integer().valid(7, 14, 30, 60, 100).required(),
+  current_cycle: Joi.number().integer().min(0).required(),
+  total_cycles_completed: Joi.number().integer().min(0).required(),
+});
+
+// 22c. daily_streak_broken - User broke their streak (missed a day)
+const dailyStreakBrokenSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('daily_streak_broken').required(),
+  last_streak_days: Joi.number().integer().min(1).required(),
+  last_cycle: Joi.number().integer().min(0).required(),
+  total_cycles_completed: Joi.number().integer().min(0).required(),
+});
+
+// 22d. daily_streak_cycle_completed - User completed a full 7-day cycle
+const dailyStreakCycleCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('daily_streak_cycle_completed').required(),
+  cycle_number: Joi.number().integer().min(1).required(),
+  total_cycles_completed: Joi.number().integer().min(0).required(),
+  reward_set: Joi.string().valid('new_player', 'experienced').required(),
 });
 
 // 23. level_unlocked - Story level unlocked
@@ -403,6 +458,26 @@ const interstitialDismissedSchema = Joi.object({
   wins_this_session: Joi.number().integer().min(0).optional(),
   view_duration_seconds: Joi.number().integer().min(0).allow(null).optional(), // How long user viewed ad
   is_early_dismissal: Joi.boolean().optional(), // true if viewed < 5 seconds (potential revenue loss)
+  was_clicked: Joi.boolean().optional(), // true if user clicked the ad (good engagement!)
+});
+
+// 28b. interstitial_clicked - User clicked on interstitial ad (good engagement!)
+const interstitialClickedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('interstitial_clicked').required(),
+  wins_this_session: Joi.number().integer().min(0).optional(),
+  lifetime_wins: Joi.number().integer().min(0).optional(),
+});
+
+// 28c. ad_revenue - Track estimated ad revenue for ROI/LTV calculation
+const adRevenueSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('ad_revenue').required(),
+  ad_type: Joi.string().valid('interstitial', 'rewarded', 'banner').required(),
+  ad_format: Joi.string().optional(), // 'fullscreen', 'rewarded_video', etc.
+  estimated_revenue_usd: Joi.number().min(0).required(), // Revenue in USD
+  currency: Joi.string().length(3).default('USD'), // ISO currency code
+  reward_granted: Joi.boolean().optional(), // For rewarded ads
 });
 
 // 29. share_clicked - Social share
@@ -421,6 +496,32 @@ const notificationReceivedSchema = Joi.object({
   notification_type: Joi.string().required(),
   notification_title: Joi.string().optional(),
   opened: Joi.boolean().required(),
+});
+
+// ============================================================================
+// PRIZE EVENTS (2 events)
+// ============================================================================
+
+// 30. prize_available - New prizes ready to claim (tournament/leaderboard rewards)
+const prizeAvailableSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('prize_available').required(),
+  count: Joi.number().integer().min(1).required(),      // Number of prizes available
+  total_coins: Joi.number().integer().min(0).required(), // Total coins across all prizes
+  total_gems: Joi.number().integer().min(0).required(),  // Total gems across all prizes
+});
+
+// 31. prize_claimed - User claimed a prize
+const prizeClaimedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('prize_claimed').required(),
+  prize_id: Joi.string().required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().required(),
+  rank: Joi.number().integer().min(1).required(),
+  coins: Joi.number().integer().min(0).required(),
+  gems: Joi.number().integer().min(0).required(),
+  claimed_at: Joi.string().isoDate().required(),
 });
 
 // ============================================================================
@@ -459,9 +560,16 @@ const schemaMap = {
   skin_unlocked: skinUnlockedSchema,
   skin_equipped: skinEquippedSchema,
   achievement_unlocked: achievementUnlockedSchema,
+  achievement_claimed: achievementClaimedSchema,
+  mission_unlocked: missionUnlockedSchema,
   mission_completed: missionCompletedSchema,
   daily_streak_claimed: dailyStreakClaimedSchema,
+  daily_streak_milestone: dailyStreakMilestoneSchema,
+  daily_streak_broken: dailyStreakBrokenSchema,
+  daily_streak_cycle_completed: dailyStreakCycleCompletedSchema,
   level_unlocked: levelUnlockedSchema,
+  prize_available: prizeAvailableSchema,
+  prize_claimed: prizeClaimedSchema,
   
   // Social & Engagement
   leaderboard_viewed: leaderboardViewedSchema,
@@ -469,6 +577,8 @@ const schemaMap = {
   ad_watched: adWatchedSchema,
   interstitial_shown: interstitialShownSchema,
   interstitial_dismissed: interstitialDismissedSchema,
+  interstitial_clicked: interstitialClickedSchema,
+  ad_revenue: adRevenueSchema,
   share_clicked: shareClickedSchema,
   notification_received: notificationReceivedSchema,
 };
@@ -543,9 +653,16 @@ module.exports = {
   skinUnlockedSchema,
   skinEquippedSchema,
   achievementUnlockedSchema,
+  achievementClaimedSchema,
+  missionUnlockedSchema,
   missionCompletedSchema,
   dailyStreakClaimedSchema,
+  dailyStreakMilestoneSchema,
+  dailyStreakBrokenSchema,
+  dailyStreakCycleCompletedSchema,
   levelUnlockedSchema,
+  prizeAvailableSchema,
+  prizeClaimedSchema,
   leaderboardViewedSchema,
   tournamentEnteredSchema,
   adWatchedSchema,

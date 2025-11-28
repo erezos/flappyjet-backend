@@ -556,6 +556,58 @@
             </div>
         </div>
 
+        <!-- Cohort ROI Analysis -->
+        <div class="charts-grid-fullwidth">
+            <div class="chart-card">
+                <h3>
+                    💰 Cohort ROI Analysis
+                    <select id="roiCountrySelector" onchange="loadCohortROI()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="">All Countries</option>
+                    </select>
+                    <input type="number" id="roiCpiInput" value="" placeholder="CPI" step="0.1" min="0" max="20" 
+                        onchange="loadCohortROI()" 
+                        style="margin-left: 10px; width: 70px; padding: 5px; border-radius: 5px; border: 1px solid #ddd;"
+                        title="Optional: Enter your Cost Per Install from Google Ads to see ROI %">
+                    <span style="font-size: 12px; color: #888; margin-left: 5px;">CPI (optional)</span>
+                    <span style="margin-left: 15px; font-size: 12px; color: #888; font-weight: normal;">
+                        ℹ️ Shows revenue by cohort. Enter CPI to see ROI %.
+                    </span>
+                </h3>
+                
+                <!-- Summary Cards -->
+                <div id="roiSummaryCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Total Users</div>
+                        <div id="roiTotalUsers" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Total Revenue</div>
+                        <div id="roiTotalRevenue" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Est. Cost</div>
+                        <div id="roiTotalCost" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">Overall ROI</div>
+                        <div id="roiOverallROI" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">ARPU</div>
+                        <div id="roiARPU" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                </div>
+                
+                <!-- Cohort Table -->
+                <div class="retention-table-container" id="cohortROIContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading cohort ROI data...
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Retention & Activity -->
         <div class="charts-grid">
             <div class="chart-card">
@@ -1077,6 +1129,171 @@
             } catch (error) {
                 console.error('Error loading level completion stats:', error);
                 container.innerHTML = '<div class="loading">Error loading data. Make sure level_completed events are being sent.</div>';
+            }
+        }
+
+        // ============================================================================
+        // COHORT ROI ANALYSIS
+        // ============================================================================
+
+        // Country code to name mapping
+        const countryNames = {
+            'US': 'United States', 'GB': 'United Kingdom', 'CA': 'Canada', 'AU': 'Australia',
+            'DE': 'Germany', 'FR': 'France', 'ES': 'Spain', 'IT': 'Italy',
+            'BR': 'Brazil', 'MX': 'Mexico', 'AR': 'Argentina', 'JP': 'Japan',
+            'KR': 'South Korea', 'CN': 'China', 'IN': 'India', 'RU': 'Russia',
+            'IL': 'Israel', 'NL': 'Netherlands', 'SE': 'Sweden', 'NO': 'Norway',
+            'DK': 'Denmark', 'FI': 'Finland', 'PL': 'Poland', 'TR': 'Turkey',
+            'PT': 'Portugal', 'BE': 'Belgium', 'AT': 'Austria', 'CH': 'Switzerland',
+            'IE': 'Ireland', 'NZ': 'New Zealand', 'SG': 'Singapore', 'HK': 'Hong Kong',
+            'TW': 'Taiwan', 'TH': 'Thailand', 'MY': 'Malaysia', 'PH': 'Philippines',
+            'ID': 'Indonesia', 'VN': 'Vietnam', 'ZA': 'South Africa', 'EG': 'Egypt',
+            'NG': 'Nigeria', 'KE': 'Kenya', 'SA': 'Saudi Arabia', 'AE': 'UAE',
+            'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'VE': 'Venezuela',
+            'CZ': 'Czech Republic', 'HU': 'Hungary', 'RO': 'Romania', 'UA': 'Ukraine',
+            'GR': 'Greece', 'SK': 'Slovakia', 'BG': 'Bulgaria', 'HR': 'Croatia',
+        };
+        
+        function getCountryName(code) {
+            return countryNames[code] || code;
+        }
+
+        async function loadCountries() {
+            try {
+                const data = await fetchAPI('countries');
+                if (!data || !data.countries) return;
+                
+                const selector = document.getElementById('roiCountrySelector');
+                // Keep "All Countries" option
+                selector.innerHTML = '<option value="">All Countries</option>';
+                
+                data.countries.forEach(c => {
+                    const name = getCountryName(c.code);
+                    const option = document.createElement('option');
+                    option.value = c.code;
+                    option.textContent = `${name} (${c.users} users)`;
+                    selector.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading countries:', error);
+            }
+        }
+
+        async function loadCohortROI() {
+            const container = document.getElementById('cohortROIContainer');
+            const country = document.getElementById('roiCountrySelector').value;
+            const cpiInput = document.getElementById('roiCpiInput').value;
+            const cpi = cpiInput ? parseFloat(cpiInput) : 0; // 0 means no CPI provided
+            const showROI = cpi > 0; // Only show ROI columns if CPI is provided
+            
+            try {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading cohort ROI data...</div>';
+                
+                let url = `cohort-roi?days=30&cpi=${cpi || 1}`; // Use 1 as placeholder for API
+                if (country) url += `&country=${country}`;
+                
+                const data = await fetchAPI(url);
+                if (!data || !data.cohorts) {
+                    container.innerHTML = '<div class="loading">No ROI data yet. ad_revenue events will appear after users see ads.</div>';
+                    return;
+                }
+                
+                // Update summary cards
+                document.getElementById('roiTotalUsers').textContent = data.summary.total_users.toLocaleString();
+                document.getElementById('roiTotalRevenue').textContent = '$' + data.summary.total_revenue_usd.toFixed(2);
+                document.getElementById('roiARPU').textContent = '$' + data.summary.overall_arpu_usd.toFixed(4);
+                
+                // Show/hide ROI-specific cards based on CPI
+                const costCard = document.getElementById('roiTotalCost').parentElement;
+                const roiCard = document.getElementById('roiOverallROI').parentElement;
+                
+                if (showROI) {
+                    costCard.style.display = '';
+                    roiCard.style.display = '';
+                    document.getElementById('roiTotalCost').textContent = '$' + data.summary.total_estimated_cost_usd.toFixed(2);
+                    document.getElementById('roiOverallROI').textContent = data.summary.overall_roi_percent.toFixed(1) + '%';
+                    
+                    // Color code ROI
+                    if (data.summary.overall_roi_percent >= 100) {
+                        roiCard.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
+                    } else if (data.summary.overall_roi_percent >= 50) {
+                        roiCard.style.background = 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)';
+                    } else {
+                        roiCard.style.background = 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)';
+                    }
+                } else {
+                    costCard.style.display = 'none';
+                    roiCard.style.display = 'none';
+                }
+                
+                // Build cohort table
+                let tableHTML = '<table class="retention-table" style="width: 100%;">';
+                tableHTML += '<thead><tr>';
+                tableHTML += '<th>Install Date</th>';
+                tableHTML += '<th>Days</th>';
+                tableHTML += '<th>Users</th>';
+                tableHTML += '<th>Revenue</th>';
+                if (showROI) tableHTML += '<th>Est. Cost</th>';
+                if (showROI) tableHTML += '<th>ROI</th>';
+                tableHTML += '<th>ARPU</th>';
+                if (showROI) tableHTML += '<th>Status</th>';
+                tableHTML += '</tr></thead><tbody>';
+                
+                data.cohorts.forEach(cohort => {
+                    const dateStr = new Date(cohort.install_date).toLocaleDateString('en-GB', { 
+                        day: 'numeric', month: 'short' 
+                    });
+                    
+                    // ROI color coding
+                    let roiColor = '#f56565'; // red
+                    if (cohort.roi_percent >= 100) roiColor = '#48bb78'; // green - profitable
+                    else if (cohort.roi_percent >= 50) roiColor = '#ed8936'; // orange - getting there
+                    
+                    const statusEmoji = cohort.is_profitable ? '✅' : '⏳';
+                    const statusText = cohort.is_profitable ? 'Profitable' : 'Not yet';
+                    
+                    tableHTML += '<tr>';
+                    tableHTML += `<td style="font-weight: 600;">${dateStr}</td>`;
+                    tableHTML += `<td style="text-align: center;">${cohort.days_since_install}d</td>`;
+                    tableHTML += `<td style="text-align: center;">${cohort.users}</td>`;
+                    tableHTML += `<td style="text-align: center;">$${cohort.total_revenue_usd.toFixed(2)}</td>`;
+                    if (showROI) tableHTML += `<td style="text-align: center;">$${cohort.estimated_cost_usd.toFixed(2)}</td>`;
+                    if (showROI) tableHTML += `<td style="text-align: center; color: ${roiColor}; font-weight: 600;">${cohort.roi_percent.toFixed(1)}%</td>`;
+                    tableHTML += `<td style="text-align: center;">$${cohort.arpu_usd.toFixed(4)}</td>`;
+                    if (showROI) tableHTML += `<td style="text-align: center;">${statusEmoji} ${statusText}</td>`;
+                    tableHTML += '</tr>';
+                });
+                
+                tableHTML += '</tbody></table>';
+                
+                // Add explanation
+                if (showROI) {
+                    tableHTML += `
+                        <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                            <strong>How to read:</strong>
+                            ROI = (Revenue / Est. Cost) × 100% |
+                            ARPU = Revenue / Users |
+                            <span style="color: #48bb78;">■</span> ROI ≥100% (Profitable) |
+                            <span style="color: #ed8936;">■</span> ROI 50-99% |
+                            <span style="color: #f56565;">■</span> ROI &lt;50%
+                        </div>
+                    `;
+                } else {
+                    tableHTML += `
+                        <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                            <strong>ARPU</strong> = Average Revenue Per User |
+                            Revenue is estimated from ad impressions ($0.01/interstitial, $0.015/rewarded)
+                            <br><br>
+                            💡 <strong>Tip:</strong> Enter your CPI from Google Ads to see ROI % and profitability status.
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = tableHTML;
+                
+            } catch (error) {
+                console.error('Error loading cohort ROI:', error);
+                container.innerHTML = '<div class="loading">Error loading ROI data.</div>';
             }
         }
 
@@ -1830,13 +2047,14 @@
                 }
                 
                 const badgeText = badges.length > 0 ? badges.join(' • ') : '';
-                const countryFlag = userInfo && userInfo.country_flag ? userInfo.country_flag : '🌍';
+                const countryName = userInfo && userInfo.country_name ? userInfo.country_name : 'Unknown';
                 
                 return `
                     <div class="activity-item">
                         <div>
                             ${icon} <strong>${formatEventType(event.type)}</strong>
-                            <span style="margin-left: 8px;">${countryFlag} ${displayName}</span>
+                            <span style="margin-left: 8px;">${displayName}</span>
+                            <span style="margin-left: 8px; color: #888; font-size: 11px;">(${countryName})</span>
                         </div>
                         <div class="time">${time}</div>
                         ${badgeText ? `<div class="user-badges">${badgeText}</div>` : ''}
@@ -2073,6 +2291,7 @@
                 loadGamesPerPlayerChart(),
                 loadLevelPerformance(),
                 loadLevelCompletionStats(),  // 📊 NEW: Actual completion stats
+                loadCountries().then(() => loadCohortROI()),  // 💰 NEW: Cohort ROI analysis
                 loadRetention(),
                 loadEconomy(),
                 loadContinues(),

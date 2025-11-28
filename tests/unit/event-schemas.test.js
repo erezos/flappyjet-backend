@@ -411,15 +411,56 @@ describe('Event Schemas Validation', () => {
     });
   });
 
+  describe('mission_unlocked', () => {
+    test('should validate mission unlock (criteria met, ready to claim)', () => {
+      const event = {
+        event_type: 'mission_unlocked',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        mission_id: 'daily_play_games_3',
+        mission_type: 'MissionType.playGames',
+        mission_difficulty: 'MissionDifficulty.easy',
+        mission_title: 'Play 3 Games',
+        reward_coins: 100,
+        target: 3,
+        progress: 3
+      };
+
+      const { error } = schemaMap.mission_unlocked.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should require all mission_unlocked fields', () => {
+      const event = {
+        event_type: 'mission_unlocked',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        mission_id: 'daily_play_games_3'
+        // Missing required fields
+      };
+
+      const { error } = schemaMap.mission_unlocked.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
+
   describe('mission_completed', () => {
-    test('should validate mission completion', () => {
+    test('should validate mission completion (reward claimed)', () => {
       const event = {
         event_type: 'mission_completed',
         user_id: 'device_123',
         timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
         mission_id: 'daily_play_games_3',
+        mission_type: 'MissionType.playGames',
+        mission_difficulty: 'MissionDifficulty.easy',
         reward_coins: 100,
-        reward_gems: 0
+        completion_time_seconds: 3600 // Time between unlock and claim
       };
 
       const { error } = schemaMap.mission_completed.validate(event);
@@ -428,18 +469,65 @@ describe('Event Schemas Validation', () => {
   });
 
   describe('achievement_unlocked', () => {
-    test('should validate achievement unlock', () => {
+    test('should validate achievement unlock (criteria met)', () => {
       const event = {
         event_type: 'achievement_unlocked',
         user_id: 'device_123',
         timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
         achievement_id: 'first_flight',
+        achievement_name: 'First Flight',
+        achievement_tier: 'AchievementRarity.common',
+        achievement_category: 'AchievementCategory.gameplay',
         reward_coins: 200,
         reward_gems: 10
       };
 
       const { error } = schemaMap.achievement_unlocked.validate(event);
       expect(error).toBeUndefined();
+    });
+  });
+
+  describe('achievement_claimed', () => {
+    test('should validate achievement claim (reward collected)', () => {
+      const event = {
+        event_type: 'achievement_claimed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        achievement_id: 'first_flight',
+        achievement_name: 'First Flight',
+        achievement_tier: 'AchievementRarity.common',
+        achievement_category: 'AchievementCategory.gameplay',
+        reward_coins: 200,
+        reward_gems: 10,
+        time_to_claim_seconds: 86400 // 1 day between unlock and claim
+      };
+
+      const { error } = schemaMap.achievement_claimed.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should require time_to_claim_seconds', () => {
+      const event = {
+        event_type: 'achievement_claimed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        achievement_id: 'first_flight',
+        achievement_name: 'First Flight',
+        achievement_tier: 'AchievementRarity.common',
+        achievement_category: 'AchievementCategory.gameplay',
+        reward_coins: 200,
+        reward_gems: 10
+        // Missing time_to_claim_seconds
+      };
+
+      const { error } = schemaMap.achievement_claimed.validate(event);
+      expect(error).toBeDefined();
     });
   });
 
@@ -453,6 +541,121 @@ describe('Event Schemas Validation', () => {
       };
 
       const { error } = schemaMap.tournament_entered.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('daily_streak_claimed', () => {
+    test('should validate daily streak claim', () => {
+      const event = {
+        event_type: 'daily_streak_claimed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        day_in_cycle: 3,
+        current_streak: 10,
+        current_cycle: 1,
+        reward_type: 'coins',
+        reward_amount: 100,
+        reward_set: 'new_player'
+      };
+
+      const { error } = schemaMap.daily_streak_claimed.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('daily_streak_milestone', () => {
+    test('should validate streak milestone', () => {
+      const event = {
+        event_type: 'daily_streak_milestone',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        milestone_days: 7,
+        current_cycle: 1,
+        total_cycles_completed: 0
+      };
+
+      const { error } = schemaMap.daily_streak_milestone.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('daily_streak_broken', () => {
+    test('should validate streak broken event', () => {
+      const event = {
+        event_type: 'daily_streak_broken',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        last_streak_days: 5,
+        last_cycle: 0,
+        total_cycles_completed: 0
+      };
+
+      const { error } = schemaMap.daily_streak_broken.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('daily_streak_cycle_completed', () => {
+    test('should validate cycle completion', () => {
+      const event = {
+        event_type: 'daily_streak_cycle_completed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        cycle_number: 2,
+        total_cycles_completed: 1,
+        reward_set: 'experienced'
+      };
+
+      const { error } = schemaMap.daily_streak_cycle_completed.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('prize_available', () => {
+    test('should validate prizes available event', () => {
+      const event = {
+        event_type: 'prize_available',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        count: 2,
+        total_coins: 500,
+        total_gems: 10
+      };
+
+      const { error } = schemaMap.prize_available.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('prize_claimed', () => {
+    test('should validate prize claimed event', () => {
+      const event = {
+        event_type: 'prize_claimed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '1.4.2',
+        platform: 'android',
+        prize_id: 'prize_123',
+        tournament_id: 'weekly_2025_01',
+        tournament_name: 'Weekly Tournament',
+        rank: 5,
+        coins: 200,
+        gems: 5,
+        claimed_at: '2025-01-01T12:00:00.000Z'
+      };
+
+      const { error } = schemaMap.prize_claimed.validate(event);
       expect(error).toBeUndefined();
     });
   });
