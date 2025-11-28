@@ -3,7 +3,7 @@
  * Tests all 28 event schemas to ensure proper validation
  */
 
-const eventSchemas = require('../../services/event-schemas');
+const { schemaMap } = require('../../services/event-schemas');
 
 describe('Event Schemas Validation', () => {
   describe('app_installed', () => {
@@ -20,7 +20,7 @@ describe('Event Schemas Validation', () => {
         language: 'en'
       };
 
-      const { error } = eventSchemas.app_installed.validate(event);
+      const { error } = schemaMap.app_installed.validate(event);
       expect(error).toBeUndefined();
     });
 
@@ -31,7 +31,7 @@ describe('Event Schemas Validation', () => {
         timestamp: '2025-01-01T00:00:00.000Z'
       };
 
-      const { error } = eventSchemas.app_installed.validate(event);
+      const { error } = schemaMap.app_installed.validate(event);
       expect(error).toBeDefined();
     });
 
@@ -43,57 +43,122 @@ describe('Event Schemas Validation', () => {
         platform: 'windows' // invalid
       };
 
-      const { error } = eventSchemas.app_installed.validate(event);
+      const { error } = schemaMap.app_installed.validate(event);
       expect(error).toBeDefined();
     });
   });
 
   describe('game_ended', () => {
-    test('should validate correct game_ended event', () => {
+    // Base fields required for all events
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '1.4.2',
+      platform: 'android'
+    };
+
+    test('should validate endless mode game_ended event', () => {
       const event = {
+        ...baseEventFields,
         event_type: 'game_ended',
-        user_id: 'device_123',
-        timestamp: '2025-01-01T00:00:00.000Z',
         game_mode: 'endless',
         score: 42,
         duration_seconds: 120,
-        obstacles_passed: 20,
-        result: 'crashed',
-        crash_reason: 'obstacle_collision'
+        obstacles_dodged: 42,
+        coins_collected: 15,
+        gems_collected: 2,
+        hearts_remaining: 0,
+        cause_of_death: 'obstacle_collision',
+        max_combo: 5,
+        powerups_used: []
       };
 
-      const { error } = eventSchemas.game_ended.validate(event);
+      const { error } = schemaMap.game_ended.validate(event);
       expect(error).toBeUndefined();
     });
 
-    test('should validate tournament game_ended event', () => {
+    test('should validate story mode game_ended with level info', () => {
       const event = {
+        ...baseEventFields,
         event_type: 'game_ended',
-        user_id: 'device_123',
-        timestamp: '2025-01-01T00:00:00.000Z',
-        game_mode: 'tournament',
-        tournament_id: 'weekly_2025_01',
-        score: 99,
-        duration_seconds: 300,
-        obstacles_passed: 50,
-        result: 'crashed'
+        game_mode: 'story',
+        score: 16,
+        duration_seconds: 45,
+        obstacles_dodged: 16,
+        coins_collected: 5,
+        gems_collected: 0,
+        hearts_remaining: 2,
+        cause_of_death: 'level_completed',
+        max_combo: 0,
+        powerups_used: [],
+        // Story mode specific fields (new!)
+        level_id: 5,
+        zone_id: 1,
+        level_name: 'Sky Rookie 5'
       };
 
-      const { error } = eventSchemas.game_ended.validate(event);
+      const { error } = schemaMap.game_ended.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate story mode game_ended without optional level info', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'game_ended',
+        game_mode: 'story',
+        score: 10,
+        duration_seconds: 30,
+        obstacles_dodged: 10,
+        coins_collected: 3,
+        gems_collected: 0,
+        hearts_remaining: 0,
+        cause_of_death: 'obstacle_collision',
+        max_combo: 0,
+        powerups_used: []
+        // level_id, zone_id, level_name are optional
+      };
+
+      const { error } = schemaMap.game_ended.validate(event);
       expect(error).toBeUndefined();
     });
 
     test('should reject negative score', () => {
       const event = {
+        ...baseEventFields,
         event_type: 'game_ended',
-        user_id: 'device_123',
-        timestamp: '2025-01-01T00:00:00.000Z',
         game_mode: 'endless',
         score: -10, // invalid
-        duration_seconds: 120
+        duration_seconds: 120,
+        obstacles_dodged: 0,
+        coins_collected: 0,
+        gems_collected: 0,
+        hearts_remaining: 0,
+        cause_of_death: 'quit',
+        max_combo: 0,
+        powerups_used: []
       };
 
-      const { error } = eventSchemas.game_ended.validate(event);
+      const { error } = schemaMap.game_ended.validate(event);
+      expect(error).toBeDefined();
+    });
+
+    test('should reject invalid game_mode', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'game_ended',
+        game_mode: 'tournament', // invalid - only 'endless' or 'story'
+        score: 50,
+        duration_seconds: 120,
+        obstacles_dodged: 50,
+        coins_collected: 10,
+        gems_collected: 1,
+        hearts_remaining: 0,
+        cause_of_death: 'obstacle_collision',
+        max_combo: 0,
+        powerups_used: []
+      };
+
+      const { error } = schemaMap.game_ended.validate(event);
       expect(error).toBeDefined();
     });
   });
@@ -110,7 +175,7 @@ describe('Event Schemas Validation', () => {
         source_id: 'zone_1_level_3'
       };
 
-      const { error } = eventSchemas.currency_earned.validate(event);
+      const { error } = schemaMap.currency_earned.validate(event);
       expect(error).toBeUndefined();
     });
 
@@ -125,7 +190,7 @@ describe('Event Schemas Validation', () => {
         source_id: 'prize_weekly_2025_01_device_123'
       };
 
-      const { error } = eventSchemas.currency_earned.validate(event);
+      const { error } = schemaMap.currency_earned.validate(event);
       expect(error).toBeUndefined();
     });
 
@@ -139,7 +204,7 @@ describe('Event Schemas Validation', () => {
         source: 'mission_completed'
       };
 
-      const { error } = eventSchemas.currency_earned.validate(event);
+      const { error } = schemaMap.currency_earned.validate(event);
       expect(error).toBeDefined();
     });
   });
@@ -156,7 +221,7 @@ describe('Event Schemas Validation', () => {
         item_id: 'skin_red_jet'
       };
 
-      const { error } = eventSchemas.currency_spent.validate(event);
+      const { error } = schemaMap.currency_spent.validate(event);
       expect(error).toBeUndefined();
     });
   });
@@ -174,7 +239,7 @@ describe('Event Schemas Validation', () => {
         score_at_continue: 42
       };
 
-      const { error } = eventSchemas.continue_used.validate(event);
+      const { error } = schemaMap.continue_used.validate(event);
       expect(error).toBeUndefined();
     });
 
@@ -191,7 +256,7 @@ describe('Event Schemas Validation', () => {
         level_id: 'zone_2_level_5'
       };
 
-      const { error } = eventSchemas.continue_used.validate(event);
+      const { error } = schemaMap.continue_used.validate(event);
       expect(error).toBeUndefined();
     });
   });
@@ -207,47 +272,142 @@ describe('Event Schemas Validation', () => {
         attempt_number: 1
       };
 
-      const { error } = eventSchemas.level_started.validate(event);
+      const { error } = schemaMap.level_started.validate(event);
       expect(error).toBeUndefined();
     });
   });
 
   describe('level_completed', () => {
-    test('should validate level completion', () => {
+    // Base fields required for all events
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '1.4.2',
+      platform: 'android'
+    };
+
+    test('should validate level completion with all fields', () => {
       const event = {
+        ...baseEventFields,
         event_type: 'level_completed',
-        user_id: 'device_123',
-        timestamp: '2025-01-01T00:00:00.000Z',
-        zone_id: 'zone_1',
-        level_id: 'zone_1_level_1',
-        score: 50,
-        duration_seconds: 180,
-        stars_earned: 3,
-        coins_earned: 100,
-        is_new_record: true
+        level_id: 1,
+        zone_id: 1,
+        score: 16,
+        stars: 3,
+        time_seconds: 45,
+        hearts_remaining: 2,
+        first_attempt: true,
+        level_name: 'Sky Rookie 1',
+        objective_type: 'passObstacles',
+        continues_used: 0
       };
 
-      const { error } = eventSchemas.level_completed.validate(event);
+      const { error } = schemaMap.level_completed.validate(event);
       expect(error).toBeUndefined();
+    });
+
+    test('should validate level completion without optional stars (defaults to 0)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'level_completed',
+        level_id: 5,
+        zone_id: 1,
+        score: 20,
+        // stars not provided - should default to 0
+        time_seconds: 60,
+        hearts_remaining: 1,
+        first_attempt: false
+      };
+
+      const { error, value } = schemaMap.level_completed.validate(event);
+      expect(error).toBeUndefined();
+      expect(value.stars).toBe(0); // Default value
+    });
+
+    test('should validate level completion with optional fields', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'level_completed',
+        level_id: 10,
+        zone_id: 1,
+        score: 25,
+        stars: 2,
+        time_seconds: 90,
+        hearts_remaining: 3,
+        first_attempt: true,
+        level_name: 'Sky Rookie 10',
+        objective_type: 'ObjectiveType.passObstacles',
+        continues_used: 1
+      };
+
+      const { error } = schemaMap.level_completed.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should reject level_completed with invalid level_id', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'level_completed',
+        level_id: 0, // Invalid - must be >= 1
+        zone_id: 1,
+        score: 10,
+        time_seconds: 30,
+        hearts_remaining: 3,
+        first_attempt: true
+      };
+
+      const { error } = schemaMap.level_completed.validate(event);
+      expect(error).toBeDefined();
     });
   });
 
   describe('level_failed', () => {
-    test('should validate level failure', () => {
+    // Base fields required for all events
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '1.4.2',
+      platform: 'android'
+    };
+
+    test('should validate level failure with all fields', () => {
       const event = {
+        ...baseEventFields,
         event_type: 'level_failed',
-        user_id: 'device_123',
-        timestamp: '2025-01-01T00:00:00.000Z',
-        zone_id: 'zone_2',
-        level_id: 'zone_2_level_5',
-        score: 20,
-        duration_seconds: 60,
-        attempt_number: 3,
-        crash_reason: 'obstacle_collision'
+        level_id: 5,
+        zone_id: 1,
+        level_name: 'Sky Rookie 5',
+        score: 12,
+        objective_target: 16,
+        objective_type: 'ObjectiveType.passObstacles',
+        cause_of_death: 'obstacle_collision',
+        time_survived_seconds: 45,
+        hearts_remaining: 0,
+        continues_used: 2
       };
 
-      const { error } = eventSchemas.level_failed.validate(event);
+      const { error } = schemaMap.level_failed.validate(event);
       expect(error).toBeUndefined();
+    });
+
+    test('should reject level_failed without required cause_of_death', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'level_failed',
+        level_id: 5,
+        zone_id: 1,
+        level_name: 'Sky Rookie 5',
+        score: 12,
+        objective_target: 16,
+        objective_type: 'passObstacles',
+        // cause_of_death missing
+        time_survived_seconds: 45,
+        hearts_remaining: 0,
+        continues_used: 0
+      };
+
+      const { error } = schemaMap.level_failed.validate(event);
+      expect(error).toBeDefined();
     });
   });
 
@@ -262,7 +422,7 @@ describe('Event Schemas Validation', () => {
         reward_gems: 0
       };
 
-      const { error } = eventSchemas.mission_completed.validate(event);
+      const { error } = schemaMap.mission_completed.validate(event);
       expect(error).toBeUndefined();
     });
   });
@@ -278,7 +438,7 @@ describe('Event Schemas Validation', () => {
         reward_gems: 10
       };
 
-      const { error } = eventSchemas.achievement_unlocked.validate(event);
+      const { error } = schemaMap.achievement_unlocked.validate(event);
       expect(error).toBeUndefined();
     });
   });
@@ -292,7 +452,7 @@ describe('Event Schemas Validation', () => {
         tournament_id: 'weekly_2025_01'
       };
 
-      const { error } = eventSchemas.tournament_entered.validate(event);
+      const { error } = schemaMap.tournament_entered.validate(event);
       expect(error).toBeUndefined();
     });
   });

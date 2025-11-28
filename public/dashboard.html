@@ -531,6 +531,31 @@
             </div>
         </div>
 
+        <!-- Level Analytics (From Actual Completions) -->
+        <div class="charts-grid-fullwidth">
+            <div class="chart-card">
+                <h3>
+                    📊 Level Analytics (Actual Completions)
+                    <select id="levelStatsZoneSelector" onchange="loadLevelCompletionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="1">Zone 1</option>
+                        <option value="2">Zone 2</option>
+                        <option value="3">Zone 3</option>
+                        <option value="4">Zone 4</option>
+                        <option value="5">Zone 5</option>
+                    </select>
+                    <span style="margin-left: 15px; font-size: 12px; color: #888; font-weight: normal;">
+                        ℹ️ Based on actual level_completed events (more accurate than started-failed)
+                    </span>
+                </h3>
+                <div class="retention-table-container" id="levelCompletionStatsContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading level completion stats...
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Retention & Activity -->
         <div class="charts-grid">
             <div class="chart-card">
@@ -597,7 +622,7 @@
         <!-- Interstitial Ads Daily Chart -->
         <div class="charts-grid-fullwidth">
             <div class="chart-card">
-                <h3>📺 Interstitial Ads Shown (7 Days)</h3>
+                <h3>📺 Interstitial Ads Performance (7 Days)</h3>
                 <div class="chart-container">
                     <canvas id="interstitialAdsDailyChart"></canvas>
                 </div>
@@ -940,6 +965,118 @@
             } catch (error) {
                 console.error('Error loading level performance:', error);
                 container.innerHTML = '<div class="loading">Error loading data</div>';
+            }
+        }
+
+        // ============================================================================
+        // LEVEL COMPLETION STATS (ACTUAL COMPLETIONS)
+        // ============================================================================
+
+        async function loadLevelCompletionStats() {
+            const zone = document.getElementById('levelStatsZoneSelector').value;
+            const container = document.getElementById('levelCompletionStatsContainer');
+            
+            try {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading level completion stats...</div>';
+                
+                const data = await fetchAPI(`level-completion-stats?zone=${zone}`);
+                if (!data || !data.levels) {
+                    container.innerHTML = '<div class="loading">No completion data yet. Fire level_completed events to see stats.</div>';
+                    return;
+                }
+
+                // Build table HTML with 3 key metrics
+                let tableHTML = '<table class="retention-table" style="width: 100%;">';
+                
+                // Header row
+                tableHTML += '<thead><tr>';
+                tableHTML += '<th>Level</th>';
+                tableHTML += '<th>Success Rate</th>';
+                tableHTML += '<th>First Attempt %</th>';
+                tableHTML += '<th>Avg Time</th>';
+                tableHTML += '<th>Avg ❤️</th>';
+                tableHTML += '<th>Completions</th>';
+                tableHTML += '</tr></thead>';
+                
+                // Data rows
+                tableHTML += '<tbody>';
+                data.levels.forEach(level => {
+                    const successRate = level.success_rate || 0;
+                    const firstAttemptRate = level.first_attempt_rate || 0;
+                    const avgTime = level.avg_completion_time_seconds || 0;
+                    const avgHearts = level.avg_hearts_remaining || 0;
+                    const completions = level.total_completions || 0;
+                    const starters = level.unique_starters || 0;
+                    const completers = level.unique_completers || 0;
+                    
+                    // Color coding for success rate
+                    let successColor = '#f56565'; // red
+                    if (successRate >= 70) successColor = '#48bb78'; // green
+                    else if (successRate >= 40) successColor = '#ed8936'; // orange
+                    
+                    // Color coding for first attempt rate
+                    let firstAttemptColor = '#f56565'; // red
+                    if (firstAttemptRate >= 60) firstAttemptColor = '#48bb78'; // green
+                    else if (firstAttemptRate >= 30) firstAttemptColor = '#ed8936'; // orange
+                    
+                    // Format time as mm:ss
+                    const minutes = Math.floor(avgTime / 60);
+                    const seconds = avgTime % 60;
+                    const timeStr = avgTime > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : '-';
+                    
+                    tableHTML += '<tr>';
+                    tableHTML += `<td style="font-weight: 600;">Level ${level.level}</td>`;
+                    tableHTML += `<td style="text-align: center;">
+                        <span style="color: ${successColor}; font-weight: 600;">${successRate}%</span>
+                        <span style="font-size: 10px; color: #888;"> (${completers}/${starters})</span>
+                    </td>`;
+                    tableHTML += `<td style="text-align: center; color: ${firstAttemptColor}; font-weight: 600;">${firstAttemptRate}%</td>`;
+                    tableHTML += `<td style="text-align: center;">${timeStr}</td>`;
+                    tableHTML += `<td style="text-align: center;">${avgHearts > 0 ? avgHearts.toFixed(1) : '-'}</td>`;
+                    tableHTML += `<td style="text-align: center;">${completions}</td>`;
+                    tableHTML += '</tr>';
+                });
+                
+                // Summary row
+                if (data.summary) {
+                    tableHTML += '<tr style="background-color: rgba(102, 126, 234, 0.1); font-weight: 600; border-top: 2px solid #667eea;">';
+                    tableHTML += '<td>Zone Avg</td>';
+                    
+                    let avgSuccessColor = '#f56565';
+                    if (data.summary.avg_success_rate >= 70) avgSuccessColor = '#48bb78';
+                    else if (data.summary.avg_success_rate >= 40) avgSuccessColor = '#ed8936';
+                    
+                    let avgFirstAttemptColor = '#f56565';
+                    if (data.summary.avg_first_attempt_rate >= 60) avgFirstAttemptColor = '#48bb78';
+                    else if (data.summary.avg_first_attempt_rate >= 30) avgFirstAttemptColor = '#ed8936';
+                    
+                    tableHTML += `<td style="text-align: center; color: ${avgSuccessColor};">${data.summary.avg_success_rate}%</td>`;
+                    tableHTML += `<td style="text-align: center; color: ${avgFirstAttemptColor};">${data.summary.avg_first_attempt_rate}%</td>`;
+                    tableHTML += '<td style="text-align: center;">-</td>';
+                    tableHTML += '<td style="text-align: center;">-</td>';
+                    tableHTML += `<td style="text-align: center;">${data.summary.total_completions}</td>`;
+                    tableHTML += '</tr>';
+                }
+                
+                tableHTML += '</tbody></table>';
+                
+                // Add legend
+                tableHTML += `
+                    <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                        <strong>Legend:</strong>
+                        Success Rate = Unique completers / Unique starters |
+                        First Attempt % = Completions on first try / Total completions |
+                        <span style="color: #48bb78;">■</span> Good |
+                        <span style="color: #ed8936;">■</span> Medium |
+                        <span style="color: #f56565;">■</span> Needs work
+                    </div>
+                `;
+                
+                container.innerHTML = tableHTML;
+                
+            } catch (error) {
+                console.error('Error loading level completion stats:', error);
+                container.innerHTML = '<div class="loading">Error loading data. Make sure level_completed events are being sent.</div>';
             }
         }
 
@@ -1577,21 +1714,25 @@
             );
             
             charts.interstitialAdsDaily = new Chart(ctx, {
-                type: 'line',
+                type: 'bar',
                 data: {
                     labels: sortedDaily.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
                     datasets: [{
-                        label: 'Interstitial Ads Shown',
+                        label: 'Ads Shown',
                         data: sortedDaily.map(d => parseInt(d.shown) || 0),
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
                         borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                        pointBackgroundColor: '#667eea',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        order: 2
+                    }, {
+                        label: 'Early Dismissals (<5s)',
+                        data: sortedDaily.map(d => parseInt(d.early_dismissed) || 0),
+                        backgroundColor: 'rgba(231, 76, 60, 0.8)',
+                        borderColor: '#e74c3c',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        order: 1
                     }]
                 },
                 options: {
@@ -1599,22 +1740,37 @@
                     maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            display: false
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
                         },
                         tooltip: {
                             callbacks: {
                                 title: function(context) {
                                     return context[0].label;
                                 },
-                                label: function(context) {
-                                    return `Ads Shown: ${context.parsed.y}`;
+                                afterBody: function(context) {
+                                    const shown = sortedDaily[context[0].dataIndex]?.shown || 0;
+                                    const earlyDismissed = sortedDaily[context[0].dataIndex]?.early_dismissed || 0;
+                                    if (shown > 0) {
+                                        const earlyRate = ((earlyDismissed / shown) * 100).toFixed(1);
+                                        return `\n⚠️ Early Dismiss Rate: ${earlyRate}%\n(Users who closed ad in <5 seconds)`;
+                                    }
+                                    return '';
                                 }
                             }
                         }
                     },
                     scales: {
+                        x: {
+                            stacked: false
+                        },
                         y: {
                             beginAtZero: true,
+                            stacked: false,
                             ticks: {
                                 precision: 0,
                                 stepSize: 1
@@ -1916,6 +2072,7 @@
                 loadCompletionTrend(),
                 loadGamesPerPlayerChart(),
                 loadLevelPerformance(),
+                loadLevelCompletionStats(),  // 📊 NEW: Actual completion stats
                 loadRetention(),
                 loadEconomy(),
                 loadContinues(),

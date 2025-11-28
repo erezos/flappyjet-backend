@@ -498,6 +498,133 @@ module.exports = (db, cacheManager) => {
     }
   });
 
+  /**
+   * GET /api/dashboard/level-completion-stats?zone=1
+   * Returns actual completion metrics using level_completed events
+   * More accurate than level-performance which uses "started - failed" approximation
+   * 
+   * Returns:
+   * - total_completions: Total level_completed events
+   * - unique_completers: Unique users who completed
+   * - first_attempt_completions: Completions with first_attempt=true
+   * - first_attempt_rate: % of completions that were first attempt
+   * - avg_completion_time: Average time to complete
+   * - avg_hearts_remaining: Average hearts at completion
+   */
+  router.get('/level-completion-stats', async (req, res) => {
+    try {
+      const zone = parseInt(req.query.zone || 1);
+      const cacheKey = `level-completion-stats-zone${zone}`;
+      
+      const data = await getCachedQuery(req, cacheKey, async () => {
+        // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
+        const startLevel = (zone - 1) * 10 + 1;
+        const endLevel = zone * 10;
+        const levelIds = Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',');
+        
+        // Get completion stats from level_completed events
+        const result = await db.query(`
+          SELECT 
+            payload->>'level_id' as level,
+            COUNT(*) as total_completions,
+            COUNT(DISTINCT user_id) as unique_completers,
+            COUNT(CASE WHEN (payload->>'first_attempt')::boolean = true THEN 1 END) as first_attempt_completions,
+            ROUND(AVG((payload->>'time_seconds')::int)) as avg_completion_time,
+            ROUND(AVG((payload->>'hearts_remaining')::int), 1) as avg_hearts_remaining
+          FROM events
+          WHERE event_type = 'level_completed'
+            AND payload->>'level_id' IN (${levelIds})
+            AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+          GROUP BY payload->>'level_id'
+          ORDER BY CAST(payload->>'level_id' AS INTEGER)
+        `);
+
+        // Get level_started counts for success rate calculation
+        const startedResult = await db.query(`
+          SELECT 
+            payload->>'level_id' as level,
+            COUNT(DISTINCT user_id) as unique_starters
+          FROM events
+          WHERE event_type = 'level_started'
+            AND payload->>'level_id' IN (${levelIds})
+            AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+          GROUP BY payload->>'level_id'
+        `);
+
+        // Create lookup map for starters
+        const startersMap = {};
+        startedResult.rows.forEach(row => {
+          startersMap[row.level] = parseInt(row.unique_starters || 0);
+        });
+
+        // Build response with calculated rates
+        const levels = result.rows.map(r => {
+          const level = parseInt(r.level);
+          const uniqueCompleters = parseInt(r.unique_completers || 0);
+          const uniqueStarters = startersMap[r.level] || 0;
+          const firstAttemptCompletions = parseInt(r.first_attempt_completions || 0);
+          
+          return {
+            level,
+            total_completions: parseInt(r.total_completions || 0),
+            unique_completers: uniqueCompleters,
+            unique_starters: uniqueStarters,
+            success_rate: uniqueStarters > 0 
+              ? parseFloat(((uniqueCompleters / uniqueStarters) * 100).toFixed(1)) 
+              : 0,
+            first_attempt_completions: firstAttemptCompletions,
+            first_attempt_rate: uniqueCompleters > 0 
+              ? parseFloat(((firstAttemptCompletions / uniqueCompleters) * 100).toFixed(1)) 
+              : 0,
+            avg_completion_time_seconds: parseInt(r.avg_completion_time || 0),
+            avg_hearts_remaining: parseFloat(r.avg_hearts_remaining || 0)
+          };
+        });
+
+        // Fill in missing levels with zeros
+        const allLevels = [];
+        for (let level = startLevel; level <= endLevel; level++) {
+          const existing = levels.find(l => l.level === level);
+          if (existing) {
+            allLevels.push(existing);
+          } else {
+            allLevels.push({
+              level,
+              total_completions: 0,
+              unique_completers: 0,
+              unique_starters: startersMap[String(level)] || 0,
+              success_rate: 0,
+              first_attempt_completions: 0,
+              first_attempt_rate: 0,
+              avg_completion_time_seconds: 0,
+              avg_hearts_remaining: 0
+            });
+          }
+        }
+
+        return {
+          zone,
+          levels: allLevels,
+          summary: {
+            total_completions: allLevels.reduce((sum, l) => sum + l.total_completions, 0),
+            avg_success_rate: allLevels.length > 0
+              ? parseFloat((allLevels.reduce((sum, l) => sum + l.success_rate, 0) / allLevels.length).toFixed(1))
+              : 0,
+            avg_first_attempt_rate: allLevels.length > 0
+              ? parseFloat((allLevels.reduce((sum, l) => sum + l.first_attempt_rate, 0) / allLevels.length).toFixed(1))
+              : 0
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching level completion stats:', error);
+      res.status(500).json({ error: 'Failed to fetch level completion stats' });
+    }
+  });
+
   // ============================================================================
   // 4. TOP EVENTS (Real-time activity)
   // ============================================================================
@@ -611,7 +738,7 @@ module.exports = (db, cacheManager) => {
   router.get('/ad-performance', async (req, res) => {
     try {
       const data = await getCachedQuery(req, 'ad-performance', async () => {
-        const [rewardedResult, interstitialResult, interstitialDailyResult] = await Promise.all([
+        const [rewardedResult, interstitialResult, interstitialDailyResult, interstitialDismissedResult] = await Promise.all([
           // Rewarded ads
           db.query(`
             SELECT 
@@ -633,7 +760,7 @@ module.exports = (db, cacheManager) => {
               AND received_at >= CURRENT_DATE - INTERVAL '7 days'
           `),
           
-          // Interstitial ads daily breakdown (7 days)
+          // Interstitial ads daily breakdown (7 days) - shown
           db.query(`
             SELECT 
               DATE(received_at) as date,
@@ -643,9 +770,28 @@ module.exports = (db, cacheManager) => {
               AND received_at >= CURRENT_DATE - INTERVAL '7 days'
             GROUP BY DATE(received_at)
             ORDER BY date ASC
+          `),
+          
+          // Interstitial ads daily breakdown (7 days) - early dismissals (viewed < 5 seconds)
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as early_dismissed
+            FROM events
+            WHERE event_type = 'interstitial_dismissed'
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+              AND (event_data->>'is_early_dismissal')::boolean = true
+            GROUP BY DATE(received_at)
+            ORDER BY date ASC
           `)
         ]);
 
+        // Merge shown and early dismissed data by date
+        const earlyDismissedByDate = {};
+        interstitialDismissedResult.rows.forEach(row => {
+          earlyDismissedByDate[row.date] = parseInt(row.early_dismissed || 0);
+        });
+        
         return {
           rewarded: {
             shown: parseInt(rewardedResult.rows[0]?.shown || 0),
@@ -656,7 +802,8 @@ module.exports = (db, cacheManager) => {
             shown: parseInt(interstitialResult.rows[0]?.shown || 0),
             daily: interstitialDailyResult.rows.map(row => ({
               date: row.date,
-              shown: parseInt(row.shown || 0)
+              shown: parseInt(row.shown || 0),
+              early_dismissed: earlyDismissedByDate[row.date] || 0
             }))
           },
           message: (parseInt(rewardedResult.rows[0]?.shown || 0) === 0 && parseInt(interstitialResult.rows[0]?.shown || 0) === 0) 

@@ -124,6 +124,10 @@ const gameEndedSchema = Joi.object({
   cause_of_death: Joi.string().required(), // 'obstacle_collision', 'quit', etc.
   max_combo: Joi.number().integer().min(0).required(),
   powerups_used: Joi.array().items(Joi.string()).default([]),
+  // Story mode specific fields (optional)
+  level_id: Joi.number().integer().min(1).optional(),
+  zone_id: Joi.number().integer().min(1).optional(),
+  level_name: Joi.string().optional(),
 });
 
 // 8. game_paused - Mid-game pause
@@ -177,10 +181,14 @@ const levelCompletedSchema = Joi.object({
   level_id: Joi.number().integer().min(1).required(),
   zone_id: Joi.number().integer().min(1).required(),
   score: Joi.number().integer().min(0).required(),
-  stars: Joi.number().integer().min(0).max(3).required(),
+  stars: Joi.number().integer().min(0).max(3).default(0), // Optional - we don't track stars currently
   time_seconds: Joi.number().integer().min(0).required(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   first_attempt: Joi.boolean().required(),
+  // Additional optional fields for enhanced analytics
+  level_name: Joi.string().optional(),
+  objective_type: Joi.string().optional(),
+  continues_used: Joi.number().integer().min(0).default(0),
 });
 
 // 13. level_failed - Story mode level failed (NEW)
@@ -393,6 +401,8 @@ const interstitialDismissedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('interstitial_dismissed').required(),
   wins_this_session: Joi.number().integer().min(0).optional(),
+  view_duration_seconds: Joi.number().integer().min(0).allow(null).optional(), // How long user viewed ad
+  is_early_dismissal: Joi.boolean().optional(), // true if viewed < 5 seconds (potential revenue loss)
 });
 
 // 29. share_clicked - Social share
