@@ -659,5 +659,114 @@ describe('Event Schemas Validation', () => {
       expect(error).toBeUndefined();
     });
   });
+
+  describe('ad_revenue', () => {
+    test('should validate REAL ad_revenue event (new format)', () => {
+      const event = {
+        event_type: 'ad_revenue',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.5',
+        platform: 'android',
+        ad_type: 'interstitial',
+        ad_format: 'fullscreen',
+        revenue_micros: 10000,
+        revenue_usd: 0.01,
+        currency: 'USD',
+        precision: 'precise',
+        is_real_revenue: true
+      };
+
+      const { error } = schemaMap.ad_revenue.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate rewarded ad_revenue event', () => {
+      const event = {
+        event_type: 'ad_revenue',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.5',
+        platform: 'android',
+        ad_type: 'rewarded',
+        ad_format: 'rewarded_video',
+        revenue_micros: 15000,
+        revenue_usd: 0.015,
+        currency: 'USD',
+        precision: 'estimated',
+        is_real_revenue: true
+      };
+
+      const { error } = schemaMap.ad_revenue.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate LEGACY ad_revenue event (old format)', () => {
+      const event = {
+        event_type: 'ad_revenue',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.4',
+        platform: 'android',
+        ad_type: 'interstitial',
+        ad_format: 'fullscreen',
+        estimated_revenue_usd: 0.01,
+        currency: 'USD'
+      };
+
+      const { error } = schemaMap.ad_revenue.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate all precision types', () => {
+      const precisionTypes = ['precise', 'estimated', 'publisherProvided', 'unknown'];
+      
+      for (const precision of precisionTypes) {
+        const event = {
+          event_type: 'ad_revenue',
+          user_id: 'device_123',
+          timestamp: '2025-01-01T00:00:00.000Z',
+          app_version: '2.1.5',
+          platform: 'android',
+          ad_type: 'interstitial',
+          revenue_usd: 0.01,
+          precision: precision
+        };
+
+        const { error } = schemaMap.ad_revenue.validate(event);
+        expect(error).toBeUndefined();
+      }
+    });
+
+    test('should reject invalid ad_type', () => {
+      const event = {
+        event_type: 'ad_revenue',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.5',
+        platform: 'android',
+        ad_type: 'popup', // invalid
+        revenue_usd: 0.01
+      };
+
+      const { error } = schemaMap.ad_revenue.validate(event);
+      expect(error).toBeDefined();
+    });
+
+    test('should reject negative revenue', () => {
+      const event = {
+        event_type: 'ad_revenue',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.5',
+        platform: 'android',
+        ad_type: 'interstitial',
+        revenue_usd: -0.01 // invalid
+      };
+
+      const { error } = schemaMap.ad_revenue.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
 });
 

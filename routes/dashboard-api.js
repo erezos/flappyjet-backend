@@ -715,8 +715,20 @@ module.exports = (db, cacheManager) => {
             uid.install_date,
             uid.country,
             COUNT(DISTINCT e.user_id) as users_with_revenue,
-            SUM((e.payload->>'estimated_revenue_usd')::float) as total_revenue,
-            AVG((e.payload->>'estimated_revenue_usd')::float) as avg_revenue_per_event
+            -- Support both old (estimated_revenue_usd) and new (revenue_usd) field names
+            SUM(COALESCE(
+              (e.payload->>'revenue_usd')::float,
+              (e.payload->>'estimated_revenue_usd')::float,
+              0
+            )) as total_revenue,
+            AVG(COALESCE(
+              (e.payload->>'revenue_usd')::float,
+              (e.payload->>'estimated_revenue_usd')::float,
+              0
+            )) as avg_revenue_per_event,
+            -- Track how many are real vs estimated
+            COUNT(CASE WHEN (e.payload->>'is_real_revenue')::boolean = true THEN 1 END) as real_revenue_count,
+            COUNT(CASE WHEN (e.payload->>'is_real_revenue')::boolean IS NULL OR (e.payload->>'is_real_revenue')::boolean = false THEN 1 END) as estimated_revenue_count
           FROM user_install_dates uid
           JOIN events e ON e.user_id = uid.user_id
           WHERE e.event_type = 'ad_revenue'

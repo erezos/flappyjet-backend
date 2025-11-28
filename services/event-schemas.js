@@ -479,13 +479,23 @@ const interstitialClickedSchema = Joi.object({
   lifetime_wins: Joi.number().integer().min(0).optional(),
 });
 
-// 28c. ad_revenue - Track estimated ad revenue for ROI/LTV calculation
+// 28c. ad_revenue - Track REAL ad revenue via AdMob's onPaidEvent callback
+// This provides actual revenue data from AdMob, not estimates!
 const adRevenueSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('ad_revenue').required(),
   ad_type: Joi.string().valid('interstitial', 'rewarded', 'banner').required(),
   ad_format: Joi.string().optional(), // 'fullscreen', 'rewarded_video', etc.
-  estimated_revenue_usd: Joi.number().min(0).required(), // Revenue in USD
+  
+  // NEW: Real revenue from AdMob's onPaidEvent (preferred)
+  revenue_micros: Joi.number().min(0).optional(), // Revenue in micros (millionths)
+  revenue_usd: Joi.number().min(0).optional(), // Revenue in USD (calculated)
+  precision: Joi.string().valid('precise', 'estimated', 'publisherProvided', 'unknown').optional(),
+  is_real_revenue: Joi.boolean().optional(), // true = from onPaidEvent, false/missing = estimate
+  
+  // LEGACY: Old estimated revenue (for backward compatibility)
+  estimated_revenue_usd: Joi.number().min(0).optional(), // Old estimate field
+  
   currency: Joi.string().length(3).default('USD'), // ISO currency code
   reward_granted: Joi.boolean().optional(), // For rewarded ads
 });
