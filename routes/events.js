@@ -77,12 +77,19 @@ router.post('/', async (req, res) => {
       }));
     }
 
-    logger.info('📥 Events received', { 
-      count: events.length,
-      from_ip: req.ip,
-      country: detectedCountry || 'unknown',
-      user_agent: req.get('user-agent')
-    });
+    // ✅ REDUCED LOGGING: Use debug level for routine events to avoid Railway rate limits
+    // Only log at info level for large batches (unusual) or sampling
+    if (events.length > 10) {
+      logger.info('📥 Large event batch received', { 
+        count: events.length,
+        country: detectedCountry || 'unknown',
+      });
+    } else {
+      // Sample 1% of normal traffic for debugging
+      if (Math.random() < 0.01) {
+        logger.debug('📥 Events received (sampled)', { count: events.length });
+      }
+    }
 
     // ✅ Return 200 immediately (fire-and-forget pattern)
     // Flutter app doesn't need to wait for processing

@@ -61,11 +61,17 @@ class EventProcessor {
       
       this.stats.total_processed++;
       
-      logger.info('✅ Event processed', { 
-        event_id: eventId,
-        event_type: event.event_type,
-        user_id: event.user_id
-      });
+      // ✅ REDUCED LOGGING: Only log important events to avoid Railway rate limits
+      // Sample 1% of routine events for debugging
+      const importantEvents = ['user_installed', 'level_completed', 'achievement_unlocked', 'purchase_completed'];
+      if (importantEvents.includes(event.event_type)) {
+        logger.info('✅ Important event processed', { 
+          event_type: event.event_type,
+          user_id: event.user_id?.substring(0, 8) + '...'
+        });
+      } else if (Math.random() < 0.01) {
+        logger.debug('✅ Event processed (sampled)', { event_type: event.event_type });
+      }
 
       // 4. ✅ SPECIAL HANDLING: Update users table for certain events
       // This ensures authoritative data is synced for push notifications
@@ -226,7 +232,10 @@ class EventProcessor {
    * @returns {Promise<Object>} - { success, processed, failed, results }
    */
   async processBatch(events) {
-    logger.info('📦 Processing event batch', { count: events.length });
+    // ✅ REDUCED LOGGING: Only log large batches to avoid Railway rate limits
+    if (events.length > 10) {
+      logger.info('📦 Processing large event batch', { count: events.length });
+    }
 
     const results = [];
     let successful = 0;
@@ -261,12 +270,15 @@ class EventProcessor {
 
     const batchResults = await Promise.all(promises);
 
-    logger.info('📊 Batch processing complete', { 
-      total: events.length,
-      successful,
-      failed,
-      success_rate: ((successful / events.length) * 100).toFixed(2) + '%'
-    });
+    // ✅ REDUCED LOGGING: Only log if there are failures or large batches
+    if (failed > 0 || events.length > 10) {
+      logger.info('📊 Batch processing complete', { 
+        total: events.length,
+        successful,
+        failed,
+        success_rate: ((successful / events.length) * 100).toFixed(2) + '%'
+      });
+    }
 
     return {
       success: true,

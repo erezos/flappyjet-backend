@@ -220,13 +220,33 @@ class FirebaseMessagingService {
   isInvalidTokenError(error) {
     if (!error) return false;
     
+    // FCM error codes that indicate the token is invalid/expired
     const invalidCodes = [
       'messaging/invalid-registration-token',
       'messaging/registration-token-not-registered',
       'messaging/invalid-argument',
+      'messaging/not-found',           // ✅ NEW: "Requested entity was not found"
+      'messaging/unregistered',        // ✅ NEW: App was uninstalled
+      'NOT_FOUND',                      // ✅ NEW: Alternative error code
+      'UNREGISTERED',                   // ✅ NEW: Alternative error code
     ];
 
-    return invalidCodes.includes(error.code);
+    // Check error code
+    if (invalidCodes.includes(error.code)) {
+      return true;
+    }
+
+    // ✅ NEW: Also check error message for common patterns
+    const errorMessage = (error.message || '').toLowerCase();
+    const invalidMessages = [
+      'requested entity was not found',
+      'not a valid fcm registration token',
+      'the registration token is not a valid',
+      'app instance has been unregistered',
+      'token is not registered',
+    ];
+
+    return invalidMessages.some(msg => errorMessage.includes(msg));
   }
 
   /**
