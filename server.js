@@ -552,6 +552,26 @@ app.use(cors({
   credentials: true
 }));
 app.use(morgan('combined'));
+
+// ✅ FIX: Handle aborted requests BEFORE body parsing
+// Mobile apps often disconnect quickly with fire-and-forget pattern
+app.use((req, res, next) => {
+  // Track if request was aborted
+  req.aborted = false;
+  
+  req.on('aborted', () => {
+    req.aborted = true;
+  });
+  
+  req.on('close', () => {
+    if (!res.finished && !res.headersSent) {
+      req.aborted = true;
+    }
+  });
+  
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -665,18 +685,49 @@ app.get('/', (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logger.error('🚨 Server Error:', err);
+  // ✅ FIX: Handle "request aborted" gracefully (fire-and-forget pattern)
+  // This happens when client disconnects before server finishes reading body
+  // Common with mobile apps that send events and don't wait for response
+  if (err.code === 'ECONNABORTED' || err.message === 'request aborted' || err.type === 'request.aborted') {
+    // Don't log as error - this is expected behavior with fire-and-forget
+    // Only log at debug level for troubleshooting if needed
+    if (Math.random() < 0.01) { // Sample 1% to reduce noise
+      logger.debug('📱 Client disconnected (fire-and-forget pattern)', {
+        path: req.path,
+        method: req.method
+      });
+    }
+    // Response can't be sent since client disconnected, just return
+    return;
+  }
+  
+  // ✅ FIX: Handle connection reset errors gracefully
+  if (err.code === 'ECONNRESET' || err.code === 'EPIPE') {
+    logger.debug('📱 Connection reset by client', { path: req.path });
+    return;
+  }
+  
+  // Log real errors
+  logger.error('🚨 Server Error:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method
+  });
   
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ error: 'Invalid JSON payload' });
   }
   
-  res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
-      : err.message,
-    timestamp: new Date().toISOString()
-  });
+  // Only send response if client is still connected
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      error: process.env.NODE_ENV === 'production' 
+        ? 'Internal server error' 
+        : err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // 404 handler

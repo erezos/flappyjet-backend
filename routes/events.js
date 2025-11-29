@@ -30,6 +30,11 @@ const GeolocationService = require('../services/geolocation-service');
  */
 router.post('/', async (req, res) => {
   try {
+    // ✅ FIX: Skip processing if request was aborted (fire-and-forget pattern)
+    if (req.aborted) {
+      return; // Client already disconnected, no need to process
+    }
+    
     // ✅ FIX: Support both request formats for backward compatibility
     // - New format (correct): [{...}, {...}] (array at root)
     // - Old format (EventBus bug): { events: [{...}, {...}] } (wrapped in object)
