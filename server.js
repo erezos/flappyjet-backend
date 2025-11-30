@@ -280,12 +280,26 @@ let redisClient = null;
       redisClient = null;
     }
     
+    // ✅ Helper: Redis ping with timeout (prevents hanging startup)
+    // Cleans up timeout to prevent memory leaks
+    const pingRedisWithTimeout = async (client, timeoutMs = 5000) => {
+      let timeoutId;
+      return Promise.race([
+        client.ping(),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Redis ping timeout')), timeoutMs);
+        })
+      ]).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+      });
+    };
+
     // Initialize Cache Manager (with or without Redis)
     try {
       if (redisClient && redisClient.status === 'ready') {
         // Test Redis connection before creating CacheManager
         try {
-          await redisClient.ping();
+          await pingRedisWithTimeout(redisClient, 5000); // ✅ 5s timeout
           cacheManager = new CacheManager(redisClient);
           logger.info('💾 ✅ Cache Manager initialized (with Redis)');
         } catch (pingError) {
@@ -308,7 +322,7 @@ let redisClient = null;
           redisClient.on('ready', async () => {
             logger.info('💾 🔄 Redis ready event - upgrading cache manager...');
             try {
-              await redisClient.ping();
+              await pingRedisWithTimeout(redisClient, 5000); // ✅ 5s timeout
               const newCacheManager = new CacheManager(redisClient);
               
               // ✅ CRITICAL: Update both references
@@ -331,7 +345,7 @@ let redisClient = null;
           if (redisClient.status === 'ready') {
             logger.info('💾 Redis already ready - upgrading cache manager immediately...');
             try {
-              await redisClient.ping();
+              await pingRedisWithTimeout(redisClient, 5000); // ✅ 5s timeout
               const newCacheManager = new CacheManager(redisClient);
               app.locals.cacheManager = newCacheManager;
               cacheManager = newCacheManager;
@@ -375,7 +389,7 @@ let redisClient = null;
           logger.info(`💾 Redis health check #${checkCount}: status=${status}`);
           
           if (status === 'ready') {
-            const pingResult = await redisClient.ping();
+            const pingResult = await pingRedisWithTimeout(redisClient, 5000); // ✅ 5s timeout
             if (pingResult === 'PONG') {
               logger.info('💾 🔄 Redis health check: Connected! Upgrading cache manager...');
               const newCacheManager = new CacheManager(redisClient);
