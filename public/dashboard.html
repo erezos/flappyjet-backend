@@ -494,32 +494,8 @@
             </div>
         </div>
 
-        <!-- Level Performance & Retention - Stacked vertically for full width -->
+        <!-- Level Analytics & Retention -->
         <div class="charts-grid-fullwidth">
-            <div class="chart-card">
-                <h3>
-                    🎮 Level Completion Rate (7 Days)
-                    <select id="zoneSelector" onchange="loadLevelPerformance()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
-                        <option value="1">Zone 1</option>
-                        <option value="2">Zone 2</option>
-                        <option value="3">Zone 3</option>
-                        <option value="4">Zone 4</option>
-                        <option value="5">Zone 5</option>
-                        <option value="6">Zone 6</option>
-                        <option value="7">Zone 7</option>
-                        <option value="8">Zone 8</option>
-                        <option value="9">Zone 9</option>
-                        <option value="10">Zone 10</option>
-                    </select>
-                </h3>
-                <div class="retention-table-container" id="levelPerformanceTableContainer">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        Loading level performance data...
-                    </div>
-                </div>
-            </div>
-
             <div class="chart-card">
                 <h3>🔄 Cohort Retention Table</h3>
                 <div class="retention-table-container" id="retentionTableContainer">
@@ -531,17 +507,22 @@
             </div>
         </div>
 
-        <!-- Level Analytics (From Actual Completions) -->
+        <!-- Level Analytics -->
         <div class="charts-grid-fullwidth">
             <div class="chart-card">
                 <h3>
-                    📊 Level Analytics (Actual Completions)
+                    📊 Level Analytics
                     <select id="levelStatsZoneSelector" onchange="loadLevelCompletionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
                         <option value="1">Zone 1</option>
                         <option value="2">Zone 2</option>
                         <option value="3">Zone 3</option>
                         <option value="4">Zone 4</option>
                         <option value="5">Zone 5</option>
+                        <option value="6">Zone 6</option>
+                        <option value="7">Zone 7</option>
+                        <option value="8">Zone 8</option>
+                        <option value="9">Zone 9</option>
+                        <option value="10">Zone 10</option>
                     </select>
                     <select id="levelStatsDateSelector" onchange="loadLevelCompletionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
                         <option value="7days">Last 7 Days</option>
@@ -552,9 +533,6 @@
                     </select>
                     <input type="date" id="levelStatsCustomDate" onchange="loadLevelCompletionStats()" style="margin-left: 5px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white; display: none;">
                     <span id="levelStatsDateLabel" style="margin-left: 10px; font-size: 12px; color: #666; font-weight: normal;"></span>
-                    <span style="margin-left: 15px; font-size: 12px; color: #888; font-weight: normal;">
-                        ℹ️ Based on actual level_completed events (more accurate than started-failed)
-                    </span>
                 </h3>
                 <div class="retention-table-container" id="levelCompletionStatsContainer">
                     <div class="loading">
@@ -944,93 +922,7 @@
         }
 
         // ============================================================================
-        // LEVEL PERFORMANCE CHART
-        // ============================================================================
-
-        async function loadLevelPerformance() {
-            const zone = document.getElementById('zoneSelector').value;
-            const container = document.getElementById('levelPerformanceTableContainer');
-            
-            try {
-                container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading level performance data...</div>';
-                
-                const data = await fetchAPI(`level-performance?zone=${zone}&daily=true`);
-                if (!data || !data.daily) {
-                    container.innerHTML = '<div class="loading">No data available</div>';
-                    return;
-                }
-
-                // Calculate level range for zone
-                const startLevel = (zone - 1) * 10 + 1;
-                const endLevel = zone * 10;
-                const levels = [];
-                for (let i = startLevel; i <= endLevel; i++) {
-                    levels.push(i);
-                }
-
-                // Build table HTML
-                let tableHTML = '<table class="retention-table" style="width: 100%;">';
-                
-                // Header row
-                tableHTML += '<thead><tr>';
-                tableHTML += '<th>Date</th>';
-                levels.forEach(level => {
-                    tableHTML += `<th>Level ${level}</th>`;
-                });
-                tableHTML += '</tr></thead>';
-                
-                // Data rows
-                tableHTML += '<tbody>';
-                data.daily.forEach(day => {
-                    const date = new Date(day.date);
-                    const dateStr = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                    tableHTML += '<tr>';
-                    tableHTML += `<td style="font-weight: 600;">${dateStr}</td>`;
-                    
-                    levels.forEach(level => {
-                        const levelData = day.levels[level];
-                        const started = levelData.started || 0;
-                        const completed = levelData.completed || 0;
-                        const rate = levelData.completion_rate || 0;
-                        
-                        // Color coding
-                        let color = '#f56565'; // red
-                        if (rate >= 70) color = '#48bb78'; // green
-                        else if (rate >= 40) color = '#ed8936'; // orange
-                        
-                        const displayText = started > 0 
-                            ? `${completed}/${started} <span style="color: ${color}; font-weight: 600;">${rate}%</span>`
-                            : '<span style="color: #999;">-</span>';
-                        
-                        tableHTML += `<td style="text-align: center;">${displayText}</td>`;
-                    });
-                    tableHTML += '</tr>';
-                });
-                
-                // Average row
-                tableHTML += '<tr style="background-color: rgba(102, 126, 234, 0.1); font-weight: 600; border-top: 2px solid #667eea;">';
-                tableHTML += '<td>Avg</td>';
-                levels.forEach(level => {
-                    const avgRate = data.averages[level] || 0;
-                    let color = '#f56565';
-                    if (avgRate >= 70) color = '#48bb78';
-                    else if (avgRate >= 40) color = '#ed8936';
-                    
-                    tableHTML += `<td style="text-align: center; color: ${color};">${avgRate}%</td>`;
-                });
-                tableHTML += '</tr>';
-                
-                tableHTML += '</tbody></table>';
-                container.innerHTML = tableHTML;
-                
-            } catch (error) {
-                console.error('Error loading level performance:', error);
-                container.innerHTML = '<div class="loading">Error loading data</div>';
-            }
-        }
-
-        // ============================================================================
-        // LEVEL COMPLETION STATS (ACTUAL COMPLETIONS)
+        // LEVEL ANALYTICS (ACTUAL COMPLETIONS)
         // ============================================================================
 
         async function loadLevelCompletionStats() {
@@ -1081,7 +973,7 @@
                 // Display the date filter being used
                 dateLabelSpan.textContent = data.date_filter ? `📅 ${data.date_filter}` : '';
 
-                // Build table HTML with 3 key metrics
+                // Build table HTML with key metrics
                 let tableHTML = '<table class="retention-table" style="width: 100%;">';
                 
                 // Header row
@@ -1090,7 +982,6 @@
                 tableHTML += '<th>Success Rate</th>';
                 tableHTML += '<th>First Attempt %</th>';
                 tableHTML += '<th>Avg Time</th>';
-                tableHTML += '<th>Avg ❤️</th>';
                 tableHTML += '</tr></thead>';
                 
                 // Data rows
@@ -1099,20 +990,20 @@
                     const successRate = level.success_rate || 0;
                     const firstAttemptRate = level.first_attempt_rate || 0;
                     const avgTime = level.avg_completion_time_seconds || 0;
-                    const avgHearts = level.avg_hearts_remaining || 0;
-                    const starters = level.unique_starters || 0;
-                    const completers = level.unique_completers || 0;
+                    const totalStarts = level.total_starts || 0;
+                    const totalCompletions = level.total_completions || 0;
+                    const firstTimeStarts = level.first_time_starts || 0;
                     const firstAttemptCompletions = level.first_attempt_completions || 0;
                     
                     // Color coding for success rate
                     let successColor = '#f56565'; // red
-                    if (successRate >= 70) successColor = '#48bb78'; // green
-                    else if (successRate >= 40) successColor = '#ed8936'; // orange
+                    if (successRate >= 50) successColor = '#48bb78'; // green
+                    else if (successRate >= 30) successColor = '#ed8936'; // orange
                     
                     // Color coding for first attempt rate
                     let firstAttemptColor = '#f56565'; // red
-                    if (firstAttemptRate >= 60) firstAttemptColor = '#48bb78'; // green
-                    else if (firstAttemptRate >= 30) firstAttemptColor = '#ed8936'; // orange
+                    if (firstAttemptRate >= 50) firstAttemptColor = '#48bb78'; // green
+                    else if (firstAttemptRate >= 25) firstAttemptColor = '#ed8936'; // orange
                     
                     // Format time as mm:ss
                     const minutes = Math.floor(avgTime / 60);
@@ -1121,53 +1012,57 @@
                     
                     tableHTML += '<tr>';
                     tableHTML += `<td style="font-weight: 600;">Level ${level.level}</td>`;
+                    // Success Rate = total completions / total starts
                     tableHTML += `<td style="text-align: center;">
                         <span style="color: ${successColor}; font-weight: 600;">${successRate}%</span>
-                        <span style="font-size: 10px; color: #888;"> (${completers}/${starters})</span>
+                        <span style="font-size: 10px; color: #888;"> (${totalCompletions}/${totalStarts})</span>
                     </td>`;
-                    // Show first attempt as breakdown: successes/completers = percentage
+                    // First Attempt % = first-time completions / first-time starts
                     tableHTML += `<td style="text-align: center; color: ${firstAttemptColor}; font-weight: 600;">
-                        ${firstAttemptCompletions}/${completers} = ${firstAttemptRate}%
+                        ${firstAttemptCompletions}/${firstTimeStarts} = ${firstAttemptRate}%
                     </td>`;
                     tableHTML += `<td style="text-align: center;">${timeStr}</td>`;
-                    tableHTML += `<td style="text-align: center;">${avgHearts > 0 ? avgHearts.toFixed(1) : '-'}</td>`;
                     tableHTML += '</tr>';
                 });
                 
                 // Summary row
                 if (data.summary) {
                     tableHTML += '<tr style="background-color: rgba(102, 126, 234, 0.1); font-weight: 600; border-top: 2px solid #667eea;">';
-                    tableHTML += '<td>Zone Avg</td>';
+                    tableHTML += '<td>Zone Total</td>';
                     
                     let avgSuccessColor = '#f56565';
-                    if (data.summary.avg_success_rate >= 70) avgSuccessColor = '#48bb78';
-                    else if (data.summary.avg_success_rate >= 40) avgSuccessColor = '#ed8936';
+                    if (data.summary.overall_success_rate >= 50) avgSuccessColor = '#48bb78';
+                    else if (data.summary.overall_success_rate >= 30) avgSuccessColor = '#ed8936';
                     
                     let avgFirstAttemptColor = '#f56565';
-                    if (data.summary.avg_first_attempt_rate >= 60) avgFirstAttemptColor = '#48bb78';
-                    else if (data.summary.avg_first_attempt_rate >= 30) avgFirstAttemptColor = '#ed8936';
+                    if (data.summary.overall_first_attempt_rate >= 50) avgFirstAttemptColor = '#48bb78';
+                    else if (data.summary.overall_first_attempt_rate >= 25) avgFirstAttemptColor = '#ed8936';
                     
-                    // Calculate totals for first attempt summary
-                    const totalFirstAttempts = data.levels.reduce((sum, l) => sum + (l.first_attempt_completions || 0), 0);
-                    const totalCompleters = data.levels.reduce((sum, l) => sum + (l.unique_completers || 0), 0);
+                    // Calculate totals for summary
+                    const totalCompletions = data.levels.reduce((sum, l) => sum + (l.total_completions || 0), 0);
+                    const totalStarts = data.levels.reduce((sum, l) => sum + (l.total_starts || 0), 0);
+                    const totalFirstAttemptCompletions = data.levels.reduce((sum, l) => sum + (l.first_attempt_completions || 0), 0);
+                    const totalFirstTimeStarts = data.levels.reduce((sum, l) => sum + (l.first_time_starts || 0), 0);
                     
-                    tableHTML += `<td style="text-align: center; color: ${avgSuccessColor};">${data.summary.avg_success_rate}%</td>`;
-                    tableHTML += `<td style="text-align: center; color: ${avgFirstAttemptColor};">
-                        ${totalFirstAttempts}/${totalCompleters} = ${data.summary.avg_first_attempt_rate}%
+                    tableHTML += `<td style="text-align: center; color: ${avgSuccessColor};">
+                        ${data.summary.overall_success_rate}%
+                        <span style="font-size: 10px; color: #888;"> (${totalCompletions}/${totalStarts})</span>
                     </td>`;
-                    tableHTML += '<td style="text-align: center;">-</td>';
+                    tableHTML += `<td style="text-align: center; color: ${avgFirstAttemptColor};">
+                        ${totalFirstAttemptCompletions}/${totalFirstTimeStarts} = ${data.summary.overall_first_attempt_rate}%
+                    </td>`;
                     tableHTML += '<td style="text-align: center;">-</td>';
                     tableHTML += '</tr>';
                 }
                 
                 tableHTML += '</tbody></table>';
                 
-                // Add legend
+                // Add legend - CORRECT definitions
                 tableHTML += `
                     <div style="margin-top: 15px; font-size: 12px; color: #666;">
                         <strong>Legend:</strong>
-                        Success Rate = Unique completers / Unique starters |
-                        First Attempt % = First try completions / Unique completers |
+                        Success Rate = Total completions / Total attempts |
+                        First Attempt % = (Users who completed on first try) / (Users who tried for first time) |
                         <span style="color: #48bb78;">■</span> Good |
                         <span style="color: #ed8936;">■</span> Medium |
                         <span style="color: #f56565;">■</span> Needs work
@@ -2346,8 +2241,7 @@
                 loadDAUTrend(),
                 loadCompletionTrend(),
                 loadGamesPerPlayerChart(),
-                loadLevelPerformance(),
-                loadLevelCompletionStats(),  // 📊 NEW: Actual completion stats
+                loadLevelCompletionStats(),  // 📊 Level Analytics
                 loadCountries().then(() => loadCohortROI()),  // 💰 NEW: Cohort ROI analysis
                 loadRetention(),
                 loadEconomy(),

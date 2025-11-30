@@ -768,5 +768,190 @@ describe('Event Schemas Validation', () => {
       expect(error).toBeDefined();
     });
   });
+
+  // ============================================================================
+  // RATE US EVENTS (NEW)
+  // ============================================================================
+
+  describe('rate_us_initialized', () => {
+    test('should validate correct rate_us_initialized event', () => {
+      const event = {
+        event_type: 'rate_us_initialized',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        has_rated: false,
+        prompt_count: 1,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_initialized.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should require session_count', () => {
+      const event = {
+        event_type: 'rate_us_initialized',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        has_rated: false,
+        prompt_count: 1,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_initialized.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
+
+  describe('rate_us_trigger', () => {
+    test('should validate correct rate_us_trigger event', () => {
+      const event = {
+        event_type: 'rate_us_trigger',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        trigger_type: 'positive_experience',
+        session_count: 5
+      };
+
+      const { error } = schemaMap.rate_us_trigger.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate daily_streak trigger with streak_day', () => {
+      const event = {
+        event_type: 'rate_us_trigger',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        trigger_type: 'daily_streak',
+        session_count: 5,
+        streak_day: 7
+      };
+
+      const { error } = schemaMap.rate_us_trigger.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should reject invalid trigger_type', () => {
+      const event = {
+        event_type: 'rate_us_trigger',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        trigger_type: 'invalid_trigger', // invalid
+        session_count: 5
+      };
+
+      const { error } = schemaMap.rate_us_trigger.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
+
+  describe('rate_us_popup_shown', () => {
+    test('should validate correct rate_us_popup_shown event', () => {
+      const event = {
+        event_type: 'rate_us_popup_shown',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_popup_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('rate_us_completed', () => {
+    test('should validate correct rate_us_completed event', () => {
+      const event = {
+        event_type: 'rate_us_completed',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        prompt_count: 2,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_completed.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('rate_us_declined', () => {
+    test('should validate correct rate_us_declined event', () => {
+      const event = {
+        event_type: 'rate_us_declined',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5
+      };
+
+      const { error } = schemaMap.rate_us_declined.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('rate_us_store_opened', () => {
+    test('should validate correct rate_us_store_opened event', () => {
+      const event = {
+        event_type: 'rate_us_store_opened',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        trigger: 'manual'
+      };
+
+      const { error } = schemaMap.rate_us_store_opened.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate fallback trigger', () => {
+      const event = {
+        event_type: 'rate_us_store_opened',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        trigger: 'fallback'
+      };
+
+      const { error } = schemaMap.rate_us_store_opened.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should reject invalid trigger', () => {
+      const event = {
+        event_type: 'rate_us_store_opened',
+        user_id: 'device_123',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        app_version: '2.1.13',
+        platform: 'android',
+        session_count: 5,
+        trigger: 'invalid' // invalid
+      };
+
+      const { error } = schemaMap.rate_us_store_opened.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
 });
 

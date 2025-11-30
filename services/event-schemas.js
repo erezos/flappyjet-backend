@@ -215,6 +215,7 @@ const levelFailedSchema = Joi.object({
   time_survived_seconds: Joi.number().integer().min(0).required(),
   hearts_remaining: Joi.number().integer().max(10).required(), // Allow negative, clamped to 0 in processor
   continues_used: Joi.number().integer().min(0).required(),
+  is_first_attempt: Joi.boolean().optional(), // ✅ NEW: Track if this was user's first attempt
 });
 
 // ============================================================================
@@ -545,6 +546,84 @@ const prizeClaimedSchema = Joi.object({
 });
 
 // ============================================================================
+// RATE US EVENTS (9 events) - ⭐ NEW: App rating funnel tracking
+// ============================================================================
+
+// 32. rate_us_initialized - Rate us manager initialized
+const rateUsInitializedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_initialized').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  has_rated: Joi.boolean().required(),
+  prompt_count: Joi.number().integer().min(0).required(),
+  days_since_install: Joi.number().integer().min(0).required(),
+});
+
+// 33. rate_us_trigger - Rate us trigger point reached
+const rateUsTriggerSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_trigger').required(),
+  trigger_type: Joi.string().valid('positive_experience', 'daily_streak', 'achievement', 'manual').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  streak_day: Joi.number().integer().min(0).optional(), // For daily_streak trigger
+});
+
+// 34. rate_us_popup_shown - Rate us popup displayed
+const rateUsPopupShownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_popup_shown').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  days_since_install: Joi.number().integer().min(0).required(),
+});
+
+// 35. rate_us_prompt_shown - Native rating prompt shown
+const rateUsPromptShownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_prompt_shown').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).required(),
+  days_since_install: Joi.number().integer().min(0).required(),
+});
+
+// 36. rate_us_rate_tapped - User tapped Rate button
+const rateUsRateTappedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_rate_tapped').required(),
+  session_count: Joi.number().integer().min(0).required(),
+});
+
+// 37. rate_us_maybe_later - User tapped Maybe Later
+const rateUsMaybeLaterSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_maybe_later').required(),
+  session_count: Joi.number().integer().min(0).required(),
+});
+
+// 38. rate_us_declined - User tapped No Thanks (won't show again)
+const rateUsDeclinedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_declined').required(),
+  session_count: Joi.number().integer().min(0).required(),
+});
+
+// 39. rate_us_completed - User completed rating
+const rateUsCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_completed').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).required(),
+  days_since_install: Joi.number().integer().min(0).required(),
+});
+
+// 40. rate_us_store_opened - Store listing opened
+const rateUsStoreOpenedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('rate_us_store_opened').required(),
+  session_count: Joi.number().integer().min(0).required(),
+  trigger: Joi.string().valid('manual', 'fallback').required(),
+});
+
+// ============================================================================
 // SCHEMA MAP (for quick lookup by event_type)
 // ============================================================================
 
@@ -602,6 +681,17 @@ const schemaMap = {
   ad_revenue: adRevenueSchema,
   share_clicked: shareClickedSchema,
   notification_received: notificationReceivedSchema,
+  
+  // ⭐ Rate Us Events (NEW)
+  rate_us_initialized: rateUsInitializedSchema,
+  rate_us_trigger: rateUsTriggerSchema,
+  rate_us_popup_shown: rateUsPopupShownSchema,
+  rate_us_prompt_shown: rateUsPromptShownSchema,
+  rate_us_rate_tapped: rateUsRateTappedSchema,
+  rate_us_maybe_later: rateUsMaybeLaterSchema,
+  rate_us_declined: rateUsDeclinedSchema,
+  rate_us_completed: rateUsCompletedSchema,
+  rate_us_store_opened: rateUsStoreOpenedSchema,
 };
 
 // ============================================================================

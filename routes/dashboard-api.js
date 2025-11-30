@@ -500,20 +500,14 @@ module.exports = (db, cacheManager) => {
 
   /**
    * GET /api/dashboard/level-completion-stats?zone=1&date=2024-11-28
-   * Returns actual completion metrics using level_completed events
-   * More accurate than level-performance which uses "started - failed" approximation
+   * Returns level analytics with CORRECT metric calculations:
+   * 
+   * First Attempt % = (users who completed on first try) / (users who tried for first time)
+   * Success Rate = (total completions) / (total attempts)
    * 
    * Query params:
-   * - zone: Zone number (1-3), default 1
+   * - zone: Zone number (1-5), default 1
    * - date: Specific date (YYYY-MM-DD), or 'all' for all-time, default is last 7 days
-   * 
-   * Returns:
-   * - total_completions: Total level_completed events
-   * - unique_completers: Unique users who completed
-   * - first_attempt_completions: Completions with first_attempt=true
-   * - first_attempt_rate: % of completions that were first attempt
-   * - avg_completion_time: Average time to complete
-   * - avg_hearts_remaining: Average hearts at completion
    */
   router.get('/level-completion-stats', async (req, res) => {
     try {
@@ -537,7 +531,7 @@ module.exports = (db, cacheManager) => {
         dateLabel = 'Last 7 Days';
       }
       
-      const cacheKey = `level-completion-stats-zone${zone}-${dateParam || '7days'}`;
+      const cacheKey = `level-completion-stats-v2-zone${zone}-${dateParam || '7days'}`;
       
       const data = await getCachedQuery(req, cacheKey, async () => {
         // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
@@ -545,28 +539,30 @@ module.exports = (db, cacheManager) => {
         const endLevel = zone * 10;
         const levelIds = Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',');
         
-        // Get completion stats from level_completed events
-        const result = await db.query(`
+        // ============================================================================
+        // QUERY 1: Get completion stats (total completions + first attempt completions)
+        // ============================================================================
+        const completionsResult = await db.query(`
           SELECT 
             payload->>'level_id' as level,
             COUNT(*) as total_completions,
             COUNT(DISTINCT user_id) as unique_completers,
             COUNT(CASE WHEN (payload->>'first_attempt')::boolean = true THEN 1 END) as first_attempt_completions,
-            ROUND(AVG((payload->>'time_seconds')::int)) as avg_completion_time,
-            ROUND(AVG((payload->>'hearts_remaining')::int), 1) as avg_hearts_remaining
+            ROUND(AVG((payload->>'time_seconds')::numeric)) as avg_completion_time
           FROM events
           WHERE event_type = 'level_completed'
             AND payload->>'level_id' IN (${levelIds})
             ${dateFilter}
           GROUP BY payload->>'level_id'
-          ORDER BY CAST(payload->>'level_id' AS INTEGER)
         `);
 
-        // Get level_started counts for success rate calculation
-        const startedResult = await db.query(`
+        // ============================================================================
+        // QUERY 2: Get total level_started counts (for Success Rate denominator)
+        // ============================================================================
+        const totalStartsResult = await db.query(`
           SELECT 
             payload->>'level_id' as level,
-            COUNT(DISTINCT user_id) as unique_starters
+            COUNT(*) as total_starts
           FROM events
           WHERE event_type = 'level_started'
             AND payload->>'level_id' IN (${levelIds})
@@ -574,68 +570,98 @@ module.exports = (db, cacheManager) => {
           GROUP BY payload->>'level_id'
         `);
 
-        // Create lookup map for starters
-        const startersMap = {};
-        startedResult.rows.forEach(row => {
-          startersMap[row.level] = parseInt(row.unique_starters || 0);
-        });
+        // ============================================================================
+        // QUERY 3: Get FIRST-TIME starts (for First Attempt % denominator)
+        // Users who started the level with is_first_attempt=true
+        // ============================================================================
+        const firstTimeStartsResult = await db.query(`
+          SELECT 
+            payload->>'level_id' as level,
+            COUNT(*) as first_time_starts
+          FROM events
+          WHERE event_type = 'level_started'
+            AND payload->>'level_id' IN (${levelIds})
+            AND (payload->>'is_first_attempt')::boolean = true
+            ${dateFilter}
+          GROUP BY payload->>'level_id'
+        `);
 
-        // Build response with calculated rates
-        const levels = result.rows.map(r => {
-          const level = parseInt(r.level);
-          const uniqueCompleters = parseInt(r.unique_completers || 0);
-          const uniqueStarters = startersMap[r.level] || 0;
-          const firstAttemptCompletions = parseInt(r.first_attempt_completions || 0);
-          
-          return {
-            level,
-            total_completions: parseInt(r.total_completions || 0),
-            unique_completers: uniqueCompleters,
-            unique_starters: uniqueStarters,
-            success_rate: uniqueStarters > 0 
-              ? parseFloat(((uniqueCompleters / uniqueStarters) * 100).toFixed(1)) 
-              : 0,
-            first_attempt_completions: firstAttemptCompletions,
-            first_attempt_rate: uniqueCompleters > 0 
-              ? parseFloat(((firstAttemptCompletions / uniqueCompleters) * 100).toFixed(1)) 
-              : 0,
-            avg_completion_time_seconds: parseInt(r.avg_completion_time || 0),
-            avg_hearts_remaining: parseFloat(r.avg_hearts_remaining || 0)
+        // Create lookup maps
+        const completionsMap = {};
+        completionsResult.rows.forEach(row => {
+          completionsMap[row.level] = {
+            total_completions: parseInt(row.total_completions || 0),
+            unique_completers: parseInt(row.unique_completers || 0),
+            first_attempt_completions: parseInt(row.first_attempt_completions || 0),
+            avg_completion_time: parseInt(row.avg_completion_time || 0)
           };
         });
 
-        // Fill in missing levels with zeros
+        const totalStartsMap = {};
+        totalStartsResult.rows.forEach(row => {
+          totalStartsMap[row.level] = parseInt(row.total_starts || 0);
+        });
+
+        const firstTimeStartsMap = {};
+        firstTimeStartsResult.rows.forEach(row => {
+          firstTimeStartsMap[row.level] = parseInt(row.first_time_starts || 0);
+        });
+
+        // ============================================================================
+        // BUILD RESPONSE with CORRECT calculations
+        // ============================================================================
         const allLevels = [];
         for (let level = startLevel; level <= endLevel; level++) {
-          const existing = levels.find(l => l.level === level);
-          if (existing) {
-            allLevels.push(existing);
-          } else {
-            allLevels.push({
-              level,
-              total_completions: 0,
-              unique_completers: 0,
-              unique_starters: startersMap[String(level)] || 0,
-              success_rate: 0,
-              first_attempt_completions: 0,
-              first_attempt_rate: 0,
-              avg_completion_time_seconds: 0,
-              avg_hearts_remaining: 0
-            });
-          }
+          const levelStr = String(level);
+          const completion = completionsMap[levelStr] || { total_completions: 0, unique_completers: 0, first_attempt_completions: 0, avg_completion_time: 0 };
+          const totalStarts = totalStartsMap[levelStr] || 0;
+          const firstTimeStarts = firstTimeStartsMap[levelStr] || 0;
+          
+          // SUCCESS RATE = total completions / total attempts
+          // Example: User tried 2 times, completed once → 1/2 = 50%
+          const successRate = totalStarts > 0 
+            ? parseFloat(((completion.total_completions / totalStarts) * 100).toFixed(1)) 
+            : 0;
+          
+          // FIRST ATTEMPT % = first-time completions / first-time starts
+          // Example: 10 users tried level for first time, 3 completed on first try → 3/10 = 30%
+          const firstAttemptRate = firstTimeStarts > 0 
+            ? parseFloat(((completion.first_attempt_completions / firstTimeStarts) * 100).toFixed(1)) 
+            : 0;
+          
+          allLevels.push({
+            level,
+            // Success Rate metrics
+            total_completions: completion.total_completions,
+            total_starts: totalStarts,
+            success_rate: successRate,
+            // First Attempt metrics
+            first_attempt_completions: completion.first_attempt_completions,
+            first_time_starts: firstTimeStarts,
+            first_attempt_rate: firstAttemptRate,
+            // Time
+            avg_completion_time_seconds: completion.avg_completion_time
+          });
         }
+
+        // Calculate zone summary
+        const totalCompletions = allLevels.reduce((sum, l) => sum + l.total_completions, 0);
+        const totalStarts = allLevels.reduce((sum, l) => sum + l.total_starts, 0);
+        const totalFirstAttemptCompletions = allLevels.reduce((sum, l) => sum + l.first_attempt_completions, 0);
+        const totalFirstTimeStarts = allLevels.reduce((sum, l) => sum + l.first_time_starts, 0);
 
         return {
           zone,
-          date_filter: dateLabel, // ✅ NEW: Show which date filter is active
+          date_filter: dateLabel,
           levels: allLevels,
           summary: {
-            total_completions: allLevels.reduce((sum, l) => sum + l.total_completions, 0),
-            avg_success_rate: allLevels.length > 0
-              ? parseFloat((allLevels.reduce((sum, l) => sum + l.success_rate, 0) / allLevels.length).toFixed(1))
+            total_completions: totalCompletions,
+            total_starts: totalStarts,
+            overall_success_rate: totalStarts > 0 
+              ? parseFloat(((totalCompletions / totalStarts) * 100).toFixed(1)) 
               : 0,
-            avg_first_attempt_rate: allLevels.length > 0
-              ? parseFloat((allLevels.reduce((sum, l) => sum + l.first_attempt_rate, 0) / allLevels.length).toFixed(1))
+            overall_first_attempt_rate: totalFirstTimeStarts > 0 
+              ? parseFloat(((totalFirstAttemptCompletions / totalFirstTimeStarts) * 100).toFixed(1)) 
               : 0
           },
           last_updated: new Date().toISOString()
