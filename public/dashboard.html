@@ -2099,10 +2099,16 @@
                 const badgeText = badges.length > 0 ? badges.join(' • ') : '';
                 const countryName = userInfo && userInfo.country_name ? userInfo.country_name : 'Unknown';
                 
+                // Extract level info for level-related events
+                const payload = event.payload || {};
+                const levelId = payload.level_id;
+                const isLevelEvent = ['level_started', 'level_completed', 'level_failed'].includes(event.type);
+                const levelText = isLevelEvent && levelId ? ` Level ${levelId}` : '';
+                
                 return `
                     <div class="activity-item">
                         <div>
-                            ${icon} <strong>${formatEventType(event.type)}</strong>
+                            ${icon} <strong>${formatEventType(event.type)}${levelText}</strong>
                             <span style="margin-left: 8px;">${displayName}</span>
                             <span style="margin-left: 8px; color: #888; font-size: 11px;">(${countryName})</span>
                         </div>
