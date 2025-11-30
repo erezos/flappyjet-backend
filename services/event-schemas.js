@@ -234,6 +234,21 @@ const currencyEarnedSchema = Joi.object({
   balance_after: Joi.number().integer().min(0).required(),
 });
 
+// 14b. bonus_collected - In-game bonus collected (shields, coins, gems)
+const bonusCollectedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('bonus_collected').required(),
+  bonus_type: Joi.string().valid('shield', 'coins', 'gems').required(),
+  level_id: Joi.number().integer().min(1).allow(null).optional(),
+  zone_id: Joi.number().integer().min(1).allow(null).optional(),
+  score_at_collection: Joi.number().integer().min(0).required(),
+  // Shield-specific fields
+  shield_tier: Joi.string().valid('blue', 'red', 'green').optional(),
+  shield_duration: Joi.number().min(0).optional(),
+  // Currency-specific fields
+  amount: Joi.number().integer().min(1).optional(),
+});
+
 // 15. currency_spent - Coins/gems spent (NEW)
 const currencySpentSchema = Joi.object({
   ...baseFields,
@@ -649,6 +664,7 @@ const schemaMap = {
   
   // Economy
   currency_earned: currencyEarnedSchema,
+  bonus_collected: bonusCollectedSchema, // 🎁 NEW: In-game bonus collection
   currency_spent: currencySpentSchema,
   skin_purchased: skinPurchasedSchema, // ✅ NEW: Skin purchase event
   item_unlocked: itemUnlockedSchema,   // ✅ NEW: Item unlock event
@@ -756,6 +772,7 @@ module.exports = {
   levelCompletedSchema,
   levelFailedSchema,
   currencyEarnedSchema,
+  bonusCollectedSchema,   // 🎁 NEW: Export bonus collected schema
   currencySpentSchema,
   skinPurchasedSchema,    // ✅ NEW: Export skin purchase schema
   itemUnlockedSchema,     // ✅ NEW: Export item unlock schema

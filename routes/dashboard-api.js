@@ -676,7 +676,134 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
-  // 3b. COHORT ROI ANALYSIS
+  // 3b. BONUS COLLECTION ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/bonus-collection-stats?zone=1&date=2024-11-28
+   * Returns bonus collection stats per level for a zone
+   * 
+   * Query params:
+   * - zone: Zone number (1-10), default 1
+   * - date: Specific date (YYYY-MM-DD), or 'all' for all-time, default is last 7 days
+   */
+  router.get('/bonus-collection-stats', async (req, res) => {
+    try {
+      const zone = parseInt(req.query.zone || 1);
+      const dateParam = req.query.date;
+      
+      // Build date filter
+      let dateFilter = '';
+      let dateLabel = 'Last 7 Days';
+      
+      if (dateParam === 'all') {
+        dateFilter = '';
+        dateLabel = 'All Time';
+      } else if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        dateFilter = `AND DATE(received_at) = '${dateParam}'`;
+        dateLabel = dateParam;
+      } else {
+        dateFilter = `AND received_at >= CURRENT_DATE - INTERVAL '7 days'`;
+        dateLabel = 'Last 7 Days';
+      }
+      
+      const cacheKey = `bonus-collection-stats-zone${zone}-${dateParam || '7days'}`;
+      
+      const data = await getCachedQuery(req, cacheKey, async () => {
+        // Calculate level range for zone
+        const startLevel = (zone - 1) * 10 + 1;
+        const endLevel = zone * 10;
+        const levelIds = Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',');
+        
+        // ============================================================================
+        // QUERY: Get bonus collection stats grouped by level and bonus type
+        // ============================================================================
+        const bonusResult = await db.query(`
+          SELECT 
+            payload->>'level_id' as level,
+            payload->>'bonus_type' as bonus_type,
+            COUNT(*) as count,
+            SUM(CASE WHEN payload->>'bonus_type' = 'coins' THEN (payload->>'amount')::int ELSE 0 END) as total_coins,
+            SUM(CASE WHEN payload->>'bonus_type' = 'gems' THEN (payload->>'amount')::int ELSE 0 END) as total_gems,
+            COUNT(CASE WHEN payload->>'bonus_type' = 'shield' THEN 1 END) as shield_count,
+            payload->>'shield_tier' as shield_tier
+          FROM events
+          WHERE event_type = 'bonus_collected'
+            AND payload->>'level_id' IN (${levelIds})
+            ${dateFilter}
+          GROUP BY payload->>'level_id', payload->>'bonus_type', payload->>'shield_tier'
+          ORDER BY payload->>'level_id', payload->>'bonus_type'
+        `);
+
+        // Aggregate by level
+        const levelStats = {};
+        for (let level = startLevel; level <= endLevel; level++) {
+          levelStats[level] = {
+            level,
+            shields_collected: 0,
+            coins_collected: 0,
+            gems_collected: 0,
+            shield_tiers: { blue: 0, red: 0, green: 0 },
+            total_bonuses: 0
+          };
+        }
+
+        // Process query results
+        bonusResult.rows.forEach(row => {
+          const level = parseInt(row.level);
+          if (levelStats[level]) {
+            const count = parseInt(row.count || 0);
+            
+            if (row.bonus_type === 'shield') {
+              levelStats[level].shields_collected += count;
+              const tier = row.shield_tier || 'blue';
+              if (levelStats[level].shield_tiers[tier] !== undefined) {
+                levelStats[level].shield_tiers[tier] += count;
+              }
+            } else if (row.bonus_type === 'coins') {
+              levelStats[level].coins_collected += parseInt(row.total_coins || 0);
+            } else if (row.bonus_type === 'gems') {
+              levelStats[level].gems_collected += parseInt(row.total_gems || 0);
+            }
+            
+            levelStats[level].total_bonuses += count;
+          }
+        });
+
+        // Convert to array
+        const levels = Object.values(levelStats);
+
+        // Calculate totals
+        const totals = {
+          total_shields: levels.reduce((sum, l) => sum + l.shields_collected, 0),
+          total_coins: levels.reduce((sum, l) => sum + l.coins_collected, 0),
+          total_gems: levels.reduce((sum, l) => sum + l.gems_collected, 0),
+          total_bonuses: levels.reduce((sum, l) => sum + l.total_bonuses, 0),
+          shield_tiers: {
+            blue: levels.reduce((sum, l) => sum + l.shield_tiers.blue, 0),
+            red: levels.reduce((sum, l) => sum + l.shield_tiers.red, 0),
+            green: levels.reduce((sum, l) => sum + l.shield_tiers.green, 0)
+          }
+        };
+
+        return {
+          zone,
+          date_filter: dateLabel,
+          levels,
+          totals,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching bonus collection stats:', error);
+      res.status(500).json({ error: 'Failed to fetch bonus collection stats' });
+    }
+  });
+
+  // ============================================================================
+  // 3c. COHORT ROI ANALYSIS
   // ============================================================================
 
   /**

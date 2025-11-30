@@ -543,6 +543,78 @@
             </div>
         </div>
 
+        <!-- Bonus Collection Analytics -->
+        <div class="charts-grid-fullwidth">
+            <div class="chart-card">
+                <h3>
+                    🎁 Bonus Collection Analytics
+                    <select id="bonusStatsZoneSelector" onchange="loadBonusCollectionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="1">Zone 1</option>
+                        <option value="2">Zone 2</option>
+                        <option value="3">Zone 3</option>
+                        <option value="4">Zone 4</option>
+                        <option value="5">Zone 5</option>
+                        <option value="6">Zone 6</option>
+                        <option value="7">Zone 7</option>
+                        <option value="8">Zone 8</option>
+                        <option value="9">Zone 9</option>
+                        <option value="10">Zone 10</option>
+                    </select>
+                    <select id="bonusStatsDateSelector" onchange="loadBonusCollectionStats()" style="margin-left: 10px; padding: 5px 10px; border-radius: 5px; border: 1px solid #ddd; background: white;">
+                        <option value="7days">Last 7 Days</option>
+                        <option value="today">Today</option>
+                        <option value="yesterday">Yesterday</option>
+                        <option value="all">All Time</option>
+                    </select>
+                    <span id="bonusStatsDateLabel" style="margin-left: 10px; font-size: 12px; color: #666; font-weight: normal;"></span>
+                </h3>
+                
+                <!-- Summary Cards -->
+                <div id="bonusSummaryCards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                    <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">🛡️ Shields</div>
+                        <div id="bonusTotalShields" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #f9d423 0%, #f5af19 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">🪙 Coins</div>
+                        <div id="bonusTotalCoins" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">💎 Gems</div>
+                        <div id="bonusTotalGems" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 15px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 12px; opacity: 0.9;">📦 Total</div>
+                        <div id="bonusTotalBonuses" style="font-size: 24px; font-weight: bold;">-</div>
+                    </div>
+                </div>
+                
+                <!-- Shield Tiers Breakdown -->
+                <div id="shieldTiersBreakdown" style="display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #3498db; border-radius: 50%;"></span>
+                        <span style="font-size: 13px; color: #666;">Blue (3s): <strong id="shieldTierBlue">0</strong></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #e74c3c; border-radius: 50%;"></span>
+                        <span style="font-size: 13px; color: #666;">Red (4s): <strong id="shieldTierRed">0</strong></span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="display: inline-block; width: 12px; height: 12px; background: #2ecc71; border-radius: 50%;"></span>
+                        <span style="font-size: 13px; color: #666;">Green (5s): <strong id="shieldTierGreen">0</strong></span>
+                    </div>
+                </div>
+                
+                <!-- Bonus Stats Table -->
+                <div class="retention-table-container" id="bonusCollectionStatsContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        Loading bonus collection stats...
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Cohort ROI Analysis -->
         <div class="charts-grid-fullwidth">
             <div class="chart-card">
@@ -1074,6 +1146,130 @@
             } catch (error) {
                 console.error('Error loading level completion stats:', error);
                 container.innerHTML = '<div class="loading">Error loading data. Make sure level_completed events are being sent.</div>';
+            }
+        }
+
+        // ============================================================================
+        // BONUS COLLECTION ANALYTICS
+        // ============================================================================
+
+        async function loadBonusCollectionStats() {
+            const zone = document.getElementById('bonusStatsZoneSelector').value;
+            const dateSelector = document.getElementById('bonusStatsDateSelector');
+            const dateLabelSpan = document.getElementById('bonusStatsDateLabel');
+            const container = document.getElementById('bonusCollectionStatsContainer');
+            
+            // Handle date selection
+            let dateParam = '';
+            const dateValue = dateSelector.value;
+            
+            if (dateValue === 'today') {
+                const today = new Date().toISOString().split('T')[0];
+                dateParam = `&date=${today}`;
+            } else if (dateValue === 'yesterday') {
+                const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+                dateParam = `&date=${yesterday}`;
+            } else if (dateValue === 'all') {
+                dateParam = '&date=all';
+            }
+            // '7days' = no param (default)
+            
+            try {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading bonus collection stats...</div>';
+                
+                const data = await fetchAPI(`bonus-collection-stats?zone=${zone}${dateParam}`);
+                if (!data || !data.levels) {
+                    container.innerHTML = '<div class="loading">No bonus collection data yet. Collect bonuses in-game to see stats.</div>';
+                    dateLabelSpan.textContent = '';
+                    return;
+                }
+                
+                // Display the date filter being used
+                dateLabelSpan.textContent = data.date_filter ? `📅 ${data.date_filter}` : '';
+
+                // Update summary cards
+                if (data.totals) {
+                    document.getElementById('bonusTotalShields').textContent = data.totals.total_shields.toLocaleString();
+                    document.getElementById('bonusTotalCoins').textContent = data.totals.total_coins.toLocaleString();
+                    document.getElementById('bonusTotalGems').textContent = data.totals.total_gems.toLocaleString();
+                    document.getElementById('bonusTotalBonuses').textContent = data.totals.total_bonuses.toLocaleString();
+                    
+                    // Shield tier breakdown
+                    if (data.totals.shield_tiers) {
+                        document.getElementById('shieldTierBlue').textContent = data.totals.shield_tiers.blue || 0;
+                        document.getElementById('shieldTierRed').textContent = data.totals.shield_tiers.red || 0;
+                        document.getElementById('shieldTierGreen').textContent = data.totals.shield_tiers.green || 0;
+                    }
+                }
+
+                // Build table HTML
+                let tableHTML = '<table class="retention-table" style="width: 100%;">';
+                
+                // Header row
+                tableHTML += '<thead><tr>';
+                tableHTML += '<th>Level</th>';
+                tableHTML += '<th>🛡️ Shields</th>';
+                tableHTML += '<th>🪙 Coins</th>';
+                tableHTML += '<th>💎 Gems</th>';
+                tableHTML += '<th>Total</th>';
+                tableHTML += '</tr></thead>';
+                
+                // Data rows
+                tableHTML += '<tbody>';
+                data.levels.forEach(level => {
+                    const shields = level.shields_collected || 0;
+                    const coins = level.coins_collected || 0;
+                    const gems = level.gems_collected || 0;
+                    const total = level.total_bonuses || 0;
+                    
+                    // Only show rows with data
+                    if (total === 0) {
+                        tableHTML += `<tr style="opacity: 0.5;">`;
+                    } else {
+                        tableHTML += '<tr>';
+                    }
+                    
+                    tableHTML += `<td style="font-weight: 600;">Level ${level.level}</td>`;
+                    tableHTML += `<td style="text-align: center;">
+                        ${shields > 0 ? `<span style="color: #3498db; font-weight: 600;">${shields}</span>` : '<span style="color: #ccc;">0</span>'}
+                    </td>`;
+                    tableHTML += `<td style="text-align: center;">
+                        ${coins > 0 ? `<span style="color: #f5af19; font-weight: 600;">${coins.toLocaleString()}</span>` : '<span style="color: #ccc;">0</span>'}
+                    </td>`;
+                    tableHTML += `<td style="text-align: center;">
+                        ${gems > 0 ? `<span style="color: #667eea; font-weight: 600;">${gems.toLocaleString()}</span>` : '<span style="color: #ccc;">0</span>'}
+                    </td>`;
+                    tableHTML += `<td style="text-align: center; font-weight: 600;">${total}</td>`;
+                    tableHTML += '</tr>';
+                });
+                
+                // Summary row
+                if (data.totals) {
+                    tableHTML += '<tr style="background-color: rgba(102, 126, 234, 0.1); font-weight: 600; border-top: 2px solid #667eea;">';
+                    tableHTML += '<td>Zone Total</td>';
+                    tableHTML += `<td style="text-align: center; color: #3498db;">${data.totals.total_shields}</td>`;
+                    tableHTML += `<td style="text-align: center; color: #f5af19;">${data.totals.total_coins.toLocaleString()}</td>`;
+                    tableHTML += `<td style="text-align: center; color: #667eea;">${data.totals.total_gems.toLocaleString()}</td>`;
+                    tableHTML += `<td style="text-align: center;">${data.totals.total_bonuses}</td>`;
+                    tableHTML += '</tr>';
+                }
+                
+                tableHTML += '</tbody></table>';
+                
+                // Add note about data source
+                tableHTML += `
+                    <div style="margin-top: 15px; font-size: 12px; color: #666;">
+                        <strong>Note:</strong>
+                        Shield counts are per pickup. Coins/Gems show total currency collected.
+                        Data from <code>bonus_collected</code> events.
+                    </div>
+                `;
+                
+                container.innerHTML = tableHTML;
+                
+            } catch (error) {
+                console.error('Error loading bonus collection stats:', error);
+                container.innerHTML = '<div class="loading">Error loading data. Make sure bonus_collected events are being sent.</div>';
             }
         }
 
@@ -2242,6 +2438,7 @@
                 loadCompletionTrend(),
                 loadGamesPerPlayerChart(),
                 loadLevelCompletionStats(),  // 📊 Level Analytics
+                loadBonusCollectionStats(),  // 🎁 Bonus Collection Analytics
                 loadCountries().then(() => loadCohortROI()),  // 💰 NEW: Cohort ROI analysis
                 loadRetention(),
                 loadEconomy(),
