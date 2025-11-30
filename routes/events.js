@@ -29,114 +29,91 @@ const GeolocationService = require('../services/geolocation-service');
  * Events are processed asynchronously
  */
 router.post('/', async (req, res) => {
+  // ✅ FIX: Parse request body SYNCHRONOUSLY (no await)
+  let events;
   try {
-    // ✅ FIX: Skip processing if request was aborted (fire-and-forget pattern)
-    if (req.aborted) {
-      return; // Client already disconnected, no need to process
-    }
-    
-    // ✅ FIX: Support both request formats for backward compatibility
-    // - New format (correct): [{...}, {...}] (array at root)
-    // - Old format (EventBus bug): { events: [{...}, {...}] } (wrapped in object)
-    let events;
     if (Array.isArray(req.body)) {
-      // New format: array at root level
       events = req.body;
     } else if (req.body.events && Array.isArray(req.body.events)) {
-      // Old format: extract from 'events' key
       events = req.body.events;
     } else {
-      // Single event object: wrap in array
       events = [req.body];
     }
     
-    // ✅ LIMIT BATCH SIZE TO PREVENT MEMORY SPIKES
+    // Limit batch size
     const MAX_BATCH_SIZE = 100;
     if (events.length > MAX_BATCH_SIZE) {
-      logger.warn(`⚠️ Batch too large: ${events.length}, truncating to ${MAX_BATCH_SIZE}`);
       events = events.slice(0, MAX_BATCH_SIZE);
     }
-    
-    // 🌍 Server-side country detection via IP geolocation
-    // Get country for the user (all events in batch have same user_id)
-    const userId = events[0]?.user_id;
-    let detectedCountry = null;
-    
-    if (userId) {
-      try {
-        const geoService = new GeolocationService(
-          req.app.locals.redisClient, 
-          req.app.locals.db
-        );
-        detectedCountry = await geoService.getCountryForUser(userId, req);
-      } catch (geoError) {
-        logger.debug(`🌍 GeoIP lookup failed: ${geoError.message}`);
-      }
+  } catch (parseError) {
+    events = [];
+  }
+
+  // ✅ CRITICAL FIX: Send response IMMEDIATELY (no blocking operations before this!)
+  // This prevents 499 timeout errors from Railway
+  res.status(200).json({
+    success: true,
+    message: 'Events received',
+    count: events.length,
+    timestamp: new Date().toISOString()
+  });
+
+  // ✅ Everything below runs AFTER response is sent (truly fire-and-forget)
+  // Client has already received 200 OK at this point
+  
+  if (events.length === 0) {
+    return; // Nothing to process
+  }
+
+  // 🌍 Server-side country detection (non-blocking, runs after response)
+  const userId = events[0]?.user_id;
+  let detectedCountry = null;
+  
+  if (userId) {
+    try {
+      const geoService = new GeolocationService(
+        req.app.locals.redisClient, 
+        req.app.locals.db
+      );
+      // ✅ Add timeout to prevent hanging on slow Redis
+      const geoPromise = geoService.getCountryForUser(userId, req);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Geo lookup timeout')), 2000)
+      );
+      detectedCountry = await Promise.race([geoPromise, timeoutPromise]);
+    } catch (geoError) {
+      // Geo lookup failed or timed out - continue without country
+      logger.debug(`🌍 GeoIP lookup failed: ${geoError.message}`);
     }
+  }
 
-    // Inject country into all events (server-side, authoritative)
-    if (detectedCountry) {
-      events = events.map(event => ({
-        ...event,
-        country: detectedCountry, // Server-detected country (overrides any client value)
-      }));
-    }
+  // Inject country into all events
+  if (detectedCountry) {
+    events = events.map(event => ({
+      ...event,
+      country: detectedCountry,
+    }));
+  }
 
-    // ✅ REDUCED LOGGING: Use debug level for routine events to avoid Railway rate limits
-    // Only log at info level for large batches (unusual) or sampling
-    if (events.length > 10) {
-      logger.info('📥 Large event batch received', { 
-        count: events.length,
-        country: detectedCountry || 'unknown',
-      });
-    } else {
-      // Sample 1% of normal traffic for debugging
-      if (Math.random() < 0.01) {
-        logger.debug('📥 Events received (sampled)', { count: events.length });
-      }
-    }
+  // ✅ Reduced logging to avoid Railway rate limits
+  if (events.length > 10 || Math.random() < 0.01) {
+    logger.debug('📥 Events processing', { count: events.length, country: detectedCountry || 'unknown' });
+  }
 
-    // ✅ Return 200 immediately (fire-and-forget pattern)
-    // Flutter app doesn't need to wait for processing
-    res.status(200).json({
-      success: true,
-      message: 'Events received',
-      count: events.length,
-      timestamp: new Date().toISOString()
-    });
-
-    // 🔥 Add events to queue (if available) or process directly
+  // 🔥 Process events (queue or direct)
+  try {
     const eventQueue = req.app.locals.eventQueue;
     
     if (eventQueue) {
-      // Use queue for better scalability (100K+ DAU)
-      eventQueue.addBatch(events).catch(error => {
-        logger.error('💥 Error queuing events batch', { 
-          error: error.message,
-          count: events.length 
-        });
-      });
+      await eventQueue.addBatch(events);
     } else {
-      // Fallback: process directly (for <10K DAU or if Redis unavailable)
       const processor = new EventProcessor(req.app.locals.db);
-      
-      processor.processBatch(events).catch(error => {
-        logger.error('💥 Error processing events batch', { 
-          error: error.message,
-          count: events.length 
-        });
-      });
+      await processor.processBatch(events);
     }
-
   } catch (error) {
-    logger.error('❌ Error receiving events', { error: error.message });
-    
-    // Even on error, return 200 (fire-and-forget)
-    // This prevents Flutter app from retrying unnecessarily
-    res.status(200).json({
-      success: true,
-      message: 'Events acknowledged',
-      note: 'Processing may have encountered issues'
+    logger.error('💥 Error processing events batch', { 
+      error: error.message,
+      count: events.length 
     });
   }
 });
