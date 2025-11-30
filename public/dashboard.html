@@ -2100,7 +2100,8 @@
                 const countryName = userInfo && userInfo.country_name ? userInfo.country_name : 'Unknown';
                 
                 // Extract level info for level-related events
-                const payload = event.payload || {};
+                // Note: API returns payload as "data" field
+                const payload = event.data || {};
                 const levelId = payload.level_id;
                 const isLevelEvent = ['level_started', 'level_completed', 'level_failed'].includes(event.type);
                 const levelText = isLevelEvent && levelId ? ` Level ${levelId}` : '';
