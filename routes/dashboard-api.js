@@ -2106,9 +2106,9 @@ module.exports = (db, cacheManager) => {
           // Breakdown by tier
           db.query(`
             SELECT 
-              payload->>'achievement_tier' as tier,
+              e1.payload->>'achievement_tier' as tier,
               COUNT(*) as total_unlocks,
-              COUNT(DISTINCT user_id) as unique_players,
+              COUNT(DISTINCT e1.user_id) as unique_players,
               SUM(CASE WHEN e2.event_type = 'achievement_claimed' THEN 1 ELSE 0 END) as total_claims
             FROM events e1
             LEFT JOIN events e2 ON e1.payload->>'achievement_id' = e2.payload->>'achievement_id' 
@@ -2116,7 +2116,7 @@ module.exports = (db, cacheManager) => {
               AND e2.event_type = 'achievement_claimed'
             WHERE e1.event_type = 'achievement_unlocked'
               AND e1.received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            GROUP BY payload->>'achievement_tier'
+            GROUP BY e1.payload->>'achievement_tier'
             ORDER BY total_unlocks DESC
           `)
         ]);
