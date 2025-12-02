@@ -1222,6 +1222,285 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
+  // 5b. INTERSTITIAL ADS BY TRIGGER REASON (NEW)
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/interstitial-by-trigger
+   * Returns interstitial ad analytics broken down by trigger_reason (win_milestone vs loss_streak)
+   * 📊 Allows comparing ad performance between win-based and loss-based triggers
+   */
+  router.get('/interstitial-by-trigger', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(req, `interstitial-by-trigger-${days}days`, async () => {
+        const [byTrigger, dailyByTrigger, engagementByTrigger] = await Promise.all([
+          // Total breakdown by trigger_reason
+          db.query(`
+            SELECT 
+              COALESCE(payload->>'trigger_reason', 'unknown') as trigger_reason,
+              COUNT(*) as shown,
+              COUNT(DISTINCT user_id) as unique_users
+            FROM events
+            WHERE event_type = 'interstitial_shown'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY COALESCE(payload->>'trigger_reason', 'unknown')
+            ORDER BY shown DESC
+          `),
+          
+          // Daily breakdown by trigger_reason
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COALESCE(payload->>'trigger_reason', 'unknown') as trigger_reason,
+              COUNT(*) as shown
+            FROM events
+            WHERE event_type = 'interstitial_shown'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at), COALESCE(payload->>'trigger_reason', 'unknown')
+            ORDER BY date ASC, trigger_reason
+          `),
+          
+          // Engagement by trigger_reason (clicks, early dismissals)
+          db.query(`
+            SELECT 
+              COALESCE(payload->>'trigger_reason', 'unknown') as trigger_reason,
+              COUNT(*) as total_dismissed,
+              COUNT(*) FILTER (WHERE (payload->>'was_clicked')::boolean = true) as clicked,
+              COUNT(*) FILTER (WHERE (payload->>'is_early_dismissal')::boolean = true) as early_dismissed,
+              ROUND(AVG(COALESCE((payload->>'view_duration_seconds')::int, 0)), 1) as avg_view_duration_seconds
+            FROM events
+            WHERE event_type = 'interstitial_dismissed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY COALESCE(payload->>'trigger_reason', 'unknown')
+            ORDER BY total_dismissed DESC
+          `)
+        ]);
+
+        // Calculate click rates and engagement metrics
+        const engagementMap = {};
+        engagementByTrigger.rows.forEach(row => {
+          const total = parseInt(row.total_dismissed || 0);
+          const clicked = parseInt(row.clicked || 0);
+          const earlyDismissed = parseInt(row.early_dismissed || 0);
+          
+          engagementMap[row.trigger_reason] = {
+            total_dismissed: total,
+            clicked: clicked,
+            click_rate: total > 0 ? ((clicked / total) * 100).toFixed(2) : '0.00',
+            early_dismissed: earlyDismissed,
+            early_dismissal_rate: total > 0 ? ((earlyDismissed / total) * 100).toFixed(2) : '0.00',
+            avg_view_duration_seconds: parseFloat(row.avg_view_duration_seconds || 0)
+          };
+        });
+
+        // Merge shown and engagement data
+        const summary = byTrigger.rows.map(row => ({
+          trigger_reason: row.trigger_reason,
+          shown: parseInt(row.shown || 0),
+          unique_users: parseInt(row.unique_users || 0),
+          ...engagementMap[row.trigger_reason] || {
+            total_dismissed: 0,
+            clicked: 0,
+            click_rate: '0.00',
+            early_dismissed: 0,
+            early_dismissal_rate: '0.00',
+            avg_view_duration_seconds: 0
+          }
+        }));
+
+        // Pivot daily data for chart display
+        const dailyPivot = {};
+        dailyByTrigger.rows.forEach(row => {
+          const date = row.date;
+          if (!dailyPivot[date]) {
+            dailyPivot[date] = { date, win_milestone: 0, loss_streak: 0, unknown: 0 };
+          }
+          dailyPivot[date][row.trigger_reason] = parseInt(row.shown || 0);
+        });
+
+        return {
+          summary,
+          daily: Object.values(dailyPivot),
+          insights: {
+            total_shown: summary.reduce((acc, r) => acc + r.shown, 0),
+            win_milestone_pct: summary.find(r => r.trigger_reason === 'win_milestone')?.shown 
+              ? ((summary.find(r => r.trigger_reason === 'win_milestone').shown / summary.reduce((acc, r) => acc + r.shown, 0)) * 100).toFixed(1) + '%'
+              : '0%',
+            loss_streak_pct: summary.find(r => r.trigger_reason === 'loss_streak')?.shown 
+              ? ((summary.find(r => r.trigger_reason === 'loss_streak').shown / summary.reduce((acc, r) => acc + r.shown, 0)) * 100).toFixed(1) + '%'
+              : '0%',
+          },
+          days_analyzed: days,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching interstitial by trigger:', error);
+      res.status(500).json({ error: 'Failed to fetch interstitial by trigger data' });
+    }
+  });
+
+  // ============================================================================
+  // 5c. RATE US ANALYTICS (NEW)
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/rate-us
+   * Returns rate us funnel analytics
+   * 📊 Tracks: initialized → popup_shown → rate_tapped → completed
+   */
+  router.get('/rate-us', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(req, `rate-us-${days}days`, async () => {
+        const [funnelStats, dailyStats, conversionBySession, declineStats] = await Promise.all([
+          // Funnel breakdown
+          db.query(`
+            SELECT 
+              event_type,
+              COUNT(*) as count,
+              COUNT(DISTINCT user_id) as unique_users
+            FROM events
+            WHERE event_type IN (
+              'rate_us_initialized',
+              'rate_us_popup_shown',
+              'rate_us_rate_tapped',
+              'rate_us_completed',
+              'rate_us_maybe_later',
+              'rate_us_declined'
+            )
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY event_type
+            ORDER BY 
+              CASE event_type
+                WHEN 'rate_us_initialized' THEN 1
+                WHEN 'rate_us_popup_shown' THEN 2
+                WHEN 'rate_us_rate_tapped' THEN 3
+                WHEN 'rate_us_completed' THEN 4
+                WHEN 'rate_us_maybe_later' THEN 5
+                WHEN 'rate_us_declined' THEN 6
+              END
+          `),
+          
+          // Daily popup shown and completions
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) FILTER (WHERE event_type = 'rate_us_popup_shown') as popups_shown,
+              COUNT(*) FILTER (WHERE event_type = 'rate_us_rate_tapped') as rate_tapped,
+              COUNT(*) FILTER (WHERE event_type = 'rate_us_completed') as completed,
+              COUNT(*) FILTER (WHERE event_type = 'rate_us_declined') as declined
+            FROM events
+            WHERE event_type IN ('rate_us_popup_shown', 'rate_us_rate_tapped', 'rate_us_completed', 'rate_us_declined')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date ASC
+          `),
+          
+          // Conversion by session count (when do users rate?)
+          db.query(`
+            SELECT 
+              COALESCE((payload->>'session_count')::int, 0) as session_count,
+              COUNT(*) as completions
+            FROM events
+            WHERE event_type = 'rate_us_completed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY COALESCE((payload->>'session_count')::int, 0)
+            ORDER BY session_count
+            LIMIT 20
+          `),
+          
+          // Decline analysis
+          db.query(`
+            SELECT 
+              COALESCE((payload->>'prompt_count')::int, 1) as prompt_number,
+              COUNT(*) as declines
+            FROM events
+            WHERE event_type = 'rate_us_declined'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY COALESCE((payload->>'prompt_count')::int, 1)
+            ORDER BY prompt_number
+          `)
+        ]);
+
+        // Build funnel with conversion rates
+        const funnelMap = {};
+        funnelStats.rows.forEach(row => {
+          funnelMap[row.event_type] = {
+            count: parseInt(row.count || 0),
+            unique_users: parseInt(row.unique_users || 0)
+          };
+        });
+
+        const initialized = funnelMap['rate_us_initialized']?.unique_users || 0;
+        const popupShown = funnelMap['rate_us_popup_shown']?.unique_users || 0;
+        const rateTapped = funnelMap['rate_us_rate_tapped']?.unique_users || 0;
+        const completed = funnelMap['rate_us_completed']?.unique_users || 0;
+        const declined = funnelMap['rate_us_declined']?.unique_users || 0;
+
+        return {
+          funnel: {
+            initialized: { count: initialized },
+            popup_shown: { 
+              count: popupShown,
+              rate_from_init: initialized > 0 ? ((popupShown / initialized) * 100).toFixed(2) + '%' : '0%'
+            },
+            rate_tapped: { 
+              count: rateTapped,
+              rate_from_popup: popupShown > 0 ? ((rateTapped / popupShown) * 100).toFixed(2) + '%' : '0%'
+            },
+            completed: { 
+              count: completed,
+              rate_from_tapped: rateTapped > 0 ? ((completed / rateTapped) * 100).toFixed(2) + '%' : '0%',
+              overall_conversion: initialized > 0 ? ((completed / initialized) * 100).toFixed(2) + '%' : '0%'
+            },
+            declined: {
+              count: declined,
+              rate_from_popup: popupShown > 0 ? ((declined / popupShown) * 100).toFixed(2) + '%' : '0%'
+            }
+          },
+          daily: dailyStats.rows.map(row => ({
+            date: row.date,
+            popups_shown: parseInt(row.popups_shown || 0),
+            rate_tapped: parseInt(row.rate_tapped || 0),
+            completed: parseInt(row.completed || 0),
+            declined: parseInt(row.declined || 0)
+          })),
+          conversion_by_session: conversionBySession.rows.map(row => ({
+            session_count: parseInt(row.session_count || 0),
+            completions: parseInt(row.completions || 0)
+          })),
+          decline_by_prompt: declineStats.rows.map(row => ({
+            prompt_number: parseInt(row.prompt_number || 1),
+            declines: parseInt(row.declines || 0)
+          })),
+          insights: {
+            total_popups: popupShown,
+            total_completions: completed,
+            popup_to_rate_conversion: popupShown > 0 ? ((completed / popupShown) * 100).toFixed(2) + '%' : '0%',
+            avg_session_to_complete: conversionBySession.rows.length > 0 
+              ? (conversionBySession.rows.reduce((sum, r) => sum + parseInt(r.session_count) * parseInt(r.completions), 0) / 
+                 conversionBySession.rows.reduce((sum, r) => sum + parseInt(r.completions), 0)).toFixed(1)
+              : 'N/A'
+          },
+          days_analyzed: days,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching rate us analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch rate us analytics' });
+    }
+  });
+
+  // ============================================================================
   // 6. CUSTOM QUERY (Your Original Question)
   // ============================================================================
 
@@ -1748,6 +2027,124 @@ module.exports = (db, cacheManager) => {
     } catch (error) {
       logger.error('📊 Error fetching mission data:', error);
       res.status(500).json({ error: 'Failed to fetch mission data' });
+    }
+  });
+
+  // ============================================================================
+  // 10b. ACHIEVEMENT ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/achievements
+   * Returns achievement unlock rates and engagement metrics
+   */
+  router.get('/achievements', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+      
+      const data = await getCachedQuery(req, `achievements-${days}days`, async () => {
+        const [dailyUnlocks, dailyClaims, popularAchievements, claimTimeStats, tierBreakdown] = await Promise.all([
+          // Daily achievement unlocks
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as achievements_unlocked,
+              COUNT(DISTINCT user_id) as unique_players
+            FROM events
+            WHERE event_type = 'achievement_unlocked'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // Daily achievement claims
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as achievements_claimed,
+              COUNT(DISTINCT user_id) as unique_claimers,
+              SUM((payload->>'reward_coins')::int) as total_coins_rewarded,
+              SUM((payload->>'reward_gems')::int) as total_gems_rewarded
+            FROM events
+            WHERE event_type = 'achievement_claimed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // Most popular achievements (by unlock count)
+          db.query(`
+            SELECT 
+              payload->>'achievement_id' as achievement_id,
+              payload->>'achievement_name' as achievement_name,
+              payload->>'achievement_tier' as tier,
+              payload->>'achievement_category' as category,
+              COUNT(*) as unlock_count,
+              COUNT(DISTINCT user_id) as unique_unlockers
+            FROM events
+            WHERE event_type = 'achievement_unlocked'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'achievement_id', payload->>'achievement_name', 
+                     payload->>'achievement_tier', payload->>'achievement_category'
+            ORDER BY unlock_count DESC
+            LIMIT 15
+          `),
+          
+          // Average time to claim by tier
+          db.query(`
+            SELECT 
+              payload->>'achievement_tier' as tier,
+              AVG((payload->>'time_to_claim_seconds')::int) as avg_claim_time_seconds,
+              COUNT(*) as claims
+            FROM events
+            WHERE event_type = 'achievement_claimed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'achievement_tier'
+            ORDER BY claims DESC
+          `),
+          
+          // Breakdown by tier
+          db.query(`
+            SELECT 
+              payload->>'achievement_tier' as tier,
+              COUNT(*) as total_unlocks,
+              COUNT(DISTINCT user_id) as unique_players,
+              SUM(CASE WHEN e2.event_type = 'achievement_claimed' THEN 1 ELSE 0 END) as total_claims
+            FROM events e1
+            LEFT JOIN events e2 ON e1.payload->>'achievement_id' = e2.payload->>'achievement_id' 
+              AND e1.user_id = e2.user_id 
+              AND e2.event_type = 'achievement_claimed'
+            WHERE e1.event_type = 'achievement_unlocked'
+              AND e1.received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'achievement_tier'
+            ORDER BY total_unlocks DESC
+          `)
+        ]);
+
+        const totalUnlocks = dailyUnlocks.rows.reduce((sum, r) => sum + parseInt(r.achievements_unlocked || 0), 0);
+        const totalClaims = dailyClaims.rows.reduce((sum, r) => sum + parseInt(r.achievements_claimed || 0), 0);
+
+        return {
+          daily_unlocks: dailyUnlocks.rows,
+          daily_claims: dailyClaims.rows,
+          top_achievements: popularAchievements.rows,
+          claim_time_by_tier: claimTimeStats.rows,
+          tier_breakdown: tierBreakdown.rows,
+          summary: {
+            total_unlocks: totalUnlocks,
+            total_claims: totalClaims,
+            claim_rate: totalUnlocks > 0 ? ((totalClaims / totalUnlocks) * 100).toFixed(1) : 0,
+            unique_players_unlocking: Math.max(...dailyUnlocks.rows.map(r => parseInt(r.unique_players || 0)), 0),
+            unique_players_claiming: Math.max(...dailyClaims.rows.map(r => parseInt(r.unique_claimers || 0)), 0)
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching achievement data:', error);
+      res.status(500).json({ error: 'Failed to fetch achievement data' });
     }
   });
 

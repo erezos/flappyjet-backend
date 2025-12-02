@@ -475,6 +475,7 @@ const interstitialShownSchema = Joi.object({
   wins_this_session: Joi.number().integer().min(0).optional(),
   lifetime_wins: Joi.number().integer().min(0).optional(),
   time_since_last_ad: Joi.number().integer().min(0).allow(null).optional(), // seconds
+  trigger_reason: Joi.string().valid('win_milestone', 'loss_streak', 'unknown').optional(), // 📊 NEW: Differentiate win vs loss ads
 });
 
 // 28. interstitial_dismissed - Interstitial ad closed
@@ -485,6 +486,7 @@ const interstitialDismissedSchema = Joi.object({
   view_duration_seconds: Joi.number().integer().min(0).allow(null).optional(), // How long user viewed ad
   is_early_dismissal: Joi.boolean().optional(), // true if viewed < 5 seconds (potential revenue loss)
   was_clicked: Joi.boolean().optional(), // true if user clicked the ad (good engagement!)
+  trigger_reason: Joi.string().valid('win_milestone', 'loss_streak', 'unknown').optional(), // 📊 NEW: Differentiate win vs loss ads
 });
 
 // 28b. interstitial_clicked - User clicked on interstitial ad (good engagement!)
@@ -492,6 +494,23 @@ const interstitialClickedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('interstitial_clicked').required(),
   wins_this_session: Joi.number().integer().min(0).optional(),
+  lifetime_wins: Joi.number().integer().min(0).optional(),
+});
+
+// 28d. loss_streak_ad_shown - Loss streak triggered interstitial ad (NEW)
+// This is a separate event fired when the ad is triggered by 3 consecutive losses
+const lossStreakAdShownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('loss_streak_ad_shown').required(),
+  consecutive_losses: Joi.number().integer().min(0).optional(),
+  lifetime_wins: Joi.number().integer().min(0).optional(),
+});
+
+// 28e. loss_streak_ad_pending - Loss streak ad is queued to show (NEW)
+const lossStreakAdPendingSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('loss_streak_ad_pending').required(),
+  consecutive_losses: Joi.number().integer().min(0).optional(),
   lifetime_wins: Joi.number().integer().min(0).optional(),
 });
 
@@ -694,6 +713,8 @@ const schemaMap = {
   interstitial_shown: interstitialShownSchema,
   interstitial_dismissed: interstitialDismissedSchema,
   interstitial_clicked: interstitialClickedSchema,
+  loss_streak_ad_shown: lossStreakAdShownSchema,       // 📊 NEW: Loss streak ad triggered
+  loss_streak_ad_pending: lossStreakAdPendingSchema,   // 📊 NEW: Loss streak ad queued
   ad_revenue: adRevenueSchema,
   share_clicked: shareClickedSchema,
   notification_received: notificationReceivedSchema,
@@ -795,6 +816,12 @@ module.exports = {
   leaderboardViewedSchema,
   tournamentEnteredSchema,
   adWatchedSchema,
+  interstitialShownSchema,      // 📊 Interstitial ad events
+  interstitialDismissedSchema,
+  interstitialClickedSchema,
+  lossStreakAdShownSchema,      // 📊 Loss streak ad events
+  lossStreakAdPendingSchema,
+  adRevenueSchema,
   shareClickedSchema,
   notificationReceivedSchema,
   

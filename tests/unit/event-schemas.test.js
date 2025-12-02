@@ -953,5 +953,164 @@ describe('Event Schemas Validation', () => {
       expect(error).toBeDefined();
     });
   });
+
+  // ============================================================================
+  // INTERSTITIAL AD EVENTS (with trigger_reason)
+  // ============================================================================
+
+  describe('interstitial_shown', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.2.2',
+      platform: 'android'
+    };
+
+    test('should validate interstitial_shown with win_milestone trigger', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_shown',
+        wins_this_session: 2,
+        lifetime_wins: 7,
+        time_since_last_ad: 180,
+        trigger_reason: 'win_milestone'
+      };
+
+      const { error } = schemaMap.interstitial_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate interstitial_shown with loss_streak trigger', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_shown',
+        wins_this_session: 0,
+        lifetime_wins: 5,
+        time_since_last_ad: 240,
+        trigger_reason: 'loss_streak'
+      };
+
+      const { error } = schemaMap.interstitial_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate interstitial_shown with unknown trigger (backward compatibility)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_shown',
+        wins_this_session: 1,
+        lifetime_wins: 10,
+        trigger_reason: 'unknown'
+      };
+
+      const { error } = schemaMap.interstitial_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate interstitial_shown without trigger_reason (backward compatibility)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_shown',
+        wins_this_session: 1,
+        lifetime_wins: 10
+        // no trigger_reason - should still be valid for older app versions
+      };
+
+      const { error } = schemaMap.interstitial_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should reject invalid trigger_reason', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_shown',
+        trigger_reason: 'invalid_reason'
+      };
+
+      const { error } = schemaMap.interstitial_shown.validate(event);
+      expect(error).toBeDefined();
+    });
+  });
+
+  describe('interstitial_dismissed', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.2.2',
+      platform: 'android'
+    };
+
+    test('should validate interstitial_dismissed with full payload', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_dismissed',
+        wins_this_session: 2,
+        view_duration_seconds: 15,
+        is_early_dismissal: false,
+        was_clicked: true,
+        trigger_reason: 'win_milestone'
+      };
+
+      const { error } = schemaMap.interstitial_dismissed.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate early dismissal with loss_streak trigger', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'interstitial_dismissed',
+        wins_this_session: 0,
+        view_duration_seconds: 3,
+        is_early_dismissal: true,
+        was_clicked: false,
+        trigger_reason: 'loss_streak'
+      };
+
+      const { error } = schemaMap.interstitial_dismissed.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('loss_streak_ad_shown', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.2.2',
+      platform: 'android'
+    };
+
+    test('should validate loss_streak_ad_shown event', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'loss_streak_ad_shown',
+        consecutive_losses: 3,
+        lifetime_wins: 5
+      };
+
+      const { error } = schemaMap.loss_streak_ad_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('loss_streak_ad_pending', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.2.2',
+      platform: 'android'
+    };
+
+    test('should validate loss_streak_ad_pending event', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'loss_streak_ad_pending',
+        consecutive_losses: 3,
+        lifetime_wins: 5
+      };
+
+      const { error } = schemaMap.loss_streak_ad_pending.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
 });
 
