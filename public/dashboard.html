@@ -740,6 +740,203 @@
             </div>
         </div>
 
+        <!-- NEW: Interstitial Ads By Trigger Reason Section -->
+        <div class="section">
+            <h2>🎯 Interstitial Ads by Trigger</h2>
+            <p style="color: #718096; margin-bottom: 20px;">Win Milestone vs Loss Streak comparison (last 7 days)</p>
+            
+            <!-- Trigger Summary Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left: 4px solid #48bb78;">
+                    <div class="metric-label">🏆 Win Milestone Ads</div>
+                    <div class="metric-value" id="winMilestoneAds">-</div>
+                    <div class="metric-change" id="winMilestonePct">-% of total</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #f56565;">
+                    <div class="metric-label">💔 Loss Streak Ads</div>
+                    <div class="metric-value" id="lossStreakAds">-</div>
+                    <div class="metric-change" id="lossStreakPct">-% of total</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #667eea;">
+                    <div class="metric-label">📊 Total Interstitials</div>
+                    <div class="metric-value" id="totalInterstitialsByTrigger">-</div>
+                    <div class="metric-change">Last 7 days</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #ed8936;">
+                    <div class="metric-label">❓ Unknown Trigger</div>
+                    <div class="metric-value" id="unknownTriggerAds">-</div>
+                    <div class="metric-change">Legacy events</div>
+                </div>
+            </div>
+
+            <!-- Trigger Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📈 Daily Breakdown by Trigger</h3>
+                    <div class="chart-container">
+                        <canvas id="interstitialByTriggerChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>📊 Engagement Comparison</h3>
+                    <div id="triggerEngagementTable" style="max-height: 300px; overflow-y: auto;">
+                        <table class="retention-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Trigger</th>
+                                    <th>Shown</th>
+                                    <th>Clicked</th>
+                                    <th>Click Rate</th>
+                                    <th>Avg View (s)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="triggerEngagementBody">
+                                <tr><td colspan="5" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Rate Us Analytics Section -->
+        <div class="section">
+            <h2>⭐ Rate Us Analytics</h2>
+            <p style="color: #718096; margin-bottom: 20px;">Funnel: Initialized → Popup Shown → Rate Tapped → Completed (last 7 days)</p>
+            
+            <!-- Rate Us Funnel Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left: 4px solid #667eea;">
+                    <div class="metric-label">📱 Popups Shown</div>
+                    <div class="metric-value" id="rateUsPopupsShown">-</div>
+                    <div class="metric-change" id="rateUsPopupRate">-% of initialized</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #48bb78;">
+                    <div class="metric-label">⭐ Ratings Completed</div>
+                    <div class="metric-value" id="rateUsCompleted">-</div>
+                    <div class="metric-change" id="rateUsCompletionRate">-% conversion</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #ed8936;">
+                    <div class="metric-label">⏰ Maybe Later</div>
+                    <div class="metric-value" id="rateUsMaybeLater">-</div>
+                    <div class="metric-change">Deferred users</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #f56565;">
+                    <div class="metric-label">❌ Declined</div>
+                    <div class="metric-value" id="rateUsDeclined">-</div>
+                    <div class="metric-change" id="rateUsDeclineRate">-% decline rate</div>
+                </div>
+            </div>
+
+            <!-- Rate Us Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📈 Daily Rate Us Activity</h3>
+                    <div class="chart-container">
+                        <canvas id="rateUsDailyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>🔢 Completions by Session Count</h3>
+                    <div class="chart-container">
+                        <canvas id="rateUsBySessionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Rate Us Funnel Table -->
+            <div class="charts-grid-fullwidth">
+                <div class="chart-card">
+                    <h3>🔄 Rate Us Funnel Breakdown</h3>
+                    <div id="rateUsFunnelTable">
+                        <table class="retention-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Stage</th>
+                                    <th>Users</th>
+                                    <th>Conversion Rate</th>
+                                    <th>Drop-off</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rateUsFunnelBody">
+                                <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Achievements Analytics Section -->
+        <div class="section">
+            <h2>🏆 Achievements Analytics</h2>
+            <p style="color: #718096; margin-bottom: 20px;">Achievement unlocks and claims (last 7 days)</p>
+            
+            <!-- Achievement Summary Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left: 4px solid #667eea;">
+                    <div class="metric-label">🔓 Total Unlocks</div>
+                    <div class="metric-value" id="achievementUnlocks">-</div>
+                    <div class="metric-change">Last 7 days</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #48bb78;">
+                    <div class="metric-label">💰 Total Claims</div>
+                    <div class="metric-value" id="achievementClaims">-</div>
+                    <div class="metric-change" id="achievementClaimRate">-% claim rate</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #ed8936;">
+                    <div class="metric-label">👤 Unique Unlockers</div>
+                    <div class="metric-value" id="achievementUniqueUnlockers">-</div>
+                    <div class="metric-change">Players earning</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #f56565;">
+                    <div class="metric-label">👤 Unique Claimers</div>
+                    <div class="metric-value" id="achievementUniqueClaimers">-</div>
+                    <div class="metric-change">Players claiming</div>
+                </div>
+            </div>
+
+            <!-- Achievement Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📈 Daily Unlocks vs Claims</h3>
+                    <div class="chart-container">
+                        <canvas id="achievementDailyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>🏅 Top Achievements</h3>
+                    <div id="topAchievementsTable" style="max-height: 300px; overflow-y: auto;">
+                        <table class="retention-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Achievement</th>
+                                    <th>Tier</th>
+                                    <th>Unlocks</th>
+                                    <th>Unique Players</th>
+                                </tr>
+                            </thead>
+                            <tbody id="topAchievementsBody">
+                                <tr><td colspan="4" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Push Notifications Section -->
         <div class="section">
             <h2>🔔 Push Notifications</h2>
@@ -2140,6 +2337,286 @@
         }
 
         // ============================================================================
+        // INTERSTITIAL ADS BY TRIGGER (NEW)
+        // ============================================================================
+
+        async function loadInterstitialByTrigger() {
+            const data = await fetchAPI('interstitial-by-trigger?days=7');
+            if (!data) return;
+
+            // Update summary cards
+            const winData = data.summary.find(r => r.trigger_reason === 'win_milestone') || { shown: 0 };
+            const lossData = data.summary.find(r => r.trigger_reason === 'loss_streak') || { shown: 0 };
+            const unknownData = data.summary.find(r => r.trigger_reason === 'unknown') || { shown: 0 };
+            
+            document.getElementById('winMilestoneAds').textContent = formatNumber(winData.shown);
+            document.getElementById('lossStreakAds').textContent = formatNumber(lossData.shown);
+            document.getElementById('unknownTriggerAds').textContent = formatNumber(unknownData.shown);
+            document.getElementById('totalInterstitialsByTrigger').textContent = formatNumber(data.insights?.total_shown || 0);
+            document.getElementById('winMilestonePct').textContent = data.insights?.win_milestone_pct || '0%';
+            document.getElementById('lossStreakPct').textContent = data.insights?.loss_streak_pct || '0%';
+
+            // Update engagement table
+            const tbody = document.getElementById('triggerEngagementBody');
+            if (data.summary.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No data yet</td></tr>';
+            } else {
+                tbody.innerHTML = data.summary.map(row => `
+                    <tr>
+                        <td style="font-weight: 600;">
+                            ${row.trigger_reason === 'win_milestone' ? '🏆' : row.trigger_reason === 'loss_streak' ? '💔' : '❓'} 
+                            ${row.trigger_reason}
+                        </td>
+                        <td>${formatNumber(row.shown)}</td>
+                        <td>${formatNumber(row.clicked || 0)}</td>
+                        <td>${row.click_rate || '0.00'}%</td>
+                        <td>${row.avg_view_duration_seconds || 0}s</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Draw daily chart
+            const ctx = document.getElementById('interstitialByTriggerChart').getContext('2d');
+            if (charts.interstitialByTrigger) charts.interstitialByTrigger.destroy();
+            
+            const sortedDaily = [...(data.daily || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            charts.interstitialByTrigger = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedDaily.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: '🏆 Win Milestone',
+                        data: sortedDaily.map(d => d.win_milestone || 0),
+                        backgroundColor: 'rgba(72, 187, 120, 0.8)',
+                        borderColor: '#48bb78',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }, {
+                        label: '💔 Loss Streak',
+                        data: sortedDaily.map(d => d.loss_streak || 0),
+                        backgroundColor: 'rgba(245, 101, 101, 0.8)',
+                        borderColor: '#f56565',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }, {
+                        label: '❓ Unknown',
+                        data: sortedDaily.map(d => d.unknown || 0),
+                        backgroundColor: 'rgba(160, 174, 192, 0.8)',
+                        borderColor: '#a0aec0',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        // ============================================================================
+        // RATE US ANALYTICS (NEW)
+        // ============================================================================
+
+        async function loadRateUs() {
+            const data = await fetchAPI('rate-us?days=7');
+            if (!data) return;
+
+            // Update summary cards
+            const funnel = data.funnel || {};
+            document.getElementById('rateUsPopupsShown').textContent = formatNumber(funnel.popup_shown?.count || 0);
+            document.getElementById('rateUsCompleted').textContent = formatNumber(funnel.completed?.count || 0);
+            document.getElementById('rateUsDeclined').textContent = formatNumber(funnel.declined?.count || 0);
+            document.getElementById('rateUsPopupRate').textContent = funnel.popup_shown?.rate_from_init || '0%';
+            document.getElementById('rateUsCompletionRate').textContent = funnel.completed?.overall_conversion || '0%';
+            document.getElementById('rateUsDeclineRate').textContent = funnel.declined?.rate_from_popup || '0%';
+            
+            // Calculate maybe later (from daily data or insights)
+            const totalMaybeLater = (data.daily || []).reduce((sum, d) => sum + (d.maybe_later || 0), 0);
+            document.getElementById('rateUsMaybeLater').textContent = formatNumber(totalMaybeLater);
+
+            // Update funnel table
+            const funnelBody = document.getElementById('rateUsFunnelBody');
+            const stages = [
+                { name: '📱 Initialized', count: funnel.initialized?.count || 0, conversion: '100%', dropoff: '-' },
+                { name: '🔔 Popup Shown', count: funnel.popup_shown?.count || 0, conversion: funnel.popup_shown?.rate_from_init || '0%', dropoff: ((1 - (funnel.popup_shown?.count || 0) / Math.max(funnel.initialized?.count || 1, 1)) * 100).toFixed(1) + '%' },
+                { name: '⭐ Rate Tapped', count: funnel.rate_tapped?.count || 0, conversion: funnel.rate_tapped?.rate_from_popup || '0%', dropoff: ((1 - (funnel.rate_tapped?.count || 0) / Math.max(funnel.popup_shown?.count || 1, 1)) * 100).toFixed(1) + '%' },
+                { name: '✅ Completed', count: funnel.completed?.count || 0, conversion: funnel.completed?.rate_from_tapped || '0%', dropoff: ((1 - (funnel.completed?.count || 0) / Math.max(funnel.rate_tapped?.count || 1, 1)) * 100).toFixed(1) + '%' },
+                { name: '❌ Declined', count: funnel.declined?.count || 0, conversion: funnel.declined?.rate_from_popup || '0%', dropoff: '-' }
+            ];
+            funnelBody.innerHTML = stages.map(s => `
+                <tr>
+                    <td style="font-weight: 600;">${s.name}</td>
+                    <td>${formatNumber(s.count)}</td>
+                    <td>${s.conversion}</td>
+                    <td style="color: ${s.dropoff !== '-' && parseFloat(s.dropoff) > 50 ? '#f56565' : '#48bb78'};">${s.dropoff}</td>
+                </tr>
+            `).join('');
+
+            // Draw daily chart
+            const ctx = document.getElementById('rateUsDailyChart').getContext('2d');
+            if (charts.rateUsDaily) charts.rateUsDaily.destroy();
+            
+            const sortedDaily = [...(data.daily || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            charts.rateUsDaily = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: sortedDaily.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: 'Popups Shown',
+                        data: sortedDaily.map(d => d.popups_shown || 0),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: 'Completed',
+                        data: sortedDaily.map(d => d.completed || 0),
+                        borderColor: '#48bb78',
+                        backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: 'Declined',
+                        data: sortedDaily.map(d => d.declined || 0),
+                        borderColor: '#f56565',
+                        backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+
+            // Draw session count chart
+            const sessionCtx = document.getElementById('rateUsBySessionChart').getContext('2d');
+            if (charts.rateUsBySession) charts.rateUsBySession.destroy();
+            
+            const sessionData = data.conversion_by_session || [];
+            charts.rateUsBySession = new Chart(sessionCtx, {
+                type: 'bar',
+                data: {
+                    labels: sessionData.map(d => `Session ${d.session_count}`),
+                    datasets: [{
+                        label: 'Completions',
+                        data: sessionData.map(d => d.completions || 0),
+                        backgroundColor: 'rgba(72, 187, 120, 0.8)',
+                        borderColor: '#48bb78',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        }
+
+        // ============================================================================
+        // ACHIEVEMENTS ANALYTICS (NEW)
+        // ============================================================================
+
+        async function loadAchievements() {
+            const data = await fetchAPI('achievements?days=7');
+            if (!data) return;
+
+            // Update summary cards
+            const summary = data.summary || {};
+            document.getElementById('achievementUnlocks').textContent = formatNumber(summary.total_unlocks || 0);
+            document.getElementById('achievementClaims').textContent = formatNumber(summary.total_claims || 0);
+            document.getElementById('achievementClaimRate').textContent = (summary.claim_rate || 0) + '% claim rate';
+            document.getElementById('achievementUniqueUnlockers').textContent = formatNumber(summary.unique_players_unlocking || 0);
+            document.getElementById('achievementUniqueClaimers').textContent = formatNumber(summary.unique_players_claiming || 0);
+
+            // Update top achievements table
+            const tbody = document.getElementById('topAchievementsBody');
+            const topAchievements = data.top_achievements || [];
+            if (topAchievements.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No achievement data yet</td></tr>';
+            } else {
+                const tierColors = {
+                    'bronze': '#cd7f32',
+                    'silver': '#c0c0c0',
+                    'gold': '#ffd700',
+                    'platinum': '#e5e4e2',
+                    'diamond': '#b9f2ff'
+                };
+                tbody.innerHTML = topAchievements.map(a => `
+                    <tr>
+                        <td style="font-weight: 600;">${a.achievement_name || a.achievement_id}</td>
+                        <td style="color: ${tierColors[a.tier?.toLowerCase()] || '#667eea'}; font-weight: 600;">${(a.tier || 'N/A').toUpperCase()}</td>
+                        <td>${formatNumber(a.unlock_count || 0)}</td>
+                        <td>${formatNumber(a.unique_unlockers || 0)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Draw daily chart
+            const ctx = document.getElementById('achievementDailyChart').getContext('2d');
+            if (charts.achievementDaily) charts.achievementDaily.destroy();
+            
+            const dailyUnlocks = [...(data.daily_unlocks || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            const dailyClaims = [...(data.daily_claims || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // Merge dates for consistent labels
+            const allDates = [...new Set([
+                ...dailyUnlocks.map(d => d.date),
+                ...dailyClaims.map(d => d.date)
+            ])].sort();
+            
+            const unlocksByDate = {};
+            dailyUnlocks.forEach(d => unlocksByDate[d.date] = parseInt(d.achievements_unlocked || 0));
+            
+            const claimsByDate = {};
+            dailyClaims.forEach(d => claimsByDate[d.date] = parseInt(d.achievements_claimed || 0));
+            
+            charts.achievementDaily = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: allDates.map(d => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: '🔓 Unlocks',
+                        data: allDates.map(d => unlocksByDate[d] || 0),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: '💰 Claims',
+                        data: allDates.map(d => claimsByDate[d] || 0),
+                        borderColor: '#48bb78',
+                        backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        }
+
+        // ============================================================================
         // ACTIVITY FEED
         // ============================================================================
 
@@ -2439,7 +2916,7 @@
                 loadGamesPerPlayerChart(),
                 loadLevelCompletionStats(),  // 📊 Level Analytics
                 loadBonusCollectionStats(),  // 🎁 Bonus Collection Analytics
-                loadCountries().then(() => loadCohortROI()),  // 💰 NEW: Cohort ROI analysis
+                loadCountries().then(() => loadCohortROI()),  // 💰 Cohort ROI analysis
                 loadRetention(),
                 loadEconomy(),
                 loadContinues(),
@@ -2447,6 +2924,9 @@
                 loadPurchases(),
                 loadJetSkinsDaily(),
                 loadInterstitialAdsDaily(),
+                loadInterstitialByTrigger(),  // 🎯 NEW: Win vs Loss streak ads
+                loadRateUs(),                  // ⭐ NEW: Rate us funnel
+                loadAchievements(),            // 🏆 NEW: Achievement analytics
                 loadNotifications(),
                 loadActivityFeed()
             ]);
