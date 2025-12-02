@@ -589,6 +589,7 @@ const rateUsInitializedSchema = Joi.object({
   event_type: Joi.string().valid('rate_us_initialized').required(),
   session_count: Joi.number().integer().min(0).required(),
   has_rated: Joi.boolean().required(),
+  has_declined: Joi.boolean().required(), // ✅ FIX: Added missing field
   prompt_count: Joi.number().integer().min(0).required(),
   days_since_install: Joi.number().integer().min(0).required(),
 });

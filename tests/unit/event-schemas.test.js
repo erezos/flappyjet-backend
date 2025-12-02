@@ -783,6 +783,7 @@ describe('Event Schemas Validation', () => {
         platform: 'android',
         session_count: 5,
         has_rated: false,
+        has_declined: false, // ✅ FIX: Added missing field
         prompt_count: 1,
         days_since_install: 7
       };
@@ -799,6 +800,7 @@ describe('Event Schemas Validation', () => {
         app_version: '2.1.13',
         platform: 'android',
         has_rated: false,
+        has_declined: false, // ✅ FIX: Added missing field
         prompt_count: 1,
         days_since_install: 7
       };
