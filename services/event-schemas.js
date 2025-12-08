@@ -475,7 +475,14 @@ const interstitialShownSchema = Joi.object({
   wins_this_session: Joi.number().integer().min(0).optional(),
   lifetime_wins: Joi.number().integer().min(0).optional(),
   time_since_last_ad: Joi.number().integer().min(0).allow(null).optional(), // seconds
-  trigger_reason: Joi.string().valid('win_milestone', 'loss_streak', 'unknown').optional(), // 📊 NEW: Differentiate win vs loss ads
+  trigger_reason: Joi.string().valid(
+    'win_milestone', 
+    'loss_streak', 
+    'unknown',
+    'tournament_round_win',    // ✅ NEW: Tournament round win ad
+    'tournament_start_over',   // ✅ NEW: Tournament restart ad
+    'tournament_game_over'     // ✅ NEW: Tournament game over ad
+  ).optional(),
 });
 
 // 28. interstitial_dismissed - Interstitial ad closed
@@ -486,7 +493,14 @@ const interstitialDismissedSchema = Joi.object({
   view_duration_seconds: Joi.number().integer().min(0).allow(null).optional(), // How long user viewed ad
   is_early_dismissal: Joi.boolean().optional(), // true if viewed < 5 seconds (potential revenue loss)
   was_clicked: Joi.boolean().optional(), // true if user clicked the ad (good engagement!)
-  trigger_reason: Joi.string().valid('win_milestone', 'loss_streak', 'unknown').optional(), // 📊 NEW: Differentiate win vs loss ads
+  trigger_reason: Joi.string().valid(
+    'win_milestone', 
+    'loss_streak', 
+    'unknown',
+    'tournament_round_win',    // ✅ NEW: Tournament round win ad
+    'tournament_start_over',   // ✅ NEW: Tournament restart ad
+    'tournament_game_over'     // ✅ NEW: Tournament game over ad
+  ).optional(),
 });
 
 // 28b. interstitial_clicked - User clicked on interstitial ad (good engagement!)
@@ -759,8 +773,9 @@ const tournamentInterstitialShownSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_interstitial_shown').required(),
   tournament_id: Joi.string().optional(),
-  trigger: Joi.string().optional(), // 'game_over', 'round_win', 'start_over'
+  trigger: Joi.string().optional(), // 'game_over', 'round_win', 'start_over', 'game_over_dismiss'
   round_number: Joi.number().integer().min(1).optional(),
+  cooldown_seconds: Joi.number().integer().min(0).optional(), // ✅ NEW: Cooldown duration
 });
 
 // 48. tournament_interstitial_cooldown - Interstitial ad skipped due to cooldown
@@ -768,7 +783,19 @@ const tournamentInterstitialCooldownSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_interstitial_cooldown').required(),
   seconds_remaining: Joi.number().integer().min(0).optional(),
+  cooldown_seconds: Joi.number().integer().min(0).optional(), // ✅ NEW: Allow cooldown_seconds field
   trigger: Joi.string().optional(),
+  reason: Joi.string().optional(), // ✅ NEW: Reason for cooldown (e.g., 'rewarded_ad_continue')
+});
+
+// 48b. tournament_round_advanced - User advanced to next tournament round
+const tournamentRoundAdvancedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_round_advanced').required(),
+  tournament_id: Joi.string().required(),
+  round_number: Joi.number().integer().min(1).required(),
+  try_number: Joi.number().integer().min(1).optional(),
+  stage_name: Joi.string().optional(),
 });
 
 // 49. tournament_round_completed - User completed a tournament round
@@ -802,8 +829,15 @@ const tournamentCompletedSchema = Joi.object({
 const conversionEventSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().pattern(/^conversion_/).required(),
+  // ✅ Override timestamp to accept both string and number (backward compatibility)
+  timestamp: Joi.alternatives().try(
+    Joi.string().isoDate(),
+    Joi.number().integer().positive(),
+    Joi.string() // Allow any string format for flexibility
+  ).required(),
   milestone_type: Joi.string().optional(),
   milestone_value: Joi.number().integer().min(0).optional(),
+  milestone_threshold: Joi.number().integer().min(0).optional(), // ✅ NEW: Allow threshold
   total_games_played: Joi.number().integer().min(0).optional(),
   total_sessions: Joi.number().integer().min(0).optional(),
   highest_level_completed: Joi.number().integer().min(0).optional(),
@@ -907,6 +941,7 @@ const schemaMap = {
   playoff_battle_won: playoffBattleWonSchema,
   playoff_battle_lost: playoffBattleLostSchema,
   tournament_round_completed: tournamentRoundCompletedSchema,    // ✅ NEW: Round completed
+  tournament_round_advanced: tournamentRoundAdvancedSchema,       // ✅ NEW: Advanced to next round
   tournament_completed: tournamentCompletedSchema,                // ✅ NEW: Tournament won
   tournament_start_over: tournamentStartOverSchema,
   tournament_game_over_dismissed: tournamentGameOverDismissedSchema,
@@ -1043,6 +1078,7 @@ module.exports = {
   tournamentInterstitialShownSchema,
   tournamentInterstitialCooldownSchema,
   tournamentRoundCompletedSchema,     // ✅ NEW: Export tournament round completed
+  tournamentRoundAdvancedSchema,      // ✅ NEW: Export tournament round advanced
   tournamentCompletedSchema,           // ✅ NEW: Export tournament completed
   conversionEventSchema,
   
