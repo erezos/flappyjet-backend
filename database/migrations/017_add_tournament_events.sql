@@ -111,6 +111,7 @@ ALTER TABLE events ADD CONSTRAINT valid_event_type CHECK (
     'tournament_round_completed',         -- ✅ NEW: Round completed
     'tournament_round_advanced',          -- ✅ NEW: Advanced to next round
     'tournament_completed',               -- ✅ NEW: Tournament won
+    'tournament_ticket_used',             -- ✅ NEW: Free ticket used
     'tournament_start_over',
     'tournament_game_over_dismissed',
     'tournament_interstitial_shown',

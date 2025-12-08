@@ -830,6 +830,16 @@ const tournamentCompletedSchema = Joi.object({
   duration_seconds: Joi.number().min(0).optional(),
 }).unknown(true); // Allow additional fields for flexibility
 
+// 50b. tournament_ticket_used - User used a free tournament ticket
+const tournamentTicketUsedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_ticket_used').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  ticket_tier: Joi.string().valid('bronze', 'silver', 'gold', 'diamond').optional(),
+  tournaments_entered_with_tickets: Joi.number().integer().min(0).optional(),
+}).unknown(true); // Allow additional fields for flexibility
+
 // 51. conversion events - Milestone conversion events for Firebase/Railway
 const conversionEventSchema = Joi.object({
   ...baseFields,
@@ -948,6 +958,7 @@ const schemaMap = {
   tournament_round_completed: tournamentRoundCompletedSchema,    // ✅ NEW: Round completed
   tournament_round_advanced: tournamentRoundAdvancedSchema,       // ✅ NEW: Advanced to next round
   tournament_completed: tournamentCompletedSchema,                // ✅ NEW: Tournament won
+  tournament_ticket_used: tournamentTicketUsedSchema,             // ✅ NEW: Free ticket used
   tournament_start_over: tournamentStartOverSchema,
   tournament_game_over_dismissed: tournamentGameOverDismissedSchema,
   tournament_interstitial_shown: tournamentInterstitialShownSchema,
@@ -1085,6 +1096,7 @@ module.exports = {
   tournamentRoundCompletedSchema,     // ✅ NEW: Export tournament round completed
   tournamentRoundAdvancedSchema,      // ✅ NEW: Export tournament round advanced
   tournamentCompletedSchema,           // ✅ NEW: Export tournament completed
+  tournamentTicketUsedSchema,          // ✅ NEW: Export tournament ticket used
   conversionEventSchema,
   
   // ⚡ Powerup Events
