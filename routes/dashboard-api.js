@@ -2402,6 +2402,256 @@ module.exports = (db, cacheManager) => {
     }
   });
 
+  // ============================================================================
+  // 🏆 TOURNAMENT ANALYTICS (v2.3.0)
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/tournaments?days=7
+   * Returns tournament engagement and completion metrics
+   */
+  router.get('/tournaments', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 90);
+
+      const data = await getCachedQuery(req, `tournaments-${days}days`, async () => {
+        const [
+          overview,
+          dailyBattles,
+          roundConversion,
+          topTournaments
+        ] = await Promise.all([
+          // Overall tournament metrics
+          db.query(`
+            SELECT 
+              COUNT(*) FILTER (WHERE event_type = 'tournament_manager_initialized') as total_initializations,
+              COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'tournament_manager_initialized') as unique_players,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as total_battles_started,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as total_battles_won,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as total_battles_lost,
+              COUNT(*) FILTER (WHERE event_type = 'tournament_start_over') as total_restarts,
+              COUNT(*) FILTER (WHERE event_type = 'tournament_interstitial_shown') as tournament_ads_shown
+            FROM events
+            WHERE event_type IN (
+              'tournament_manager_initialized',
+              'playoff_battle_started', 
+              'playoff_battle_won', 
+              'playoff_battle_lost',
+              'tournament_start_over',
+              'tournament_interstitial_shown'
+            )
+            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+          `),
+          
+          // Daily battles trend
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as battles_started,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as battles_won,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as battles_lost,
+              COUNT(DISTINCT user_id) as unique_players
+            FROM events
+            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // Round-by-round conversion
+          db.query(`
+            SELECT 
+              payload->>'round_number' as round,
+              payload->>'stage_name' as stage_name,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as started,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as won,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as lost
+            FROM events
+            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND payload->>'round_number' IS NOT NULL
+            GROUP BY payload->>'round_number', payload->>'stage_name'
+            ORDER BY (payload->>'round_number')::int
+          `),
+          
+          // Top tournaments by engagement
+          db.query(`
+            SELECT 
+              COALESCE(payload->>'tournament_id', 'unknown') as tournament_id,
+              COUNT(*) as total_events,
+              COUNT(DISTINCT user_id) as unique_players,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as wins,
+              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as losses
+            FROM events
+            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY payload->>'tournament_id'
+            ORDER BY total_events DESC
+            LIMIT 10
+          `)
+        ]);
+
+        const stats = overview.rows[0] || {};
+        const totalBattles = parseInt(stats.total_battles_won || 0) + parseInt(stats.total_battles_lost || 0);
+        const winRate = totalBattles > 0 
+          ? ((parseInt(stats.total_battles_won || 0) / totalBattles) * 100).toFixed(1)
+          : 0;
+
+        return {
+          summary: {
+            total_initializations: parseInt(stats.total_initializations || 0),
+            unique_players: parseInt(stats.unique_players || 0),
+            total_battles: totalBattles,
+            battles_won: parseInt(stats.total_battles_won || 0),
+            battles_lost: parseInt(stats.total_battles_lost || 0),
+            win_rate: winRate,
+            total_restarts: parseInt(stats.total_restarts || 0),
+            tournament_ads_shown: parseInt(stats.tournament_ads_shown || 0)
+          },
+          daily_trend: dailyBattles.rows.map(r => ({
+            date: r.date,
+            battles_started: parseInt(r.battles_started || 0),
+            battles_won: parseInt(r.battles_won || 0),
+            battles_lost: parseInt(r.battles_lost || 0),
+            unique_players: parseInt(r.unique_players || 0)
+          })),
+          round_conversion: roundConversion.rows.map(r => ({
+            round: parseInt(r.round || 1),
+            stage_name: r.stage_name || `Round ${r.round}`,
+            started: parseInt(r.started || 0),
+            won: parseInt(r.won || 0),
+            lost: parseInt(r.lost || 0),
+            win_rate: parseInt(r.started || 0) > 0 
+              ? ((parseInt(r.won || 0) / parseInt(r.started || 0)) * 100).toFixed(1)
+              : 0
+          })),
+          top_tournaments: topTournaments.rows.map(r => ({
+            tournament_id: r.tournament_id,
+            total_events: parseInt(r.total_events || 0),
+            unique_players: parseInt(r.unique_players || 0),
+            wins: parseInt(r.wins || 0),
+            losses: parseInt(r.losses || 0)
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching tournament analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch tournament analytics' });
+    }
+  });
+
+  // ============================================================================
+  // 🎯 CONVERSION EVENTS ANALYTICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/conversions?days=30
+   * Returns conversion milestone events (games played, sessions, levels completed)
+   */
+  router.get('/conversions', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+
+      const data = await getCachedQuery(req, `conversions-${days}days`, async () => {
+        const [
+          dailyConversions,
+          allTimeConversions,
+          byMilestoneType
+        ] = await Promise.all([
+          // Daily conversion events
+          db.query(`
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(*) as total_conversions,
+              COUNT(DISTINCT user_id) as unique_users
+            FROM events
+            WHERE event_type LIKE 'conversion_%'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+            ORDER BY date DESC
+          `),
+          
+          // All-time totals by event type
+          db.query(`
+            SELECT 
+              event_type,
+              COUNT(*) as count,
+              COUNT(DISTINCT user_id) as unique_users,
+              MIN(received_at) as first_seen,
+              MAX(received_at) as last_seen
+            FROM events
+            WHERE event_type LIKE 'conversion_%'
+            GROUP BY event_type
+            ORDER BY count DESC
+          `),
+          
+          // Breakdown by milestone type (games, sessions, levels)
+          db.query(`
+            SELECT 
+              CASE 
+                WHEN event_type LIKE '%games_played%' THEN 'Games Played'
+                WHEN event_type LIKE '%sessions%' THEN 'Sessions'
+                WHEN event_type LIKE '%level_completed%' THEN 'Levels Completed'
+                ELSE 'Other'
+              END as milestone_type,
+              event_type,
+              COUNT(*) as count,
+              COUNT(DISTINCT user_id) as unique_users
+            FROM events
+            WHERE event_type LIKE 'conversion_%'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY milestone_type, event_type
+            ORDER BY milestone_type, count DESC
+          `)
+        ]);
+
+        // Calculate all-time total
+        const allTimeTotal = allTimeConversions.rows.reduce((sum, r) => sum + parseInt(r.count || 0), 0);
+        const allTimeUniqueUsers = new Set(allTimeConversions.rows.map(r => r.unique_users)).size;
+
+        return {
+          summary: {
+            total_conversions_all_time: allTimeTotal,
+            total_in_period: dailyConversions.rows.reduce((sum, r) => sum + parseInt(r.total_conversions || 0), 0),
+            unique_users_in_period: dailyConversions.rows.reduce((max, r) => Math.max(max, parseInt(r.unique_users || 0)), 0)
+          },
+          daily_trend: dailyConversions.rows.map(r => ({
+            date: r.date,
+            total: parseInt(r.total_conversions || 0),
+            unique_users: parseInt(r.unique_users || 0)
+          })),
+          all_time_by_event: allTimeConversions.rows.map(r => ({
+            event_type: r.event_type,
+            // Make event name more readable
+            display_name: r.event_type
+              .replace('conversion_', '')
+              .replace(/_/g, ' ')
+              .replace(/\b\w/g, l => l.toUpperCase()),
+            count: parseInt(r.count || 0),
+            unique_users: parseInt(r.unique_users || 0),
+            first_seen: r.first_seen,
+            last_seen: r.last_seen
+          })),
+          by_milestone_type: byMilestoneType.rows.map(r => ({
+            milestone_type: r.milestone_type,
+            event_type: r.event_type,
+            count: parseInt(r.count || 0),
+            unique_users: parseInt(r.unique_users || 0)
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching conversion analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch conversion analytics' });
+    }
+  });
+
   /**
    * GET /api/dashboard/health
    * Check dashboard API health

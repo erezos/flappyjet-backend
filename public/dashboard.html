@@ -942,6 +942,130 @@
             </div>
         </div>
 
+        <!-- NEW: Tournament Analytics Section -->
+        <div class="section">
+            <h2>🏆 Tournament Analytics</h2>
+            <p style="color: #718096; margin-bottom: 20px;">Playoff battles, wins, and engagement (last 7 days)</p>
+            
+            <!-- Tournament Summary Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left: 4px solid #f6ad55;">
+                    <div class="metric-label">⚔️ Total Battles</div>
+                    <div class="metric-value" id="tournamentTotalBattles">-</div>
+                    <div class="metric-change">Last 7 days</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #48bb78;">
+                    <div class="metric-label">🏆 Battles Won</div>
+                    <div class="metric-value" id="tournamentBattlesWon">-</div>
+                    <div class="metric-change" id="tournamentWinRate">-% win rate</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #fc8181;">
+                    <div class="metric-label">💔 Battles Lost</div>
+                    <div class="metric-value" id="tournamentBattlesLost">-</div>
+                    <div class="metric-change">Last 7 days</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #667eea;">
+                    <div class="metric-label">👥 Unique Players</div>
+                    <div class="metric-value" id="tournamentUniquePlayers">-</div>
+                    <div class="metric-change">Participated</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #ed8936;">
+                    <div class="metric-label">🔄 Tournament Restarts</div>
+                    <div class="metric-value" id="tournamentRestarts">-</div>
+                    <div class="metric-change">Start over clicks</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #9f7aea;">
+                    <div class="metric-label">📺 Tournament Ads</div>
+                    <div class="metric-value" id="tournamentAdsShown">-</div>
+                    <div class="metric-change">Interstitials shown</div>
+                </div>
+            </div>
+
+            <!-- Tournament Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📈 Daily Battles Trend</h3>
+                    <div class="chart-container">
+                        <canvas id="tournamentDailyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>🎯 Round-by-Round Conversion</h3>
+                    <div id="roundConversionTable" style="max-height: 300px; overflow-y: auto;">
+                        <table class="retention-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Round</th>
+                                    <th>Stage</th>
+                                    <th>Started</th>
+                                    <th>Won</th>
+                                    <th>Win Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roundConversionBody">
+                                <tr><td colspan="5" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Conversion Events Analytics Section -->
+        <div class="section">
+            <h2>🎯 Conversion Milestones</h2>
+            <p style="color: #718096; margin-bottom: 20px;">User milestone conversions - games played, sessions, levels completed</p>
+            
+            <!-- Conversion Summary Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card" style="border-left: 4px solid #48bb78;">
+                    <div class="metric-label">📊 All-Time Conversions</div>
+                    <div class="metric-value" id="conversionAllTime">-</div>
+                    <div class="metric-change">Total events fired</div>
+                </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #667eea;">
+                    <div class="metric-label">📈 Last 30 Days</div>
+                    <div class="metric-value" id="conversionPeriod">-</div>
+                    <div class="metric-change">Conversion events</div>
+                </div>
+            </div>
+
+            <!-- Conversion Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📈 Daily Conversion Events</h3>
+                    <div class="chart-container">
+                        <canvas id="conversionDailyChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>🏅 Conversion Breakdown</h3>
+                    <div id="conversionTable" style="max-height: 300px; overflow-y: auto;">
+                        <table class="retention-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Milestone</th>
+                                    <th>Count</th>
+                                    <th>Unique Users</th>
+                                </tr>
+                            </thead>
+                            <tbody id="conversionBody">
+                                <tr><td colspan="3" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Push Notifications Section -->
         <div class="section">
             <h2>🔔 Push Notifications</h2>
@@ -2622,6 +2746,138 @@
         }
 
         // ============================================================================
+        // 🏆 TOURNAMENT ANALYTICS
+        // ============================================================================
+
+        async function loadTournaments() {
+            const data = await fetchAPI('tournaments?days=7');
+            if (!data) return;
+
+            // Update summary cards
+            const summary = data.summary || {};
+            document.getElementById('tournamentTotalBattles').textContent = formatNumber(summary.total_battles || 0);
+            document.getElementById('tournamentBattlesWon').textContent = formatNumber(summary.battles_won || 0);
+            document.getElementById('tournamentBattlesLost').textContent = formatNumber(summary.battles_lost || 0);
+            document.getElementById('tournamentWinRate').textContent = (summary.win_rate || 0) + '% win rate';
+            document.getElementById('tournamentUniquePlayers').textContent = formatNumber(summary.unique_players || 0);
+            document.getElementById('tournamentRestarts').textContent = formatNumber(summary.total_restarts || 0);
+            document.getElementById('tournamentAdsShown').textContent = formatNumber(summary.tournament_ads_shown || 0);
+
+            // Update round conversion table
+            const tbody = document.getElementById('roundConversionBody');
+            const rounds = data.round_conversion || [];
+            if (rounds.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No tournament data yet</td></tr>';
+            } else {
+                tbody.innerHTML = rounds.map(r => `
+                    <tr>
+                        <td style="font-weight: 600;">Round ${r.round}</td>
+                        <td>${r.stage_name || '-'}</td>
+                        <td>${formatNumber(r.started || 0)}</td>
+                        <td style="color: #48bb78; font-weight: 600;">${formatNumber(r.won || 0)}</td>
+                        <td style="color: ${parseFloat(r.win_rate) > 50 ? '#48bb78' : '#fc8181'}; font-weight: 600;">${r.win_rate}%</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Draw daily battles chart
+            const ctx = document.getElementById('tournamentDailyChart').getContext('2d');
+            if (charts.tournamentDaily) charts.tournamentDaily.destroy();
+            
+            const dailyData = [...(data.daily_trend || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            charts.tournamentDaily = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dailyData.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: '⚔️ Battles Started',
+                        data: dailyData.map(d => d.battles_started || 0),
+                        borderColor: '#f6ad55',
+                        backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: '🏆 Wins',
+                        data: dailyData.map(d => d.battles_won || 0),
+                        borderColor: '#48bb78',
+                        backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }, {
+                        label: '💔 Losses',
+                        data: dailyData.map(d => d.battles_lost || 0),
+                        borderColor: '#fc8181',
+                        backgroundColor: 'rgba(252, 129, 129, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        }
+
+        // ============================================================================
+        // 🎯 CONVERSION EVENTS ANALYTICS
+        // ============================================================================
+
+        async function loadConversions() {
+            const data = await fetchAPI('conversions?days=30');
+            if (!data) return;
+
+            // Update summary cards
+            const summary = data.summary || {};
+            document.getElementById('conversionAllTime').textContent = formatNumber(summary.total_conversions_all_time || 0);
+            document.getElementById('conversionPeriod').textContent = formatNumber(summary.total_in_period || 0);
+
+            // Update conversion breakdown table
+            const tbody = document.getElementById('conversionBody');
+            const events = data.all_time_by_event || [];
+            if (events.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">No conversion events yet</td></tr>';
+            } else {
+                tbody.innerHTML = events.map(e => `
+                    <tr>
+                        <td style="font-weight: 600;">${e.display_name}</td>
+                        <td style="color: #48bb78; font-weight: 600;">${formatNumber(e.count || 0)}</td>
+                        <td>${formatNumber(e.unique_users || 0)}</td>
+                    </tr>
+                `).join('');
+            }
+
+            // Draw daily conversions chart
+            const ctx = document.getElementById('conversionDailyChart').getContext('2d');
+            if (charts.conversionDaily) charts.conversionDaily.destroy();
+            
+            const dailyData = [...(data.daily_trend || [])].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            charts.conversionDaily = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dailyData.map(d => new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: '🎯 Conversion Events',
+                        data: dailyData.map(d => d.total || 0),
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: '#667eea',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
+            });
+        }
+
+        // ============================================================================
         // ACTIVITY FEED
         // ============================================================================
 
@@ -2709,7 +2965,23 @@
                 'continue_used': '💎',
                 'ad_watched': '📺',
                 'user_installed': '👋',
-                'app_launched': '🚀'
+                'app_launched': '🚀',
+                // Tournament events
+                'tournament_manager_initialized': '🏟️',
+                'playoff_battle_started': '⚔️',
+                'playoff_battle_won': '🏆',
+                'playoff_battle_lost': '💔',
+                'tournament_start_over': '🔄',
+                'tournament_interstitial_shown': '📺',
+                // Conversion events
+                'conversion_games_played_3': '🎯',
+                'conversion_games_played_5': '🎯',
+                'conversion_games_played_10': '🎯',
+                'conversion_sessions_count_3': '📊',
+                'conversion_sessions_count_6': '📊',
+                'conversion_level_completed_3': '⭐',
+                'conversion_level_completed_5': '⭐',
+                'conversion_level_completed_10': '⭐'
             };
             return icons[type] || '📊';
         }
@@ -2931,7 +3203,9 @@
                 loadInterstitialAdsDaily(),
                 loadInterstitialByTrigger(),  // 🎯 NEW: Win vs Loss streak ads
                 loadRateUs(),                  // ⭐ NEW: Rate us funnel
-                loadAchievements(),            // 🏆 NEW: Achievement analytics
+                loadAchievements(),            // 🏆 Achievement analytics
+                loadTournaments(),             // 🏆 Tournament analytics
+                loadConversions(),             // 🎯 Conversion milestones
                 loadNotifications(),
                 loadActivityFeed()
             ]);
