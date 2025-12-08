@@ -450,12 +450,16 @@ const leaderboardViewedSchema = Joi.object({
   user_rank: Joi.number().integer().min(0).optional(),
 });
 
-// 25. tournament_entered - Implicit from game_ended in endless mode
+// 25. tournament_entered - User enters a tournament
 const tournamentEnteredSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_entered').required(),
   tournament_id: Joi.string().required(),
   tournament_name: Joi.string().required(),
+  tournament_tier: Joi.string().optional(),      // ✅ NEW: bronze, silver, gold, diamond
+  entry_type: Joi.string().optional(),           // ✅ NEW: 'coins', 'gems', 'free'
+  entry_cost: Joi.number().integer().min(0).optional(), // ✅ NEW: Cost paid
+  total_tries: Joi.number().integer().min(1).optional(), // ✅ NEW: Tries allowed
 });
 
 // 26. ad_watched - Rewarded ad
@@ -740,6 +744,7 @@ const playoffBattleLostSchema = Joi.object({
   opponent_jet: Joi.string().optional(),
   obstacles_passed: Joi.number().integer().min(0).optional(),
   cause_of_death: Joi.string().optional(),
+  duration_seconds: Joi.number().min(0).optional(), // ✅ FIX: Added duration_seconds
 });
 
 // 45. tournament_start_over - User restarted tournament

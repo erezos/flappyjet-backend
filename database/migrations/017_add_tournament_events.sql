@@ -118,7 +118,17 @@ ALTER TABLE events ADD CONSTRAINT valid_event_type CHECK (
     
     -- ⚡ Powerup Events
     'powerup_activated',
-    'powerup_expired'
+    'powerup_expired',
+    
+    -- 🎯 Conversion Milestone Events
+    'conversion_games_played_3',
+    'conversion_games_played_5',
+    'conversion_games_played_10',
+    'conversion_sessions_count_3',
+    'conversion_sessions_count_6',
+    'conversion_level_completed_3',
+    'conversion_level_completed_5',
+    'conversion_level_completed_10'
   )
 );
 
