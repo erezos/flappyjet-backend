@@ -1048,7 +1048,7 @@ module.exports = (db, cacheManager) => {
               payload->>'country' as country,
               COALESCE(payload->>'deviceModel', payload->>'device_model') as device,
               (payload->>'daysSinceInstall')::int as days_since_install,
-              COALESCE(payload->>'nickname', 'Player') as nickname
+              COALESCE(payload->>'nickname', 'Player') as event_nickname
             FROM events
             WHERE event_type IN ('user_installed', 'app_launched')
               AND received_at >= CURRENT_DATE - INTERVAL '30 days'
@@ -1063,6 +1063,12 @@ module.exports = (db, cacheManager) => {
             WHERE event_type = 'game_started'
               AND received_at >= CURRENT_DATE - INTERVAL '30 days'
             GROUP BY user_id
+          ),
+          authoritative_nicknames AS (
+            -- ✅ FIX: Get authoritative nicknames from users table (updated by nickname_changed events)
+            SELECT user_id, nickname as db_nickname
+            FROM users
+            WHERE nickname IS NOT NULL AND nickname != ''
           )
           SELECT 
             e.event_type,
@@ -1072,11 +1078,13 @@ module.exports = (db, cacheManager) => {
             um.country,
             um.device,
             um.days_since_install,
-            um.nickname,
+            -- ✅ FIX: Prefer users table nickname (authoritative), then event nickname, then 'Player'
+            COALESCE(an.db_nickname, um.event_nickname, 'Player') as nickname,
             COALESCE(ugc.games_played, 0) as games_played
           FROM events e
           LEFT JOIN user_metadata um ON e.user_id = um.user_id
           LEFT JOIN user_game_counts ugc ON e.user_id = ugc.user_id
+          LEFT JOIN authoritative_nicknames an ON e.user_id = an.user_id
           WHERE e.received_at >= NOW() - INTERVAL '5 minutes'
           ORDER BY e.received_at DESC
           LIMIT $1

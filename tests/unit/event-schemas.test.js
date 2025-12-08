@@ -537,7 +537,10 @@ describe('Event Schemas Validation', () => {
         event_type: 'tournament_entered',
         user_id: 'device_123',
         timestamp: '2025-01-01T00:00:00.000Z',
-        tournament_id: 'weekly_2025_01'
+        app_version: '2.3.0',
+        platform: 'android',
+        tournament_id: 'weekly_2025_01',
+        tournament_name: 'Weekly Championship'
       };
 
       const { error } = schemaMap.tournament_entered.validate(event);
@@ -1111,6 +1114,330 @@ describe('Event Schemas Validation', () => {
       };
 
       const { error } = schemaMap.loss_streak_ad_pending.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
+  // TOURNAMENT EVENTS (v2.3.0) - 🏆 Playoff tournament tracking
+  // ============================================================================
+
+  describe('tournament_manager_initialized', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate tournament manager initialization', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_manager_initialized',
+        available_count: 3,
+        has_active_entry: false,
+        total_free_tickets: 1
+      };
+
+      const { error } = schemaMap.tournament_manager_initialized.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate with minimal fields', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_manager_initialized'
+      };
+
+      const { error } = schemaMap.tournament_manager_initialized.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('playoff_battle_started', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate playoff battle start', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'playoff_battle_started',
+        tournament_id: 'bosses_showdown',
+        round_number: 1,
+        stage_name: 'Quarter Finals',
+        opponent_jet: 'defender',
+        user_jet: 'classic'
+      };
+
+      const { error } = schemaMap.playoff_battle_started.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('playoff_battle_won', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate playoff battle win', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'playoff_battle_won',
+        tournament_id: 'bosses_showdown',
+        round_number: 1,
+        stage_name: 'Quarter Finals',
+        opponent_jet: 'defender',
+        obstacles_passed: 15,
+        reward_coins: 50,
+        reward_gems: 3
+      };
+
+      const { error } = schemaMap.playoff_battle_won.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('playoff_battle_lost', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate playoff battle loss', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'playoff_battle_lost',
+        tournament_id: 'bosses_showdown',
+        round_number: 2,
+        stage_name: 'Semi Finals',
+        opponent_jet: 'stealth_bomber',
+        obstacles_passed: 8,
+        cause_of_death: 'obstacle_collision'
+      };
+
+      const { error } = schemaMap.playoff_battle_lost.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('tournament_start_over', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate tournament restart (free)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_start_over',
+        tournament_id: 'bosses_showdown',
+        tournament_name: 'Bosses Showdown',
+        round_reached: 2,
+        trigger: 'free',
+        cost_coins: 0,
+        cost_gems: 0
+      };
+
+      const { error } = schemaMap.tournament_start_over.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate tournament restart (paid)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_start_over',
+        tournament_id: 'chopper_adventures',
+        trigger: 'paid',
+        cost_gems: 25
+      };
+
+      const { error } = schemaMap.tournament_start_over.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('tournament_game_over_dismissed', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate game over dismissal via back button', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_game_over_dismissed',
+        tournament_id: 'bosses_showdown',
+        trigger: 'back_button',
+        round_number: 1
+      };
+
+      const { error } = schemaMap.tournament_game_over_dismissed.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate game over dismissal via X button', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_game_over_dismissed',
+        tournament_id: 'bosses_showdown',
+        trigger: 'x_button',
+        round_number: 2
+      };
+
+      const { error } = schemaMap.tournament_game_over_dismissed.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('tournament_interstitial_shown', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate tournament interstitial', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_interstitial_shown',
+        tournament_id: 'bosses_showdown',
+        trigger: 'round_win',
+        round_number: 1
+      };
+
+      const { error } = schemaMap.tournament_interstitial_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('tournament_interstitial_cooldown', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate interstitial cooldown skip', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_interstitial_cooldown',
+        seconds_remaining: 45,
+        trigger: 'round_win'
+      };
+
+      const { error } = schemaMap.tournament_interstitial_cooldown.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
+  // RATE US EVENTS (updated with prompt_count)
+  // ============================================================================
+
+  describe('rate_us_popup_shown', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate popup shown with prompt_count', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'rate_us_popup_shown',
+        session_count: 5,
+        prompt_count: 1,
+        days_since_install: 3
+      };
+
+      const { error } = schemaMap.rate_us_popup_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate popup shown without prompt_count (backward compat)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'rate_us_popup_shown',
+        session_count: 5,
+        days_since_install: 3
+      };
+
+      const { error } = schemaMap.rate_us_popup_shown.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('rate_us_maybe_later', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate maybe later with prompt_count', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'rate_us_maybe_later',
+        session_count: 5,
+        prompt_count: 2
+      };
+
+      const { error } = schemaMap.rate_us_maybe_later.validate(event);
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('rate_us_initialized', () => {
+    const baseEventFields = {
+      user_id: 'device_123',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      app_version: '2.3.0',
+      platform: 'android'
+    };
+
+    test('should validate with has_declined (new app version)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'rate_us_initialized',
+        session_count: 5,
+        has_rated: false,
+        has_declined: true,
+        prompt_count: 2,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_initialized.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate without has_declined (old app version backward compat)', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'rate_us_initialized',
+        session_count: 5,
+        has_rated: false,
+        prompt_count: 2,
+        days_since_install: 7
+      };
+
+      const { error } = schemaMap.rate_us_initialized.validate(event);
       expect(error).toBeUndefined();
     });
   });

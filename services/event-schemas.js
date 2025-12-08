@@ -584,12 +584,13 @@ const prizeClaimedSchema = Joi.object({
 // ============================================================================
 
 // 32. rate_us_initialized - Rate us manager initialized
+// ✅ FIX: has_declined is optional for backward compatibility with older app versions
 const rateUsInitializedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('rate_us_initialized').required(),
   session_count: Joi.number().integer().min(0).required(),
   has_rated: Joi.boolean().required(),
-  has_declined: Joi.boolean().required(), // ✅ FIX: Added missing field
+  has_declined: Joi.boolean().optional(), // ✅ FIX: Made optional for older app versions
   prompt_count: Joi.number().integer().min(0).required(),
   days_since_install: Joi.number().integer().min(0).required(),
 });
@@ -604,10 +605,12 @@ const rateUsTriggerSchema = Joi.object({
 });
 
 // 34. rate_us_popup_shown - Rate us popup displayed
+// ✅ FIX: Added prompt_count which Flutter sends
 const rateUsPopupShownSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('rate_us_popup_shown').required(),
   session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).optional(), // ✅ FIX: Flutter sends this
   days_since_install: Joi.number().integer().min(0).required(),
 });
 
@@ -621,24 +624,30 @@ const rateUsPromptShownSchema = Joi.object({
 });
 
 // 36. rate_us_rate_tapped - User tapped Rate button
+// ✅ FIX: Added prompt_count which Flutter sends
 const rateUsRateTappedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('rate_us_rate_tapped').required(),
   session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).optional(), // ✅ FIX: Flutter sends this
 });
 
 // 37. rate_us_maybe_later - User tapped Maybe Later
+// ✅ FIX: Added prompt_count which Flutter sends
 const rateUsMaybeLaterSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('rate_us_maybe_later').required(),
   session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).optional(), // ✅ FIX: Flutter sends this
 });
 
 // 38. rate_us_declined - User tapped No Thanks (won't show again)
+// ✅ FIX: Added prompt_count which Flutter sends
 const rateUsDeclinedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('rate_us_declined').required(),
   session_count: Joi.number().integer().min(0).required(),
+  prompt_count: Joi.number().integer().min(0).optional(), // ✅ FIX: Flutter sends this
 });
 
 // 39. rate_us_completed - User completed rating
@@ -656,6 +665,133 @@ const rateUsStoreOpenedSchema = Joi.object({
   event_type: Joi.string().valid('rate_us_store_opened').required(),
   session_count: Joi.number().integer().min(0).required(),
   trigger: Joi.string().valid('manual', 'fallback').required(),
+});
+
+// ============================================================================
+// TOURNAMENT EVENTS (NEW v2.3.0) - 🏆 Playoff tournament tracking
+// ============================================================================
+
+// 40b. tournament_manager_initialized - Tournament system initialized
+const tournamentManagerInitializedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_manager_initialized').required(),
+  available_count: Joi.number().integer().min(0).optional(),
+  has_active_entry: Joi.boolean().optional(),
+  total_free_tickets: Joi.number().integer().min(0).optional(),
+});
+
+// 41. tournament_round_started - Tournament round/battle started
+const tournamentRoundStartedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_round_started').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  round_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  opponent_jet: Joi.string().optional(),
+});
+
+// 42. playoff_battle_started - Playoff battle initiated
+const playoffBattleStartedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('playoff_battle_started').required(),
+  tournament_id: Joi.string().required(),
+  round_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  opponent_jet: Joi.string().optional(),
+  user_jet: Joi.string().optional(),
+});
+
+// 43. playoff_battle_won - User won a playoff battle
+const playoffBattleWonSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('playoff_battle_won').required(),
+  tournament_id: Joi.string().required(),
+  round_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  opponent_jet: Joi.string().optional(),
+  obstacles_passed: Joi.number().integer().min(0).optional(),
+  reward_coins: Joi.number().integer().min(0).optional(),
+  reward_gems: Joi.number().integer().min(0).optional(),
+});
+
+// 44. playoff_battle_lost - User lost a playoff battle
+const playoffBattleLostSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('playoff_battle_lost').required(),
+  tournament_id: Joi.string().required(),
+  round_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  opponent_jet: Joi.string().optional(),
+  obstacles_passed: Joi.number().integer().min(0).optional(),
+  cause_of_death: Joi.string().optional(),
+});
+
+// 45. tournament_start_over - User restarted tournament
+const tournamentStartOverSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_start_over').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  round_reached: Joi.number().integer().min(1).optional(),
+  trigger: Joi.string().valid('game_over', 'manual', 'free', 'paid').optional(),
+  cost_coins: Joi.number().integer().min(0).optional(),
+  cost_gems: Joi.number().integer().min(0).optional(),
+});
+
+// 46. tournament_game_over_dismissed - User dismissed game over in tournament
+const tournamentGameOverDismissedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_game_over_dismissed').required(),
+  tournament_id: Joi.string().required(),
+  trigger: Joi.string().valid('back_button', 'x_button').optional(),
+  round_number: Joi.number().integer().min(1).optional(),
+});
+
+// 47. tournament_interstitial_shown - Interstitial ad shown in tournament context
+const tournamentInterstitialShownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_interstitial_shown').required(),
+  tournament_id: Joi.string().optional(),
+  trigger: Joi.string().optional(), // 'game_over', 'round_win', 'start_over'
+  round_number: Joi.number().integer().min(1).optional(),
+});
+
+// 48. tournament_interstitial_cooldown - Interstitial ad skipped due to cooldown
+const tournamentInterstitialCooldownSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_interstitial_cooldown').required(),
+  seconds_remaining: Joi.number().integer().min(0).optional(),
+  trigger: Joi.string().optional(),
+});
+
+// 49. conversion events - Milestone conversion events for Firebase/Railway
+const conversionEventSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().pattern(/^conversion_/).required(),
+  milestone_type: Joi.string().optional(),
+  milestone_value: Joi.number().integer().min(0).optional(),
+  total_games_played: Joi.number().integer().min(0).optional(),
+  total_sessions: Joi.number().integer().min(0).optional(),
+  highest_level_completed: Joi.number().integer().min(0).optional(),
+  days_since_install: Joi.number().integer().min(0).optional(),
+}).unknown(true); // Allow additional fields for flexibility
+
+// 50. powerup_activated - In-game powerup used
+const powerupActivatedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('powerup_activated').required(),
+  powerup_type: Joi.string().required(),
+  powerup_id: Joi.string().optional(),
+  source: Joi.string().optional(), // 'inventory', 'in_game_bonus'
+});
+
+// 51. powerup_expired - Powerup duration ended
+const powerupExpiredSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('powerup_expired').required(),
+  powerup_type: Joi.string().required(),
+  duration_seconds: Joi.number().integer().min(0).optional(),
 });
 
 // ============================================================================
@@ -730,6 +866,21 @@ const schemaMap = {
   rate_us_declined: rateUsDeclinedSchema,
   rate_us_completed: rateUsCompletedSchema,
   rate_us_store_opened: rateUsStoreOpenedSchema,
+  
+  // 🏆 Tournament Events (v2.3.0)
+  tournament_manager_initialized: tournamentManagerInitializedSchema,
+  tournament_round_started: tournamentRoundStartedSchema,
+  playoff_battle_started: playoffBattleStartedSchema,
+  playoff_battle_won: playoffBattleWonSchema,
+  playoff_battle_lost: playoffBattleLostSchema,
+  tournament_start_over: tournamentStartOverSchema,
+  tournament_game_over_dismissed: tournamentGameOverDismissedSchema,
+  tournament_interstitial_shown: tournamentInterstitialShownSchema,
+  tournament_interstitial_cooldown: tournamentInterstitialCooldownSchema,
+  
+  // ⚡ Powerup Events
+  powerup_activated: powerupActivatedSchema,
+  powerup_expired: powerupExpiredSchema,
 };
 
 // ============================================================================
@@ -751,7 +902,16 @@ function validateEvent(event) {
     };
   }
   
-  const schema = schemaMap[event_type];
+  // Check for direct schema match
+  let schema = schemaMap[event_type];
+  
+  // ✅ Handle dynamic event types (conversion events, etc.)
+  if (!schema) {
+    // Conversion events: conversion_games_played_3, conversion_sessions_3, etc.
+    if (event_type.startsWith('conversion_')) {
+      schema = conversionEventSchema;
+    }
+  }
   
   if (!schema) {
     return {
@@ -825,6 +985,33 @@ module.exports = {
   adRevenueSchema,
   shareClickedSchema,
   notificationReceivedSchema,
+  
+  // ⭐ Rate Us Events
+  rateUsInitializedSchema,
+  rateUsTriggerSchema,
+  rateUsPopupShownSchema,
+  rateUsPromptShownSchema,
+  rateUsRateTappedSchema,
+  rateUsMaybeLaterSchema,
+  rateUsDeclinedSchema,
+  rateUsCompletedSchema,
+  rateUsStoreOpenedSchema,
+  
+  // 🏆 Tournament Events (v2.3.0)
+  tournamentManagerInitializedSchema,
+  tournamentRoundStartedSchema,
+  playoffBattleStartedSchema,
+  playoffBattleWonSchema,
+  playoffBattleLostSchema,
+  tournamentStartOverSchema,
+  tournamentGameOverDismissedSchema,
+  tournamentInterstitialShownSchema,
+  tournamentInterstitialCooldownSchema,
+  conversionEventSchema,
+  
+  // ⚡ Powerup Events
+  powerupActivatedSchema,
+  powerupExpiredSchema,
   
   // Schema map and validation
   schemaMap,
