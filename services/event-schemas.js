@@ -728,16 +728,21 @@ const playoffBattleLostSchema = Joi.object({
 });
 
 // 45. tournament_start_over - User restarted tournament
+// ✅ FIX: Made tournament_id optional - some contexts only have tournament_name
 const tournamentStartOverSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_start_over').required(),
-  tournament_id: Joi.string().required(),
+  tournament_id: Joi.string().optional(),
   tournament_name: Joi.string().optional(),
+  stage: Joi.string().optional(),
   round_reached: Joi.number().integer().min(1).optional(),
   trigger: Joi.string().valid('game_over', 'manual', 'free', 'paid').optional(),
+  is_free: Joi.boolean().optional(),
+  is_free_restart: Joi.boolean().optional(),
+  fee_charged: Joi.number().integer().min(0).optional(),
   cost_coins: Joi.number().integer().min(0).optional(),
   cost_gems: Joi.number().integer().min(0).optional(),
-});
+}).unknown(true); // Allow additional fields for flexibility
 
 // 46. tournament_game_over_dismissed - User dismissed game over in tournament
 const tournamentGameOverDismissedSchema = Joi.object({

@@ -1237,7 +1237,7 @@ describe('Event Schemas Validation', () => {
       platform: 'android'
     };
 
-    test('should validate tournament restart (free)', () => {
+    test('should validate tournament restart (free) with tournament_id', () => {
       const event = {
         ...baseEventFields,
         event_type: 'tournament_start_over',
@@ -1247,6 +1247,19 @@ describe('Event Schemas Validation', () => {
         trigger: 'free',
         cost_coins: 0,
         cost_gems: 0
+      };
+
+      const { error } = schemaMap.tournament_start_over.validate(event);
+      expect(error).toBeUndefined();
+    });
+
+    test('should validate tournament restart with tournament_name only', () => {
+      const event = {
+        ...baseEventFields,
+        event_type: 'tournament_start_over',
+        tournament_name: 'Bosses Showdown',
+        stage: 'Quarter Finals',
+        is_free: true
       };
 
       const { error } = schemaMap.tournament_start_over.validate(event);
