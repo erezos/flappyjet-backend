@@ -984,6 +984,12 @@
                     <div class="metric-value" id="tournamentAdsShown">-</div>
                     <div class="metric-change">Interstitials shown</div>
                 </div>
+                
+                <div class="metric-card" style="border-left: 4px solid #f6e05e;">
+                    <div class="metric-label">🏆 Tournaments Won</div>
+                    <div class="metric-value" id="tournamentsCompleted">-</div>
+                    <div class="metric-change" id="uniqueWinners">- unique winners</div>
+                </div>
             </div>
 
             <!-- Tournament Charts -->
@@ -2762,6 +2768,8 @@
             document.getElementById('tournamentUniquePlayers').textContent = formatNumber(summary.unique_players || 0);
             document.getElementById('tournamentRestarts').textContent = formatNumber(summary.total_restarts || 0);
             document.getElementById('tournamentAdsShown').textContent = formatNumber(summary.tournament_ads_shown || 0);
+            document.getElementById('tournamentsCompleted').textContent = formatNumber(summary.tournaments_completed || 0);
+            document.getElementById('uniqueWinners').textContent = formatNumber(summary.unique_tournament_winners || 0) + ' unique winners';
 
             // Update round conversion table
             const tbody = document.getElementById('roundConversionBody');

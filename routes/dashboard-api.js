@@ -2429,6 +2429,9 @@ module.exports = (db, cacheManager) => {
               COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as total_battles_started,
               COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as total_battles_won,
               COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as total_battles_lost,
+              COUNT(*) FILTER (WHERE event_type = 'tournament_round_completed') as total_rounds_completed,
+              COUNT(*) FILTER (WHERE event_type = 'tournament_completed') as total_tournaments_completed,
+              COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'tournament_completed') as unique_tournament_winners,
               COUNT(*) FILTER (WHERE event_type = 'tournament_start_over') as total_restarts,
               COUNT(*) FILTER (WHERE event_type = 'tournament_interstitial_shown') as tournament_ads_shown
             FROM events
@@ -2437,6 +2440,8 @@ module.exports = (db, cacheManager) => {
               'playoff_battle_started', 
               'playoff_battle_won', 
               'playoff_battle_lost',
+              'tournament_round_completed',
+              'tournament_completed',
               'tournament_start_over',
               'tournament_interstitial_shown'
             )
@@ -2505,6 +2510,9 @@ module.exports = (db, cacheManager) => {
             battles_won: parseInt(stats.total_battles_won || 0),
             battles_lost: parseInt(stats.total_battles_lost || 0),
             win_rate: winRate,
+            rounds_completed: parseInt(stats.total_rounds_completed || 0),         // ✅ NEW
+            tournaments_completed: parseInt(stats.total_tournaments_completed || 0), // ✅ NEW
+            unique_tournament_winners: parseInt(stats.unique_tournament_winners || 0), // ✅ NEW
             total_restarts: parseInt(stats.total_restarts || 0),
             tournament_ads_shown: parseInt(stats.tournament_ads_shown || 0)
           },

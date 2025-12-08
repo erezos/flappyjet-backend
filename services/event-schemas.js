@@ -713,6 +713,7 @@ const playoffBattleWonSchema = Joi.object({
   obstacles_passed: Joi.number().integer().min(0).optional(),
   reward_coins: Joi.number().integer().min(0).optional(),
   reward_gems: Joi.number().integer().min(0).optional(),
+  duration_seconds: Joi.number().min(0).optional(), // ✅ FIX: Added duration_seconds
 });
 
 // 44. playoff_battle_lost - User lost a playoff battle
@@ -770,7 +771,34 @@ const tournamentInterstitialCooldownSchema = Joi.object({
   trigger: Joi.string().optional(),
 });
 
-// 49. conversion events - Milestone conversion events for Firebase/Railway
+// 49. tournament_round_completed - User completed a tournament round
+const tournamentRoundCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_round_completed').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  round_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  obstacles_passed: Joi.number().integer().min(0).optional(),
+  duration_seconds: Joi.number().min(0).optional(),
+  reward_coins: Joi.number().integer().min(0).optional(),
+  reward_gems: Joi.number().integer().min(0).optional(),
+}).unknown(true); // Allow additional fields for flexibility
+
+// 50. tournament_completed - User completed entire tournament (won grand finals)
+const tournamentCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_completed').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  total_rounds: Joi.number().integer().min(1).optional(),
+  total_coins_earned: Joi.number().integer().min(0).optional(),
+  total_gems_earned: Joi.number().integer().min(0).optional(),
+  skin_unlocked: Joi.string().optional(),
+  duration_seconds: Joi.number().min(0).optional(),
+}).unknown(true); // Allow additional fields for flexibility
+
+// 51. conversion events - Milestone conversion events for Firebase/Railway
 const conversionEventSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().pattern(/^conversion_/).required(),
@@ -878,6 +906,8 @@ const schemaMap = {
   playoff_battle_started: playoffBattleStartedSchema,
   playoff_battle_won: playoffBattleWonSchema,
   playoff_battle_lost: playoffBattleLostSchema,
+  tournament_round_completed: tournamentRoundCompletedSchema,    // ✅ NEW: Round completed
+  tournament_completed: tournamentCompletedSchema,                // ✅ NEW: Tournament won
   tournament_start_over: tournamentStartOverSchema,
   tournament_game_over_dismissed: tournamentGameOverDismissedSchema,
   tournament_interstitial_shown: tournamentInterstitialShownSchema,
@@ -1012,6 +1042,8 @@ module.exports = {
   tournamentGameOverDismissedSchema,
   tournamentInterstitialShownSchema,
   tournamentInterstitialCooldownSchema,
+  tournamentRoundCompletedSchema,     // ✅ NEW: Export tournament round completed
+  tournamentCompletedSchema,           // ✅ NEW: Export tournament completed
   conversionEventSchema,
   
   // ⚡ Powerup Events

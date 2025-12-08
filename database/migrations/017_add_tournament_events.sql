@@ -108,6 +108,8 @@ ALTER TABLE events ADD CONSTRAINT valid_event_type CHECK (
     'playoff_battle_started',
     'playoff_battle_won',
     'playoff_battle_lost',
+    'tournament_round_completed',         -- ✅ NEW: Round completed
+    'tournament_completed',               -- ✅ NEW: Tournament won
     'tournament_start_over',
     'tournament_game_over_dismissed',
     'tournament_interstitial_shown',
@@ -127,6 +129,10 @@ WHERE event_type = 'tournament_manager_initialized';
 CREATE INDEX IF NOT EXISTS idx_events_playoff_battle 
 ON events(event_type, received_at) 
 WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost');
+
+CREATE INDEX IF NOT EXISTS idx_events_tournament_completion 
+ON events(event_type, received_at) 
+WHERE event_type IN ('tournament_round_completed', 'tournament_completed');
 
 CREATE INDEX IF NOT EXISTS idx_events_tournament_actions 
 ON events(event_type, received_at) 
