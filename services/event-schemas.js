@@ -765,13 +765,16 @@ const tournamentStartOverSchema = Joi.object({
 }).unknown(true); // Allow additional fields for flexibility
 
 // 46. tournament_game_over_dismissed - User dismissed game over in tournament
+// NOTE: Flutter currently may omit tournament_id and include tournament_name/stage; keep flexible.
 const tournamentGameOverDismissedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_game_over_dismissed').required(),
-  tournament_id: Joi.string().required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  stage: Joi.string().optional(),
   trigger: Joi.string().valid('back_button', 'x_button').optional(),
   round_number: Joi.number().integer().min(1).optional(),
-});
+}).unknown(true);
 
 // 47. tournament_interstitial_shown - Interstitial ad shown in tournament context
 const tournamentInterstitialShownSchema = Joi.object({
@@ -840,6 +843,33 @@ const tournamentTicketUsedSchema = Joi.object({
   tournaments_entered_with_tickets: Joi.number().integer().min(0).optional(),
 }).unknown(true); // Allow additional fields for flexibility
 
+// 50c. tournament_round_failed - User failed a tournament round
+const tournamentRoundFailedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_round_failed').required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  round_number: Joi.number().integer().min(1).required(),
+  try_number: Joi.number().integer().min(1).optional(),
+  hearts_used: Joi.number().integer().min(0).optional(),
+  continues_used: Joi.number().integer().min(0).optional(),
+  duration_seconds: Joi.number().min(0).optional(),
+}).unknown(true);
+
+// 50d. tournament_try_failed - User failed a tournament try
+const tournamentTryFailedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_try_failed').required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  try_number: Joi.number().integer().min(1).optional(),
+  tries_remaining: Joi.number().integer().min(0).optional(),
+  highest_round: Joi.number().integer().min(0).optional(),
+  total_coins_earned: Joi.number().integer().min(0).optional(),
+  total_gems_earned: Joi.number().integer().min(0).optional(),
+  tournament_failed: Joi.boolean().optional(),
+}).unknown(true);
+
 // 51. conversion events - Milestone conversion events for Firebase/Railway
 const conversionEventSchema = Joi.object({
   ...baseFields,
@@ -866,7 +896,9 @@ const powerupActivatedSchema = Joi.object({
   powerup_type: Joi.string().required(),
   powerup_id: Joi.string().optional(),
   source: Joi.string().optional(), // 'inventory', 'in_game_bonus'
-});
+  duration_hours: Joi.number().integer().min(0).optional(),
+  expiry: Joi.string().isoDate().optional(),
+}).unknown(true);
 
 // 51. powerup_expired - Powerup duration ended
 const powerupExpiredSchema = Joi.object({
@@ -959,6 +991,8 @@ const schemaMap = {
   tournament_round_advanced: tournamentRoundAdvancedSchema,       // ✅ NEW: Advanced to next round
   tournament_completed: tournamentCompletedSchema,                // ✅ NEW: Tournament won
   tournament_ticket_used: tournamentTicketUsedSchema,             // ✅ NEW: Free ticket used
+  tournament_round_failed: tournamentRoundFailedSchema,           // ✅ NEW: Round failed
+  tournament_try_failed: tournamentTryFailedSchema,               // ✅ NEW: Try failed
   tournament_start_over: tournamentStartOverSchema,
   tournament_game_over_dismissed: tournamentGameOverDismissedSchema,
   tournament_interstitial_shown: tournamentInterstitialShownSchema,
