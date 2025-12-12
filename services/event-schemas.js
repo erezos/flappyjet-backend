@@ -837,11 +837,50 @@ const tournamentCompletedSchema = Joi.object({
 const tournamentTicketUsedSchema = Joi.object({
   ...baseFields,
   event_type: Joi.string().valid('tournament_ticket_used').required(),
-  tournament_id: Joi.string().required(),
+  tournament_id: Joi.string().optional(), // allow missing for older clients
   tournament_name: Joi.string().optional(),
   ticket_tier: Joi.string().valid('bronze', 'silver', 'gold', 'diamond').optional(),
   tournaments_entered_with_tickets: Joi.number().integer().min(0).optional(),
 }).unknown(true); // Allow additional fields for flexibility
+
+// 50b2. tournament_ticket_granted - Free ticket granted to user
+const tournamentTicketGrantedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_ticket_granted').required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  tier: Joi.string().valid('bronze', 'silver', 'gold', 'platinum', 'special', 'diamond').optional(),
+  count: Joi.number().integer().min(1).optional(),
+  total_for_tier: Joi.number().integer().min(0).optional(),
+}).unknown(true);
+
+// 50b3. tournament_ticket_used_v2 - reserved for future (placeholder)
+
+// Linear tournament level started
+const tournamentLevelStartedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_level_started').required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  level_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  objective_type: Joi.string().optional(),
+}).unknown(true);
+
+// Linear tournament level completed
+const tournamentLevelCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_level_completed').required(),
+  tournament_id: Joi.string().optional(),
+  tournament_name: Joi.string().optional(),
+  level_number: Joi.number().integer().min(1).required(),
+  stage_name: Joi.string().optional(),
+  duration_seconds: Joi.number().min(0).optional(),
+  continues_used: Joi.number().integer().min(0).optional(),
+  hearts_used: Joi.number().integer().min(0).optional(),
+  reward_coins: Joi.number().integer().min(0).optional(),
+  reward_gems: Joi.number().integer().min(0).optional(),
+}).unknown(true);
 
 // 50c. tournament_round_failed - User failed a tournament round
 const tournamentRoundFailedSchema = Joi.object({
@@ -991,6 +1030,9 @@ const schemaMap = {
   tournament_round_advanced: tournamentRoundAdvancedSchema,       // ✅ NEW: Advanced to next round
   tournament_completed: tournamentCompletedSchema,                // ✅ NEW: Tournament won
   tournament_ticket_used: tournamentTicketUsedSchema,             // ✅ NEW: Free ticket used
+  tournament_ticket_granted: tournamentTicketGrantedSchema,       // ✅ NEW: Ticket granted
+  tournament_level_started: tournamentLevelStartedSchema,         // ✅ NEW: Linear tournament level start
+  tournament_level_completed: tournamentLevelCompletedSchema,     // ✅ NEW: Linear tournament level complete
   tournament_round_failed: tournamentRoundFailedSchema,           // ✅ NEW: Round failed
   tournament_try_failed: tournamentTryFailedSchema,               // ✅ NEW: Try failed
   tournament_start_over: tournamentStartOverSchema,
