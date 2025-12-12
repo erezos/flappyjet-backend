@@ -110,6 +110,7 @@ ALTER TABLE events ADD CONSTRAINT valid_event_type CHECK (
     'playoff_battle_lost',
     'tournament_round_completed',         -- ✅ NEW: Round completed
     'tournament_round_advanced',          -- ✅ NEW: Advanced to next round
+    -- NOTE: newer events added in migration 018
     'tournament_completed',               -- ✅ NEW: Tournament won
     'tournament_ticket_used',             -- ✅ NEW: Free ticket used
     'tournament_start_over',

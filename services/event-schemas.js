@@ -882,6 +882,18 @@ const tournamentLevelCompletedSchema = Joi.object({
   reward_gems: Joi.number().integer().min(0).optional(),
 }).unknown(true);
 
+// Tournament abandoned
+const tournamentAbandonedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tournament_abandoned').required(),
+  tournament_id: Joi.string().required(),
+  tournament_name: Joi.string().optional(),
+  current_try: Joi.number().integer().min(1).optional(),
+  highest_round: Joi.number().integer().min(0).optional(),
+  coins_earned: Joi.number().integer().min(0).optional(),
+  gems_earned: Joi.number().integer().min(0).optional(),
+}).unknown(true);
+
 // 50c. tournament_round_failed - User failed a tournament round
 const tournamentRoundFailedSchema = Joi.object({
   ...baseFields,
@@ -901,7 +913,7 @@ const tournamentTryFailedSchema = Joi.object({
   event_type: Joi.string().valid('tournament_try_failed').required(),
   tournament_id: Joi.string().optional(),
   tournament_name: Joi.string().optional(),
-  try_number: Joi.number().integer().min(1).optional(),
+  try_number: Joi.number().integer().min(0).optional(), // allow 0 when client reports previous try index
   tries_remaining: Joi.number().integer().min(0).optional(),
   highest_round: Joi.number().integer().min(0).optional(),
   total_coins_earned: Joi.number().integer().min(0).optional(),
@@ -1033,6 +1045,7 @@ const schemaMap = {
   tournament_ticket_granted: tournamentTicketGrantedSchema,       // ✅ NEW: Ticket granted
   tournament_level_started: tournamentLevelStartedSchema,         // ✅ NEW: Linear tournament level start
   tournament_level_completed: tournamentLevelCompletedSchema,     // ✅ NEW: Linear tournament level complete
+  tournament_abandoned: tournamentAbandonedSchema,                // ✅ NEW: Tournament abandoned
   tournament_round_failed: tournamentRoundFailedSchema,           // ✅ NEW: Round failed
   tournament_try_failed: tournamentTryFailedSchema,               // ✅ NEW: Try failed
   tournament_start_over: tournamentStartOverSchema,
