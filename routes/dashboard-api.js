@@ -25,6 +25,38 @@ module.exports = (db, cacheManager) => {
   }
 
   /**
+   * ✅ NEW: Execute query with timeout and connection pool error handling
+   * Handles connection pool exhaustion gracefully with retry logic
+   */
+  async function executeQueryWithTimeout(queryFn, timeoutMs = 12000) {
+    try {
+      return await Promise.race([
+        queryFn(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), timeoutMs)
+        )
+      ]);
+    } catch (error) {
+      // Handle connection pool exhaustion gracefully
+      if (error.message.includes('timeout exceeded when trying to connect') ||
+          error.message.includes('Query read timeout')) {
+        logger.warn('📊 Connection pool issue detected, retrying with delay...', {
+          error: error.message
+        });
+        // Retry once after short delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        try {
+          return await queryFn();
+        } catch (retryError) {
+          logger.error('📊 Query retry failed:', retryError.message);
+          throw new Error(`Query failed after retry: ${retryError.message}`);
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Helper: Get data from cache or database
    */
   async function getCachedQuery(req, cacheKey, queryFn, ttl = CACHE_TTL) {
@@ -39,13 +71,13 @@ module.exports = (db, cacheManager) => {
           hasRedis: currentCacheManager?.redis ? true : false,
           redisStatus: currentCacheManager?.redis?.status || 'null'
         });
-        return await queryFn();
+        return await executeQueryWithTimeout(queryFn);
       }
       
       // ✅ NEW: Check if Redis is actually ready (might have disconnected)
       if (currentCacheManager.redis.status !== 'ready') {
         logger.warn(`📊 Redis not ready for ${cacheKey} (status: ${currentCacheManager.redis.status}) - querying database directly`);
-        return await queryFn();
+        return await executeQueryWithTimeout(queryFn);
       }
 
       // Try cache first
@@ -55,9 +87,9 @@ module.exports = (db, cacheManager) => {
         return cached; // ✅ FIX: CacheManager already returns parsed JSON
       }
 
-      // Cache miss - query database
+      // Cache miss - query database with timeout handling
       logger.info(`📊 Cache MISS: ${cacheKey} - querying database`);
-      const result = await queryFn();
+      const result = await executeQueryWithTimeout(queryFn);
       
       // Store in cache and verify it succeeded
       const cacheKeyFull = `${CACHE_PREFIX}${cacheKey}`;
@@ -83,9 +115,9 @@ module.exports = (db, cacheManager) => {
         error: error.message,
         stack: error.stack
       });
-      // On error, still try to return data from query
+      // On error, still try to return data from query (with timeout handling)
       try {
-        return await queryFn();
+        return await executeQueryWithTimeout(queryFn);
       } catch (queryError) {
         throw queryError;
       }

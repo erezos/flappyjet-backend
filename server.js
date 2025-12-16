@@ -47,16 +47,16 @@ try {
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
     
     // ✅ OPTIMIZED POOL SETTINGS FOR SCALABILITY
-    max: 50,                    // Max connections (Railway Pro supports 100+)
+    max: 100,                    // Max connections (increased from 50 to handle concurrent dashboard requests)
     min: 10,                     // Keep 10 connections warm
     idleTimeoutMillis: 30000,    // Close idle connections after 30s
-    connectionTimeoutMillis: 5000, // Fail fast if can't connect in 5s
+    connectionTimeoutMillis: 10000, // Increased from 5s to 10s to reduce "timeout exceeded" errors
     maxUses: 7500,               // Recycle connections after 7.5k uses
     allowExitOnIdle: true,       // Allow process to exit when idle
     
     // Query timeouts
-    query_timeout: 10000,        // 10s max per query
-    statement_timeout: 10000,    // 10s max per statement
+    query_timeout: 15000,        // Increased from 10s to 15s for complex dashboard queries
+    statement_timeout: 15000,    // Increased from 10s to 15s for complex dashboard queries
     
     // Keep-alive for Railway
     keepAlive: true,             // Enable TCP keep-alive
@@ -135,6 +135,35 @@ try {
   db.on('remove', (client) => {
     logger.debug('🐘 ❌ Client removed from database pool');
   });
+  
+  // ✅ NEW: Connection pool monitoring to detect exhaustion
+  setInterval(() => {
+    if (db) {
+      const utilization = db.totalCount / db.options.max;
+      const stats = {
+        totalCount: db.totalCount,
+        idleCount: db.idleCount,
+        waitingCount: db.waitingCount,
+        max: db.options.max,
+        utilizationPercent: Math.round(utilization * 100)
+      };
+      
+      // Log stats every 5 minutes (reduce noise)
+      if (utilization > 0.5) {
+        logger.info('🐘 Connection Pool Stats:', stats);
+      }
+      
+      // Warn if pool is >80% utilized
+      if (utilization > 0.8) {
+        logger.warn('🐘 ⚠️ Connection pool >80% utilized!', stats);
+      }
+      
+      // Critical warning if pool is exhausted
+      if (db.waitingCount > 0) {
+        logger.error('🐘 🚨 Connection pool exhausted - queries waiting!', stats);
+      }
+    }
+  }, 300000); // Every 5 minutes (reduce log noise)
   
   // Set database in app locals for health check access
   app.locals.db = db;
