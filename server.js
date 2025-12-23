@@ -21,11 +21,9 @@ const PrizeManager = require('./services/prize-manager');
 const TournamentScheduler = require('./services/tournament-scheduler');
 const NotificationScheduler = require('./services/notification-scheduler');
 const { CacheManager } = require('./services/cache-manager'); // ✅ Named export - destructure it!
-const LeaderboardAggregator = require('./services/leaderboard-aggregator');
 require('dotenv').config();
 
 // ✅ CLEANED UP: Only import routes that exist and are used
-const leaderboardRoutes = require('./routes/leaderboard');
 const tournamentRoutes = require('./routes/tournaments');
 const purchaseRoutes = require('./routes/purchase');
 const healthRoutes = require('./routes/health');
@@ -455,15 +453,7 @@ let redisClient = null;
     }
     
     // Initialize Event-Driven Aggregators
-    let leaderboardAggregator = null;
-    
-    try {
-      leaderboardAggregator = new LeaderboardAggregator(db, cacheManager);
-      app.locals.leaderboardAggregator = leaderboardAggregator;
-      logger.info('📊 ✅ Leaderboard Aggregator initialized');
-    } catch (error) {
-      logger.error('📊 ❌ Leaderboard Aggregator failed:', error.message);
-    }
+    // ✅ REMOVED: Leaderboard aggregator (feature no longer used)
     
     // Initialize Prize Manager
     try {
@@ -547,7 +537,6 @@ let redisClient = null;
       logger.info(`   💾 Cache: ${cacheManager && cacheManager.redis ? '✅ Active' : '⚠️ No-op mode'}`);
       logger.info(`   🏆 Tournaments: ${tournamentManager ? '✅ Active' : '❌ Inactive'}`);
       logger.info(`   📅 Scheduler: ${tournamentScheduler ? '✅ Active' : '❌ Inactive'}`);
-      logger.info(`   🏅 Leaderboard: ${leaderboardAggregator ? '✅ Active' : '❌ Inactive'}`);
       logger.info(`   🔔 Push Notifications: ${notificationScheduler ? '✅ Active' : '❌ Inactive'}`);
     });
 
@@ -595,6 +584,24 @@ app.use(cors({
   credentials: true
 }));
 app.use(morgan('combined'));
+
+// ✅ CRITICAL: Dashboard routes - MUST be before static file serving
+// Otherwise Express will serve public/dashboard.html as a static file
+app.get('/dashboard.html', (req, res) => {
+  // Disable caching to ensure users get the new dashboard
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'analytics-dashboard.html'));
+});
+
+app.get('/dashboard', (req, res) => {
+  // Disable caching to ensure users get the new dashboard
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.sendFile(path.join(__dirname, 'public', 'analytics-dashboard.html'));
+});
 
 // ✅ NEW: Serve static files (dashboard HTML)
 app.use(express.static('public'));
@@ -644,6 +651,7 @@ const rateLimitMiddleware = (req, res, next) => {
 app.use(rateLimitMiddleware);
 
 // ✅ Serve static files from 'public' directory (for dashboard.html)
+// Note: /dashboard and /dashboard.html routes are handled above (before static middleware)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ✅ NEW: Analytics Dashboard route
@@ -695,7 +703,7 @@ if (db) {
   app.use('/api/v2/prizes', prizesV2Routes);
   
   // ✅ Existing routes (still supported)
-  app.use('/api/leaderboard', leaderboardRoutes);
+  // ✅ REMOVED: Leaderboard routes (feature no longer used)
   app.use('/api/tournaments', tournamentRoutes);
   app.use('/api/purchase', purchaseRoutes(db));
   app.use('/api/health', healthRoutes);
@@ -831,60 +839,7 @@ cron.schedule('0 2 * * 0', async () => {
 // EVENT-DRIVEN ARCHITECTURE CRON JOBS
 // ============================================================================
 
-// 🏆 Update global leaderboard from game_ended events (every 10 minutes)
-if (db) {
-  cron.schedule('*/10 * * * *', async () => {
-    try {
-      logger.info('🏆 Cron: Updating global leaderboard from events...');
-      const leaderboardAggregator = app.locals.leaderboardAggregator;
-      
-      if (leaderboardAggregator) {
-        const result = await leaderboardAggregator.updateGlobalLeaderboard();
-        if (result.success) {
-          logger.info(`🏆 ✅ Global leaderboard updated: ${result.processed} events processed`);
-        } else {
-          logger.error(`🏆 ❌ Global leaderboard update failed: ${result.error}`);
-        }
-      }
-    } catch (error) {
-      logger.error('🏆 ❌ Global leaderboard cron failed:', error);
-    }
-  });
-  logger.info('🏆 Cron job registered: Global leaderboard update (every 10 minutes)');
-}
-
-// 🏆 Update tournament leaderboard from game_ended events (every 4 minutes)
-if (db && tournamentManager) {
-  cron.schedule('*/4 * * * *', async () => {
-    try {
-      logger.info('🏆 Cron: Updating tournament leaderboard from events...');
-      
-      // Get current tournament
-      const tournament = await tournamentManager.getCurrentTournament();
-      
-      if (tournament.success && tournament.tournament) {
-        const leaderboardAggregator = app.locals.leaderboardAggregator;
-        
-        if (leaderboardAggregator) {
-          const result = await leaderboardAggregator.updateTournamentLeaderboard(
-            tournament.tournament.tournament_id,
-            tournament.tournament.start_date,
-            tournament.tournament.end_date
-          );
-          
-          if (result.success) {
-            logger.info(`🏆 ✅ Tournament leaderboard updated: ${result.processed} events processed`);
-          } else {
-            logger.error(`🏆 ❌ Tournament leaderboard update failed: ${result.error}`);
-          }
-        }
-      }
-    } catch (error) {
-      logger.error('🏆 ❌ Tournament leaderboard cron failed:', error);
-    }
-  });
-  logger.info('🏆 Cron job registered: Tournament leaderboard update (every 4 minutes)');
-}
+// ✅ REMOVED: Leaderboard cron jobs (feature no longer used)
 
 // 🧹 Cleanup old events (keep 90 days) - runs weekly on Sunday at 3 AM
 if (db) {
@@ -962,6 +917,35 @@ if (db) {
       }
     } catch (error) {
       logger.error('📊 ❌ Weekly aggregations refresh error:', error.message);
+    }
+  });
+
+  // ✅ NEW: Import campaign costs from Google Ads API (daily, at 5 AM)
+  // Imports previous day's campaign cost data for ROI analysis
+  cron.schedule('0 5 * * *', async () => {
+    try {
+      const CampaignCostImporter = require('./services/campaign-cost-importer');
+      const importer = new CampaignCostImporter(db);
+      
+      logger.info('💰 Starting daily campaign cost import from Google Ads API...');
+      const result = await importer.importCosts(); // Defaults to yesterday
+      
+      if (result.errors.length === 0) {
+        logger.info('💰 ✅ Campaign costs imported successfully', {
+          imported: result.imported,
+          skipped: result.skipped
+        });
+      } else {
+        logger.error('💰 ❌ Campaign cost import completed with errors:', {
+          imported: result.imported,
+          skipped: result.skipped,
+          errors: result.errors.length,
+          error_details: result.errors.slice(0, 5) // Log first 5 errors
+        });
+      }
+    } catch (error) {
+      logger.error('💰 ❌ Campaign cost import error:', error.message);
+      // Don't throw - allow other cron jobs to continue
     }
   });
 

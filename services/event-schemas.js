@@ -126,6 +126,60 @@ const userAcquiredSchema = Joi.object({
   platform: Joi.string().valid('ios', 'android').required(),
 }).unknown(true); // Allow additional fields for flexibility
 
+// 8. first_open - First app open (for funnel tracking) ✅ NEW
+const firstOpenSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('first_open').required(),
+  // Device metadata (from getDeviceMetadata())
+  device_model: Joi.string().optional(),
+  os_version: Joi.string().optional(),
+  app_version: Joi.string().optional(),
+  nickname: Joi.string().max(50).optional(),
+}).unknown(true); // Allow additional fields
+
+// 9. session_started - Session begins (every app launch) ✅ NEW
+const sessionStartedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('session_started').required(),
+  session_id: Joi.string().required(), // Session ID from DeviceIdentityManager
+  // Session metadata (from getSessionMetadata())
+  daysSinceInstall: Joi.number().integer().min(0).optional(),
+  daysSinceLastSession: Joi.number().integer().min(0).optional(),
+  isFirstLaunch: Joi.boolean().optional(),
+}).unknown(true); // Allow additional fields
+
+// 10. session_ended - Session ends (app backgrounded/closed) ✅ NEW
+const sessionEndedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('session_ended').required(),
+  session_id: Joi.string().required(), // Session ID from DeviceIdentityManager
+  duration_seconds: Joi.number().integer().min(0).required(), // Session duration in seconds
+  reason: Joi.string().valid('app_paused', 'app_detached', 'app_closed').optional(), // Why session ended
+}).unknown(true); // Allow additional fields
+
+// 11. tutorial_started - Tutorial begins ✅ NEW
+const tutorialStartedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tutorial_started').required(),
+  // No additional required fields
+}).unknown(true); // Allow additional fields
+
+// 12. tutorial_completed - Tutorial completed successfully ✅ NEW
+const tutorialCompletedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tutorial_completed').required(),
+  taps: Joi.number().integer().min(0).optional(), // Number of taps during tutorial
+  duration_seconds: Joi.number().integer().min(0).optional(), // Tutorial duration
+}).unknown(true); // Allow additional fields
+
+// 13. tutorial_skipped - Tutorial skipped by user ✅ NEW
+const tutorialSkippedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('tutorial_skipped').required(),
+  taps: Joi.number().integer().min(0).optional(), // Number of taps before skip
+  duration_seconds: Joi.number().integer().min(0).optional(), // Time before skip
+}).unknown(true); // Allow additional fields
+
 // ============================================================================
 // GAME SESSION EVENTS (8 events)
 // ============================================================================
@@ -1059,6 +1113,9 @@ const schemaMap = {
   app_uninstalled: appUninstalledSchema,
   user_installed: userInstalledSchema, // ✅ NEW: Add user_installed event
   user_acquired: userAcquiredSchema, // ✅ NEW: Add user_acquired event (campaign attribution)
+  first_open: firstOpenSchema, // ✅ NEW: First app open (for funnel tracking)
+  session_started: sessionStartedSchema, // ✅ NEW: Session begins
+  session_ended: sessionEndedSchema, // ✅ NEW: Session ends
   
   // Game Session
   game_started: gameStartedSchema,
@@ -1108,6 +1165,11 @@ const schemaMap = {
   share_clicked: shareClickedSchema,
   notification_received: notificationReceivedSchema,
   
+  // Tutorial/FTUE Events ✅ NEW
+  tutorial_started: tutorialStartedSchema,
+  tutorial_completed: tutorialCompletedSchema,
+  tutorial_skipped: tutorialSkippedSchema,
+  
   // ⭐ Rate Us Events (NEW)
   rate_us_initialized: rateUsInitializedSchema,
   rate_us_trigger: rateUsTriggerSchema,
@@ -1143,6 +1205,12 @@ const schemaMap = {
   // ⚡ Powerup Events
   powerup_activated: powerupActivatedSchema,
   powerup_expired: powerupExpiredSchema,
+  
+  // 📊 Performance Events
+  performance_metrics: performanceMetricsSchema,
+  app_load_time: appLoadTimeSchema,
+  game_load_time: gameLoadTimeSchema,
+  memory_usage: memoryUsageSchema,
 };
 
 // ============================================================================

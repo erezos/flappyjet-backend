@@ -28,7 +28,7 @@ module.exports = (db, cacheManager) => {
    * ✅ NEW: Execute query with timeout and connection pool error handling
    * Handles connection pool exhaustion gracefully with retry logic
    */
-  async function executeQueryWithTimeout(queryFn, timeoutMs = 12000) {
+  async function executeQueryWithTimeout(queryFn, timeoutMs = 30000) {
     try {
       return await Promise.race([
         queryFn(),
@@ -137,22 +137,36 @@ module.exports = (db, cacheManager) => {
       const data = await getCachedQuery(req, 'overview', async () => {
         const today = new Date().toISOString().split('T')[0];
 
+        // ✅ OPTIMIZED: Use materialized views for better performance
         // Query all metrics in parallel for speed
-        const [dauResult, totalPlayersResult, avgSessionResult, gamesResult, avgGameDurationResult, sessionsPerUserResult] = await Promise.all([
-          // Daily Active Users (today)
+        const [todayAggResult, totalPlayersResult, avgSessionResult, avgGameDurationResult, sessionsPerUserResult] = await Promise.all([
+          // Daily Active Users, MAU, and games (today) - from daily_aggregations materialized view ✅ ENHANCED
           db.query(`
-            SELECT COUNT(DISTINCT user_id) as dau
-            FROM events
-            WHERE received_at >= CURRENT_DATE
+            SELECT 
+              dau,
+              mau,
+              games_started,
+              games_ended,
+              avg_games_per_user,
+              avg_sessions_per_user,
+              avg_session_length_seconds,
+              CASE 
+                WHEN games_started > 0 
+                THEN ROUND(100.0 * games_ended / games_started, 1)
+                ELSE 0
+              END as completion_rate
+            FROM daily_aggregations
+            WHERE date = CURRENT_DATE
+            LIMIT 1
           `),
           
-          // Total players (all-time)
+          // Total players (all-time) - still need events table for this
           db.query(`
             SELECT COUNT(DISTINCT user_id) as total_players
             FROM events
           `),
           
-          // Average session duration (last 7 days)
+          // Average session duration (last 7 days) - still need events table for session calculation
           // ✅ Measures: Total app engagement time (not just gameplay)
           // ✅ Capped at 60 minutes to filter outliers (background sessions)
           // Uses: Events grouped by user_id + session_id
@@ -173,20 +187,7 @@ module.exports = (db, cacheManager) => {
             ) sessions
           `),
           
-          // Total games played (today)
-          // ✅ Track both started and ended for completion rate
-          db.query(`
-            SELECT 
-              COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
-              COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) as games_ended,
-              ROUND(100.0 * COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) / 
-                    NULLIF(COUNT(CASE WHEN event_type = 'game_started' THEN 1 END), 0), 1) as completion_rate
-            FROM events
-            WHERE event_type IN ('game_started', 'game_ended')
-              AND received_at >= CURRENT_DATE
-          `),
-          
-          // Average game duration from game_ended events (today)
+          // Average game duration from game_ended events (today) - still need events table
           db.query(`
             SELECT 
               ROUND(AVG((payload->>'duration_seconds')::int)) as avg_game_duration
@@ -196,7 +197,7 @@ module.exports = (db, cacheManager) => {
               AND (payload->>'duration_seconds')::int > 0
           `),
 
-          // Average sessions per user (today)
+          // Average sessions per user (today) - still need events table
           // ✅ Counts distinct session_id per user_id for today
           // ✅ Uses Redis cache to avoid DB load
           db.query(`
@@ -215,15 +216,19 @@ module.exports = (db, cacheManager) => {
           `)
         ]);
 
+        const todayData = todayAggResult.rows[0] || {};
+
         return {
-          dau: parseInt(dauResult.rows[0]?.dau || 0),
+          dau: parseInt(todayData.dau || 0),
+          mau: parseInt(todayData.mau || todayData.dau || 0), // ✅ NEW: MAU (fallback to DAU if not available)
           total_players: parseInt(totalPlayersResult.rows[0]?.total_players || 0),
-          avg_session_seconds: parseInt(avgSessionResult.rows[0]?.avg_session_seconds || 0),
+          avg_session_seconds: parseInt(todayData.avg_session_length_seconds || avgSessionResult.rows[0]?.avg_session_seconds || 0), // ✅ ENHANCED: Use from daily_aggregations
           avg_game_duration: parseInt(avgGameDurationResult.rows[0]?.avg_game_duration || 0),
-          avg_sessions_per_user: parseFloat(sessionsPerUserResult.rows[0]?.avg_sessions_per_user || 0),
-          games_started: parseInt(gamesResult.rows[0]?.games_started || 0),
-          games_ended: parseInt(gamesResult.rows[0]?.games_ended || 0),
-          completion_rate: parseFloat(gamesResult.rows[0]?.completion_rate || 0),
+          avg_sessions_per_user: parseFloat(todayData.avg_sessions_per_user || sessionsPerUserResult.rows[0]?.avg_sessions_per_user || 0), // ✅ ENHANCED: Use from daily_aggregations
+          avg_games_per_user: parseFloat(todayData.avg_games_per_user || 0), // ✅ NEW
+          games_started: parseInt(todayData.games_started || 0),
+          games_ended: parseInt(todayData.games_ended || 0),
+          completion_rate: parseFloat(todayData.completion_rate || 0),
           last_updated: new Date().toISOString()
         };
       });
@@ -248,19 +253,19 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 30), 90); // Max 90 days
       
       const data = await getCachedQuery(req, `dau-trend-${days}`, async () => {
+        // ✅ OPTIMIZED: Use daily_aggregations materialized view for better performance
         const result = await db.query(`
           SELECT 
-            DATE(received_at) as date,
-            COUNT(DISTINCT user_id) as dau
-          FROM events
-          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
-          GROUP BY DATE(received_at)
+            date,
+            dau
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
           ORDER BY date ASC
         `);
 
         return {
           dates: result.rows.map(r => r.date),
-          values: result.rows.map(r => parseInt(r.dau)),
+          values: result.rows.map(r => parseInt(r.dau || 0)),
           last_updated: new Date().toISOString()
         };
       });
@@ -285,39 +290,14 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
       const data = await getCachedQuery(req, `games-per-player-trend-${days}`, async () => {
-        // Use CTE to calculate both metrics correctly:
-        // - DAU: all unique users (consistent with DAU chart)
-        // - games_started: only 'game_started' events
+        // ✅ OPTIMIZED: Use daily_aggregations materialized view for better performance
         const result = await db.query(`
-          WITH daily_events AS (
-            SELECT 
-              DATE(received_at) as date,
-              user_id,
-              event_type
-            FROM events
-            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
-          ),
-          daily_games AS (
-            SELECT 
-              date,
-              COUNT(*) as games_started
-            FROM daily_events
-            WHERE event_type = 'game_started'
-            GROUP BY date
-          ),
-          daily_dau AS (
-            SELECT 
-              date,
-              COUNT(DISTINCT user_id) as dau
-            FROM daily_events
-            GROUP BY date
-          )
           SELECT 
-            COALESCE(dg.date, dd.date) as date,
-            COALESCE(dg.games_started, 0) as games_started,
-            COALESCE(dd.dau, 0) as dau
-          FROM daily_dau dd
-          LEFT JOIN daily_games dg ON dd.date = dg.date
+            date,
+            games_started,
+            dau
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
           ORDER BY date ASC
         `);
 
@@ -362,23 +342,29 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 7), 90);
       
       const data = await getCachedQuery(req, `completion-trend-${days}`, async () => {
+        // ✅ OPTIMIZED: Use daily_aggregations materialized view
         const result = await db.query(`
           SELECT 
-            DATE(received_at) as date,
-            COUNT(CASE WHEN event_type = 'game_started' THEN 1 END) as games_started,
-            COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) as games_ended,
-            ROUND(100.0 * COUNT(CASE WHEN event_type = 'game_ended' THEN 1 END) / 
-                  NULLIF(COUNT(CASE WHEN event_type = 'game_started' THEN 1 END), 0), 1) as completion_rate
-          FROM events
-          WHERE event_type IN ('game_started', 'game_ended')
-            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-          GROUP BY DATE(received_at)
-          ORDER BY date DESC
-          LIMIT ${days}
+            date,
+            games_started,
+            games_ended,
+            CASE 
+              WHEN games_started > 0 
+              THEN ROUND(100.0 * games_ended / games_started, 1)
+              ELSE 0
+            END as completion_rate
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+          ORDER BY date ASC
         `);
 
         return {
-          trend: result.rows.reverse(), // Oldest to newest for charts
+          trend: result.rows.map(r => ({
+            date: r.date,
+            games_started: parseInt(r.games_started || 0),
+            games_ended: parseInt(r.games_ended || 0),
+            completion_rate: parseFloat(r.completion_rate || 0)
+          })).reverse(), // Oldest to newest for charts
           summary: {
             avg_completion_rate: result.rows.length > 0 
               ? parseFloat((result.rows.reduce((sum, r) => sum + parseFloat(r.completion_rate || 0), 0) / result.rows.length).toFixed(1))
@@ -411,8 +397,9 @@ module.exports = (db, cacheManager) => {
     try {
       const zone = parseInt(req.query.zone || 1);
       const daily = req.query.daily === 'true';
+      const days = parseInt(req.query.days || 7); // ✅ Support days parameter
       
-      const cacheKey = daily ? `level-performance-daily-zone${zone}` : `level-performance-zone${zone}`;
+      const cacheKey = daily ? `level-performance-daily-zone${zone}-${days}` : `level-performance-zone${zone}-${days}`;
       
       const data = await getCachedQuery(req, cacheKey, async () => {
         // Calculate level range for zone (Zone 1 = Levels 1-10, Zone 2 = 11-20, etc.)
@@ -421,7 +408,7 @@ module.exports = (db, cacheManager) => {
         const levelIds = Array.from({length: 10}, (_, i) => `'${startLevel + i}'`).join(',');
         
         if (daily) {
-          // Daily breakdown for last 7 days
+          // Daily breakdown for specified days
           const result = await db.query(`
             SELECT 
               DATE(received_at) as date,
@@ -431,7 +418,7 @@ module.exports = (db, cacheManager) => {
             FROM events
             WHERE payload->>'level_id' IN (${levelIds})
               AND event_type IN ('level_started', 'level_failed')
-              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
             GROUP BY DATE(received_at), payload->>'level_id'
             ORDER BY DATE(received_at) DESC, CAST(payload->>'level_id' AS INTEGER)
           `);
@@ -450,7 +437,8 @@ module.exports = (db, cacheManager) => {
             const completionRate = started > 0 ? parseFloat(((completed / started) * 100).toFixed(1)) : 0;
             
             dailyData[date][level] = {
-              level,
+              level_id: level, // ✅ Frontend expects level_id
+              level,            // Keep for backward compatibility
               started,
               completed,
               failed,
@@ -464,7 +452,8 @@ module.exports = (db, cacheManager) => {
             const levels = {};
             for (let level = startLevel; level <= endLevel; level++) {
               levels[level] = dailyData[date][level] || {
-                level,
+                level_id: level, // ✅ Frontend expects level_id
+                level,            // Keep for backward compatibility
                 started: 0,
                 completed: 0,
                 failed: 0,
@@ -493,31 +482,45 @@ module.exports = (db, cacheManager) => {
           };
         } else {
           // Original aggregated format
+          // ✅ FIX: Calculate avg_attempts and return level_id for frontend compatibility
           const result = await db.query(`
             SELECT 
               payload->>'level_id' as level,
               COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) as players_started,
               COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END) as players_failed,
+              COUNT(CASE WHEN event_type = 'level_started' THEN 1 END) as total_starts,
               ROUND(100.0 * (COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END) - 
                              COUNT(DISTINCT CASE WHEN event_type = 'level_failed' THEN user_id END)) / 
                     NULLIF(COUNT(DISTINCT CASE WHEN event_type = 'level_started' THEN user_id END), 0), 1) as completion_rate
             FROM events
             WHERE payload->>'level_id' IN (${levelIds})
               AND event_type IN ('level_started', 'level_failed')
-              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
             GROUP BY payload->>'level_id'
             ORDER BY CAST(payload->>'level_id' AS INTEGER)
           `);
 
           return {
             zone,
-            levels: result.rows.map(r => ({
-              level: parseInt(r.level),
-              started: parseInt(r.players_started),
-              failed: parseInt(r.players_failed),
-              completed: parseInt(r.players_started) - parseInt(r.players_failed),
-              completion_rate: parseFloat(r.completion_rate) || 0
-            })),
+            levels: result.rows.map(r => {
+              const levelId = parseInt(r.level);
+              const playersStarted = parseInt(r.players_started || 0);
+              const totalStarts = parseInt(r.total_starts || 0);
+              // Average attempts = total starts / unique players who started
+              const avgAttempts = playersStarted > 0 
+                ? parseFloat((totalStarts / playersStarted).toFixed(2))
+                : 0;
+              
+              return {
+                level_id: levelId, // ✅ Frontend expects level_id
+                level: levelId,    // Keep for backward compatibility
+                started: playersStarted,
+                failed: parseInt(r.players_failed || 0),
+                completed: playersStarted - parseInt(r.players_failed || 0),
+                completion_rate: parseFloat(r.completion_rate || 0),
+                avg_attempts: avgAttempts // ✅ Frontend expects avg_attempts
+              };
+            }),
             last_updated: new Date().toISOString()
           };
         }
@@ -864,119 +867,77 @@ module.exports = (db, cacheManager) => {
         : `cohort-roi-${days}d-all-cpi${cpi}`;
       
       const data = await getCachedQuery(req, cacheKey, async () => {
-        // Build country filter clause
-        const countryFilter = country 
-          ? `AND payload->>'country' = '${country}'` 
-          : '';
-        
-        // Get daily installs by cohort
-        const installsResult = await db.query(`
+        // ✅ OPTIMIZED: Use cohort_aggregations for installs and revenue
+        // Get cohort data with installs and revenue from materialized view
+        const cohortQuery = `
           SELECT 
-            DATE(received_at) as install_date,
-            COUNT(DISTINCT user_id) as users,
-            payload->>'country' as country
-          FROM events
-          WHERE event_type IN ('user_installed', 'app_installed')
-            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            ${countryFilter}
-          GROUP BY DATE(received_at), payload->>'country'
-          ORDER BY DATE(received_at) DESC
-        `);
+            cohort_date as install_date,
+            cohort_size as users,
+            total_revenue_usd,
+            ltv,
+            paying_users as users_with_revenue
+          FROM cohort_aggregations
+          WHERE cohort_date >= CURRENT_DATE - INTERVAL '${days} days'
+            AND campaign_id IS NULL
+          ORDER BY cohort_date DESC
+        `;
 
-        // Get cumulative ad revenue by user install date
-        const revenueResult = await db.query(`
-          WITH user_install_dates AS (
-            SELECT DISTINCT ON (user_id)
-              user_id,
-              DATE(received_at) as install_date,
-              payload->>'country' as country
-            FROM events
-            WHERE event_type IN ('user_installed', 'app_installed')
-              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-              ${countryFilter}
-            ORDER BY user_id, received_at ASC
-          )
-          SELECT 
-            uid.install_date,
-            uid.country,
-            COUNT(DISTINCT e.user_id) as users_with_revenue,
-            -- Support both old (estimated_revenue_usd) and new (revenue_usd) field names
-            SUM(COALESCE(
-              (e.payload->>'revenue_usd')::float,
-              (e.payload->>'estimated_revenue_usd')::float,
-              0
-            )) as total_revenue,
-            AVG(COALESCE(
-              (e.payload->>'revenue_usd')::float,
-              (e.payload->>'estimated_revenue_usd')::float,
-              0
-            )) as avg_revenue_per_event,
-            -- Track how many are real vs estimated
-            COUNT(CASE WHEN (e.payload->>'is_real_revenue')::boolean = true THEN 1 END) as real_revenue_count,
-            COUNT(CASE WHEN (e.payload->>'is_real_revenue')::boolean IS NULL OR (e.payload->>'is_real_revenue')::boolean = false THEN 1 END) as estimated_revenue_count
-          FROM user_install_dates uid
-          JOIN events e ON e.user_id = uid.user_id
-          WHERE e.event_type = 'ad_revenue'
-            AND e.received_at >= uid.install_date::timestamp
-          GROUP BY uid.install_date, uid.country
-          ORDER BY uid.install_date DESC
-        `);
+        const cohortResult = await db.query(cohortQuery);
 
-        // Create lookup for revenue by date
-        const revenueByDate = {};
-        revenueResult.rows.forEach(row => {
-          const key = country ? row.install_date : `${row.install_date}`;
-          if (!revenueByDate[key]) {
-            revenueByDate[key] = { total_revenue: 0, users_with_revenue: 0 };
-          }
-          revenueByDate[key].total_revenue += parseFloat(row.total_revenue || 0);
-          revenueByDate[key].users_with_revenue += parseInt(row.users_with_revenue || 0);
-        });
-
-        // Aggregate installs by date (across countries if no filter)
-        const installsByDate = {};
-        installsResult.rows.forEach(row => {
-          const date = row.install_date;
-          if (!installsByDate[date]) {
-            installsByDate[date] = { users: 0, countries: {} };
-          }
-          installsByDate[date].users += parseInt(row.users || 0);
-          if (row.country) {
-            installsByDate[date].countries[row.country] = 
-              (installsByDate[date].countries[row.country] || 0) + parseInt(row.users || 0);
-          }
-        });
+        // Get country breakdown if needed (still need events table for country data)
+        let countryBreakdown = {};
+        if (country) {
+          const countryResult = await db.query(`
+            SELECT 
+              DATE(ua.install_date) as install_date,
+              COUNT(DISTINCT ua.user_id) as users
+            FROM user_acquisitions ua
+            WHERE DATE(ua.install_date) >= CURRENT_DATE - INTERVAL '${days} days'
+              AND ua.country = '${country}'
+            GROUP BY DATE(ua.install_date)
+          `);
+          
+          countryResult.rows.forEach(row => {
+            const date = row.install_date.toISOString().split('T')[0];
+            if (!countryBreakdown[date]) {
+              countryBreakdown[date] = {};
+            }
+            countryBreakdown[date][country] = parseInt(row.users || 0);
+          });
+        }
 
         // Build cohort data
-        const cohorts = Object.entries(installsByDate)
-          .map(([date, data]) => {
-            const revenue = revenueByDate[date] || { total_revenue: 0, users_with_revenue: 0 };
-            const users = data.users;
-            const estimatedCost = users * cpi;
-            const totalRevenue = revenue.total_revenue;
-            const roi = estimatedCost > 0 ? ((totalRevenue / estimatedCost) * 100) : 0;
-            const arpu = users > 0 ? (totalRevenue / users) : 0;
-            const daysSinceInstall = Math.floor(
-              (new Date() - new Date(date)) / (1000 * 60 * 60 * 24)
-            );
-            
-            return {
-              install_date: date,
-              days_since_install: daysSinceInstall,
-              users,
-              users_with_revenue: revenue.users_with_revenue,
-              total_revenue_usd: parseFloat(totalRevenue.toFixed(4)),
-              estimated_cost_usd: parseFloat(estimatedCost.toFixed(2)),
-              roi_percent: parseFloat(roi.toFixed(1)),
-              arpu_usd: parseFloat(arpu.toFixed(4)),
-              is_profitable: totalRevenue >= estimatedCost,
-              top_countries: Object.entries(data.countries)
+        const cohorts = cohortResult.rows.map(row => {
+          const date = row.install_date.toISOString().split('T')[0];
+          const users = parseInt(row.users || 0);
+          const estimatedCost = users * cpi;
+          const totalRevenue = parseFloat(row.total_revenue_usd || 0);
+          const roi = estimatedCost > 0 ? ((totalRevenue / estimatedCost) * 100) : 0;
+          const arpu = users > 0 ? (totalRevenue / users) : 0;
+          const daysSinceInstall = Math.floor(
+            (new Date() - new Date(date)) / (1000 * 60 * 60 * 24)
+          );
+          
+          const topCountries = countryBreakdown[date] 
+            ? Object.entries(countryBreakdown[date])
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 3)
                 .map(([code, count]) => ({ code, count }))
-            };
-          })
-          .sort((a, b) => new Date(b.install_date) - new Date(a.install_date));
+            : [];
+          
+          return {
+            install_date: date,
+            days_since_install: daysSinceInstall,
+            users,
+            users_with_revenue: parseInt(row.users_with_revenue || 0),
+            total_revenue_usd: parseFloat(totalRevenue.toFixed(4)),
+            estimated_cost_usd: parseFloat(estimatedCost.toFixed(2)),
+            roi_percent: parseFloat(roi.toFixed(1)),
+            arpu_usd: parseFloat(arpu.toFixed(4)),
+            is_profitable: totalRevenue >= estimatedCost,
+            top_countries: topCountries
+          };
+        });
 
         // Calculate summary stats
         const totalUsers = cohorts.reduce((sum, c) => sum + c.users, 0);
@@ -2714,63 +2675,38 @@ module.exports = (db, cacheManager) => {
       const cohortType = req.query.cohort || 'install_date';
 
       const data = await getCachedQuery(req, `retention-detailed:${days}:${startDate || 'all'}:${endDate || 'all'}:${cohortType}`, async () => {
-        // Get install date range
-        const dateFilter = startDate && endDate
-          ? `AND ua.install_date >= '${startDate}'::date AND ua.install_date <= '${endDate}'::date`
-          : startDate
-          ? `AND ua.install_date >= '${startDate}'::date`
-          : endDate
-          ? `AND ua.install_date <= '${endDate}'::date`
-          : `AND ua.install_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+        // ✅ OPTIMIZED: Use cohort_aggregations materialized view
+        // Build date filter
+        let dateFilter = '';
+        if (startDate && endDate) {
+          dateFilter = `AND cohort_date >= '${startDate}'::date AND cohort_date <= '${endDate}'::date`;
+        } else if (startDate) {
+          dateFilter = `AND cohort_date >= '${startDate}'::date`;
+        } else if (endDate) {
+          dateFilter = `AND cohort_date <= '${endDate}'::date`;
+        } else {
+          dateFilter = `AND cohort_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+        }
 
-        // Calculate D1, D7, D30 retention
+        // Build campaign filter if needed
+        const campaignFilter = cohortType === 'campaign_id' 
+          ? `AND campaign_id IS NOT NULL`
+          : `AND campaign_id IS NULL`;
+
         const retentionQuery = `
-          WITH installs AS (
-            SELECT 
-              ua.user_id,
-              ua.install_date,
-              ${cohortType === 'campaign_id' ? 'ua.campaign_id,' : ''}
-              DATE(ua.install_date) as cohort_date
-            FROM user_acquisitions ua
-            WHERE 1=1 ${dateFilter}
-          ),
-          day1_users AS (
-            SELECT DISTINCT user_id
-            FROM events
-            WHERE event_type IN ('app_launched', 'game_started')
-              AND received_at >= CURRENT_DATE - INTERVAL '1 day'
-          ),
-          day7_users AS (
-            SELECT DISTINCT user_id
-            FROM events
-            WHERE event_type IN ('app_launched', 'game_started')
-              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
-          ),
-          day30_users AS (
-            SELECT DISTINCT user_id
-            FROM events
-            WHERE event_type IN ('app_launched', 'game_started')
-              AND received_at >= CURRENT_DATE - INTERVAL '30 days'
-          )
           SELECT 
-            i.cohort_date,
-            ${cohortType === 'campaign_id' ? 'i.campaign_id,' : ''}
-            COUNT(DISTINCT i.user_id) as total_installs,
-            COUNT(DISTINCT CASE WHEN d1.user_id IS NOT NULL THEN i.user_id END) as d1_retained,
-            COUNT(DISTINCT CASE WHEN d7.user_id IS NOT NULL THEN i.user_id END) as d7_retained,
-            COUNT(DISTINCT CASE WHEN d30.user_id IS NOT NULL THEN i.user_id END) as d30_retained,
-            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d1.user_id IS NOT NULL THEN i.user_id END) / 
-                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d1_retention_rate,
-            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d7.user_id IS NOT NULL THEN i.user_id END) / 
-                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d7_retention_rate,
-            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d30.user_id IS NOT NULL THEN i.user_id END) / 
-                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d30_retention_rate
-          FROM installs i
-          LEFT JOIN day1_users d1 ON i.user_id = d1.user_id
-          LEFT JOIN day7_users d7 ON i.user_id = d7.user_id
-          LEFT JOIN day30_users d30 ON i.user_id = d30.user_id
-          GROUP BY i.cohort_date${cohortType === 'campaign_id' ? ', i.campaign_id' : ''}
-          ORDER BY i.cohort_date DESC${cohortType === 'campaign_id' ? ', i.campaign_id' : ''}
+            cohort_date,
+            ${cohortType === 'campaign_id' ? 'campaign_id,' : ''}
+            cohort_size as total_installs,
+            d1_retained,
+            d7_retained,
+            d30_retained,
+            d1_retention_rate,
+            d7_retention_rate,
+            d30_retention_rate
+          FROM cohort_aggregations
+          WHERE 1=1 ${dateFilter} ${campaignFilter}
+          ORDER BY cohort_date DESC${cohortType === 'campaign_id' ? ', campaign_id' : ''}
         `;
 
         const result = await db.query(retentionQuery);
@@ -2933,57 +2869,32 @@ module.exports = (db, cacheManager) => {
       const endDate = req.query.endDate;
 
       const data = await getCachedQuery(req, `cohort-analysis:${cohortType}:${startDate || 'all'}:${endDate || 'all'}`, async () => {
+        // ✅ OPTIMIZED: Use cohort_aggregations materialized view
         const dateFilter = startDate && endDate
-          ? `AND ua.install_date >= '${startDate}'::date AND ua.install_date <= '${endDate}'::date`
+          ? `AND cohort_date >= '${startDate}'::date AND cohort_date <= '${endDate}'::date`
           : startDate
-          ? `AND ua.install_date >= '${startDate}'::date`
+          ? `AND cohort_date >= '${startDate}'::date`
           : endDate
-          ? `AND ua.install_date <= '${endDate}'::date`
+          ? `AND cohort_date <= '${endDate}'::date`
           : '';
 
-        // Get cohort data with retention and LTV
+        const campaignFilter = cohortType === 'campaign_id' 
+          ? `AND campaign_id IS NOT NULL`
+          : `AND campaign_id IS NULL`;
+
+        // Get cohort data with retention and LTV from materialized view
         const cohortQuery = `
-          WITH cohorts AS (
-            SELECT 
-              ${cohortType === 'campaign_id' ? 'ua.campaign_id,' : ''}
-              DATE(ua.install_date) as cohort_date,
-              ua.user_id
-            FROM user_acquisitions ua
-            WHERE 1=1 ${dateFilter}
-          ),
-          user_revenue AS (
-            SELECT 
-              user_id,
-              SUM(CASE WHEN payload->>'revenue_usd' IS NOT NULL 
-                THEN (payload->>'revenue_usd')::numeric ELSE 0 END) as total_revenue
-            FROM events
-            WHERE event_type IN ('ad_revenue', 'purchase_completed')
-            GROUP BY user_id
-          )
           SELECT 
-            c.cohort_date,
-            ${cohortType === 'campaign_id' ? 'c.campaign_id,' : ''}
-            COUNT(DISTINCT c.user_id) as cohort_size,
-            COUNT(DISTINCT CASE WHEN e.user_id IS NOT NULL THEN c.user_id END) as active_users,
-            COALESCE(SUM(ur.total_revenue), 0) as total_revenue,
-            CASE 
-              WHEN COUNT(DISTINCT c.user_id) > 0 
-              THEN ROUND(100.0 * COUNT(DISTINCT CASE WHEN e.user_id IS NOT NULL THEN c.user_id END) / 
-                    COUNT(DISTINCT c.user_id), 2)
-              ELSE 0
-            END as retention_rate,
-            CASE 
-              WHEN COUNT(DISTINCT c.user_id) > 0 
-              THEN ROUND(COALESCE(SUM(ur.total_revenue), 0) / COUNT(DISTINCT c.user_id), 2)
-              ELSE 0
-            END as ltv
-          FROM cohorts c
-          LEFT JOIN events e ON c.user_id = e.user_id 
-            AND e.received_at >= c.cohort_date
-            AND e.event_type IN ('app_launched', 'game_started')
-          LEFT JOIN user_revenue ur ON c.user_id = ur.user_id
-          GROUP BY c.cohort_date${cohortType === 'campaign_id' ? ', c.campaign_id' : ''}
-          ORDER BY c.cohort_date DESC${cohortType === 'campaign_id' ? ', c.campaign_id' : ''}
+            cohort_date,
+            ${cohortType === 'campaign_id' ? 'campaign_id,' : ''}
+            cohort_size,
+            d1_retained + d7_retained + d30_retained as active_users,
+            total_revenue_usd,
+            d7_retention_rate as retention_rate,
+            ltv
+          FROM cohort_aggregations
+          WHERE 1=1 ${dateFilter} ${campaignFilter}
+          ORDER BY cohort_date DESC${cohortType === 'campaign_id' ? ', campaign_id' : ''}
         `;
 
         const result = await db.query(cohortQuery);
@@ -2996,7 +2907,7 @@ module.exports = (db, cacheManager) => {
             cohort_size: parseInt(r.cohort_size || 0),
             active_users: parseInt(r.active_users || 0),
             retention_rate: parseFloat(r.retention_rate || 0),
-            total_revenue: parseFloat(r.total_revenue || 0),
+            total_revenue: parseFloat(r.total_revenue_usd || 0),
             ltv: parseFloat(r.ltv || 0),
           })),
           summary: {
@@ -3586,11 +3497,11 @@ module.exports = (db, cacheManager) => {
             GROUP BY user_id
           )
           SELECT 
-            COUNT(DISTINCT user_id) as total_users,
-            COUNT(DISTINCT session_id) as total_sessions,
-            ROUND(AVG(session_count), 2) as avg_sessions_per_user,
-            ROUND(AVG(avg_session_duration), 0) as avg_session_duration_seconds,
-            ROUND(AVG(total_session_time), 0) as avg_total_session_time_per_user
+            COUNT(DISTINCT s.user_id) as total_users,
+            COUNT(DISTINCT s.session_id) as total_sessions,
+            ROUND(AVG(us.session_count), 2) as avg_sessions_per_user,
+            ROUND(AVG(us.avg_session_duration), 0) as avg_session_duration_seconds,
+            ROUND(AVG(us.total_session_time), 0) as avg_total_session_time_per_user
           FROM sessions s
           JOIN user_sessions us ON s.user_id = us.user_id
         `;
@@ -3813,10 +3724,19 @@ module.exports = (db, cacheManager) => {
         const row = result.rows[0];
 
         // Calculate crash rate (crashes per 1000 users)
+        // ✅ FIX: events table uses received_at, not timestamp
+        const eventsDateFilter = startDate && endDate
+          ? `AND received_at >= '${startDate}'::date AND received_at <= '${endDate}'::date`
+          : startDate
+          ? `AND received_at >= '${startDate}'::date`
+          : endDate
+          ? `AND received_at <= '${endDate}'::date`
+          : `AND received_at >= CURRENT_DATE - INTERVAL '${days} days'`;
+        
         const totalUsersQuery = `
           SELECT COUNT(DISTINCT user_id) as total_users
           FROM events
-          WHERE 1=1 ${dateFilter}
+          WHERE 1=1 ${eventsDateFilter}
         `;
         const totalUsersResult = await db.query(totalUsersQuery);
         const totalUsers = parseInt(totalUsersResult.rows[0]?.total_users || 0);
@@ -3929,6 +3849,786 @@ module.exports = (db, cacheManager) => {
     } catch (error) {
       logger.error('📊 Error fetching crash logs:', error);
       res.status(500).json({ error: 'Failed to fetch crash logs' });
+    }
+  });
+
+  // ============================================================================
+  // NEW ENDPOINTS FOR ENHANCED DASHBOARD
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/mau-trend?days=30
+   * Returns MAU trend for the last N days
+   */
+  router.get('/mau-trend', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      
+      const data = await getCachedQuery(req, `mau-trend-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            date,
+            mau,
+            dau
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+          ORDER BY date ASC
+        `);
+
+        return {
+          dates: result.rows.map(r => r.date),
+          mau: result.rows.map(r => parseInt(r.mau || r.dau || 0)),
+          dau: result.rows.map(r => parseInt(r.dau || 0)),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching MAU trend:', error);
+      res.status(500).json({ error: 'Failed to fetch MAU trend' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/sessions-per-user-trend?days=30
+   * Returns sessions per user trend for the last N days
+   */
+  router.get('/sessions-per-user-trend', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      
+      const data = await getCachedQuery(req, `sessions-per-user-trend-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            date,
+            avg_sessions_per_user
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+          ORDER BY date ASC
+        `);
+
+        return {
+          dates: result.rows.map(r => r.date),
+          values: result.rows.map(r => parseFloat(r.avg_sessions_per_user || 0)),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching sessions per user trend:', error);
+      res.status(500).json({ error: 'Failed to fetch sessions per user trend' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/session-length-trend?days=30
+   * Returns average session length trend for the last N days
+   */
+  router.get('/session-length-trend', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      
+      const data = await getCachedQuery(req, `session-length-trend-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            date,
+            avg_session_length_seconds
+          FROM daily_aggregations
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+          ORDER BY date ASC
+        `);
+
+        return {
+          dates: result.rows.map(r => r.date),
+          values: result.rows.map(r => parseInt(r.avg_session_length_seconds || 0)),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching session length trend:', error);
+      res.status(500).json({ error: 'Failed to fetch session length trend' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/level-performance-detailed?new_users_only=false
+   * Returns detailed level performance with first-time attempts and 7-day averages
+   */
+  router.get('/level-performance-detailed', async (req, res) => {
+    try {
+      const newUsersOnly = req.query.new_users_only === 'true';
+      
+      const data = await getCachedQuery(req, `level-performance-detailed-${newUsersOnly}`, async () => {
+        // Get today's data
+        let todayQuery = `
+          SELECT 
+            CAST(level_id AS INTEGER) as level_id,
+            CAST(zone_id AS INTEGER) as zone_id,
+            total_tries,
+            total_completions,
+            first_tries,
+            first_completions,
+            completion_rate,
+            first_time_completion_rate
+          FROM level_performance_daily
+          WHERE date = CURRENT_DATE
+        `;
+
+        // Get 7-day average data
+        let avgQuery = `
+          SELECT 
+            CAST(level_id AS INTEGER) as level_id,
+            CAST(zone_id AS INTEGER) as zone_id,
+            ROUND(AVG(total_tries), 0) as avg_total_tries,
+            ROUND(AVG(total_completions), 0) as avg_total_completions,
+            ROUND(AVG(first_tries), 0) as avg_first_tries,
+            ROUND(AVG(first_completions), 0) as avg_first_completions,
+            ROUND(AVG(completion_rate), 1) as avg_completion_rate,
+            ROUND(AVG(first_time_completion_rate), 1) as avg_first_time_completion_rate
+          FROM level_performance_daily
+          WHERE date >= CURRENT_DATE - INTERVAL '7 days'
+          GROUP BY level_id, zone_id
+        `;
+
+        // Filter by new users if requested
+        if (newUsersOnly) {
+          // Optimized: Use user_acquisitions directly and aggregate from events
+          // This avoids the expensive JOIN with the full events table
+          todayQuery = `
+            WITH new_user_levels AS (
+              SELECT 
+                payload->>'level_id' as level_id,
+                payload->>'zone_id' as zone_id,
+                event_type,
+                CASE 
+                  WHEN event_type = 'level_started' 
+                  THEN (payload->>'is_first_attempt')::boolean
+                  ELSE NULL
+                END as is_first_attempt,
+                CASE 
+                  WHEN event_type = 'level_completed' 
+                  THEN (payload->>'first_attempt')::boolean
+                  ELSE NULL
+                END as first_attempt
+              FROM events e
+              INNER JOIN user_acquisitions ua ON e.user_id = ua.user_id
+                AND DATE(ua.install_date) = CURRENT_DATE
+              WHERE e.event_type IN ('level_started', 'level_completed', 'level_failed')
+                AND DATE(e.received_at) = CURRENT_DATE
+                AND e.payload->>'level_id' IS NOT NULL
+            )
+            SELECT 
+              CAST(level_id AS INTEGER) as level_id,
+              CAST(zone_id AS INTEGER) as zone_id,
+              COUNT(CASE WHEN event_type = 'level_started' THEN 1 END) as total_tries,
+              COUNT(CASE WHEN event_type = 'level_completed' THEN 1 END) as total_completions,
+              COUNT(CASE WHEN event_type = 'level_started' AND is_first_attempt = true THEN 1 END) as first_tries,
+              COUNT(CASE WHEN event_type = 'level_completed' AND first_attempt = true THEN 1 END) as first_completions,
+              CASE 
+                WHEN COUNT(CASE WHEN event_type = 'level_started' THEN 1 END) > 0
+                THEN ROUND(100.0 * COUNT(CASE WHEN event_type = 'level_completed' THEN 1 END) / 
+                          COUNT(CASE WHEN event_type = 'level_started' THEN 1 END), 1)
+                ELSE 0
+              END as completion_rate,
+              CASE 
+                WHEN COUNT(CASE WHEN event_type = 'level_started' AND is_first_attempt = true THEN 1 END) > 0
+                THEN ROUND(100.0 * COUNT(CASE WHEN event_type = 'level_completed' AND first_attempt = true THEN 1 END) / 
+                          COUNT(CASE WHEN event_type = 'level_started' AND is_first_attempt = true THEN 1 END), 1)
+                ELSE 0
+              END as first_time_completion_rate
+            FROM new_user_levels
+            GROUP BY level_id, zone_id
+          `;
+        }
+
+        const [todayResult, avgResult] = await Promise.all([
+          db.query(todayQuery),
+          db.query(avgQuery)
+        ]);
+
+        // Create lookup for averages
+        const avgMap = {};
+        avgResult.rows.forEach(row => {
+          avgMap[parseInt(row.level_id)] = {
+            avg_total_tries: parseInt(row.avg_total_tries || 0),
+            avg_total_completions: parseInt(row.avg_total_completions || 0),
+            avg_first_tries: parseInt(row.avg_first_tries || 0),
+            avg_first_completions: parseInt(row.avg_first_completions || 0),
+            avg_completion_rate: parseFloat(row.avg_completion_rate || 0),
+            avg_first_time_completion_rate: parseFloat(row.avg_first_time_completion_rate || 0),
+          };
+        });
+
+        // Group by zone
+        const byZone = {};
+        todayResult.rows.forEach(row => {
+          const zoneId = parseInt(row.zone_id || 1);
+          const levelId = parseInt(row.level_id);
+          
+          if (!byZone[zoneId]) {
+            byZone[zoneId] = [];
+          }
+
+          byZone[zoneId].push({
+            level_id: levelId,
+            zone_id: zoneId,
+            today: {
+              total_tries: parseInt(row.total_tries || 0),
+              total_completions: parseInt(row.total_completions || 0),
+              first_tries: parseInt(row.first_tries || 0),
+              first_completions: parseInt(row.first_completions || 0),
+              completion_rate: parseFloat(row.completion_rate || 0),
+              first_time_completion_rate: parseFloat(row.first_time_completion_rate || 0),
+            },
+            avg_7days: avgMap[levelId] || {
+              avg_total_tries: 0,
+              avg_total_completions: 0,
+              avg_first_tries: 0,
+              avg_first_completions: 0,
+              avg_completion_rate: 0,
+              avg_first_time_completion_rate: 0,
+            }
+          });
+        });
+
+        // Sort levels within each zone
+        Object.keys(byZone).forEach(zoneId => {
+          byZone[zoneId].sort((a, b) => a.level_id - b.level_id);
+        });
+
+        return {
+          zones: byZone,
+          new_users_only: newUsersOnly,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching detailed level performance:', error);
+      res.status(500).json({ error: 'Failed to fetch detailed level performance' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/funnel
+   * Returns user funnel data (installs → first open → tutorial → levels 1-10)
+   */
+  router.get('/funnel', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      
+      const data = await getCachedQuery(req, `funnel-${days}`, async () => {
+        const result = await db.query(`
+          SELECT 
+            date,
+            installs,
+            first_opens,
+            tutorial_starts,
+            level_1_starts,
+            level_2_starts,
+            level_3_starts,
+            level_4_starts,
+            level_5_starts,
+            level_6_starts,
+            level_7_starts,
+            level_8_starts,
+            level_9_starts,
+            level_10_starts,
+            install_to_first_open_rate,
+            first_open_to_tutorial_rate,
+            tutorial_to_level_1_rate,
+            level_1_to_level_10_rate
+          FROM user_funnel_daily
+          WHERE date >= CURRENT_DATE - INTERVAL '${days} days'
+          ORDER BY date DESC
+        `);
+
+        return {
+          daily: result.rows.map(r => ({
+            date: r.date,
+            installs: parseInt(r.installs || 0),
+            first_opens: parseInt(r.first_opens || 0),
+            tutorial_starts: parseInt(r.tutorial_starts || 0),
+            level_1_starts: parseInt(r.level_1_starts || 0),
+            level_2_starts: parseInt(r.level_2_starts || 0),
+            level_3_starts: parseInt(r.level_3_starts || 0),
+            level_4_starts: parseInt(r.level_4_starts || 0),
+            level_5_starts: parseInt(r.level_5_starts || 0),
+            level_6_starts: parseInt(r.level_6_starts || 0),
+            level_7_starts: parseInt(r.level_7_starts || 0),
+            level_8_starts: parseInt(r.level_8_starts || 0),
+            level_9_starts: parseInt(r.level_9_starts || 0),
+            level_10_starts: parseInt(r.level_10_starts || 0),
+            conversion_rates: {
+              install_to_first_open: parseFloat(r.install_to_first_open_rate || 0),
+              first_open_to_tutorial: parseFloat(r.first_open_to_tutorial_rate || 0),
+              tutorial_to_level_1: parseFloat(r.tutorial_to_level_1_rate || 0),
+              level_1_to_level_10: parseFloat(r.level_1_to_level_10_rate || 0),
+            }
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching funnel data:', error);
+      res.status(500).json({ error: 'Failed to fetch funnel data' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/cohort-analysis-enhanced?campaign_id=all&days=90
+   * Returns enhanced cohort analysis with D1/D2/D3/D7/D30 retention, revenue breakdown, CPI, ROI
+   */
+  router.get('/cohort-analysis-enhanced', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 90;
+      const campaignIdFilter = req.query.campaign_id || 'all';
+      const platformFilter = req.query.platform || 'all';
+
+      const data = await getCachedQuery(req, `cohort-analysis-enhanced:${days}:${campaignIdFilter}:${platformFilter}`, async () => {
+        let query = `
+          SELECT 
+            cohort_date,
+            campaign_id,
+            platform,
+            cohort_size,
+            d1_retained,
+            d2_retained,
+            d3_retained,
+            d7_retained,
+            d30_retained,
+            d1_retention_rate,
+            d2_retention_rate,
+            d3_retention_rate,
+            d7_retention_rate,
+            d30_retention_rate,
+            ad_revenue_usd,
+            iap_revenue_usd,
+            total_revenue_usd,
+            ltv,
+            cpi,
+            cost_usd,
+            roi_percentage,
+            paying_users,
+            payer_rate
+          FROM cohort_aggregations
+          WHERE cohort_date >= CURRENT_DATE - INTERVAL '${days} days'
+        `;
+
+        const queryParams = [];
+        let paramIndex = 1;
+
+        if (platformFilter !== 'all') {
+          query += ` AND platform = $${paramIndex++}`;
+          queryParams.push(platformFilter);
+        }
+        if (campaignIdFilter !== 'all') {
+          query += ` AND campaign_id = $${paramIndex++}`;
+          queryParams.push(campaignIdFilter);
+        }
+
+        query += ` ORDER BY cohort_date DESC`;
+
+        const result = await db.query(query, queryParams);
+
+        return {
+          cohorts: result.rows.map(r => ({
+            cohort_date: r.cohort_date,
+            campaign_id: r.campaign_id,
+            platform: r.platform,
+            cohort_size: parseInt(r.cohort_size || 0),
+            retention: {
+              d1: {
+                retained: parseInt(r.d1_retained || 0),
+                rate: parseFloat(r.d1_retention_rate || 0)
+              },
+              d2: {
+                retained: parseInt(r.d2_retained || 0),
+                rate: parseFloat(r.d2_retention_rate || 0)
+              },
+              d3: {
+                retained: parseInt(r.d3_retained || 0),
+                rate: parseFloat(r.d3_retention_rate || 0)
+              },
+              d7: {
+                retained: parseInt(r.d7_retained || 0),
+                rate: parseFloat(r.d7_retention_rate || 0)
+              },
+              d30: {
+                retained: parseInt(r.d30_retained || 0),
+                rate: parseFloat(r.d30_retention_rate || 0)
+              }
+            },
+            revenue: {
+              ad_revenue_usd: parseFloat(r.ad_revenue_usd || 0),
+              iap_revenue_usd: parseFloat(r.iap_revenue_usd || 0),
+              total_revenue_usd: parseFloat(r.total_revenue_usd || 0),
+              ltv: parseFloat(r.ltv || 0)
+            },
+            campaign: {
+              cpi: parseFloat(r.cpi || 0),
+              cost_usd: parseFloat(r.cost_usd || 0),
+              roi_percentage: parseFloat(r.roi_percentage || 0)
+            },
+            paying_users: parseInt(r.paying_users || 0),
+            payer_rate: parseFloat(r.payer_rate || 0)
+          })),
+          filters: {
+            campaign_id: campaignIdFilter,
+            platform: platformFilter,
+            days
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching enhanced cohort analysis:', error);
+      res.status(500).json({ error: 'Failed to fetch enhanced cohort analysis' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/missions-achievements
+   * Returns missions and achievements metrics
+   */
+  router.get('/missions-achievements', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 30);
+      
+      const data = await getCachedQuery(req, `missions-achievements-${days}`, async () => {
+        // Today's metrics
+        const todayQuery = `
+          SELECT 
+            COUNT(CASE WHEN event_type = 'mission_completed' THEN 1 END) as missions_completed_today,
+            COUNT(CASE WHEN event_type = 'achievement_unlocked' THEN 1 END) as achievements_unlocked_today,
+            COUNT(CASE WHEN event_type = 'mission_completed' THEN 1 END) as missions_claimed_today,
+            COUNT(CASE WHEN event_type = 'achievement_claimed' THEN 1 END) as achievements_claimed_today,
+            COUNT(DISTINCT CASE WHEN event_type = 'mission_completed' THEN user_id END) as unique_mission_claimers_today,
+            COUNT(DISTINCT CASE WHEN event_type = 'achievement_claimed' THEN user_id END) as unique_achievement_claimers_today
+          FROM events
+          WHERE DATE(received_at) = CURRENT_DATE
+            AND event_type IN ('mission_completed', 'achievement_unlocked', 'achievement_claimed')
+        `;
+
+        // 7-day trend
+        const trendQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN event_type = 'mission_completed' THEN 1 END) as missions_completed,
+            COUNT(CASE WHEN event_type = 'achievement_unlocked' THEN 1 END) as achievements_unlocked,
+            COUNT(CASE WHEN event_type = 'mission_completed' THEN 1 END) as missions_claimed,
+            COUNT(CASE WHEN event_type = 'achievement_claimed' THEN 1 END) as achievements_claimed,
+            COUNT(DISTINCT CASE WHEN event_type = 'mission_completed' THEN user_id END) as unique_mission_claimers,
+            COUNT(DISTINCT CASE WHEN event_type = 'achievement_claimed' THEN user_id END) as unique_achievement_claimers
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type IN ('mission_completed', 'achievement_unlocked', 'achievement_claimed')
+          GROUP BY DATE(received_at)
+          ORDER BY date ASC
+        `;
+
+        const [todayResult, trendResult] = await Promise.all([
+          db.query(todayQuery),
+          db.query(trendQuery)
+        ]);
+
+        return {
+          today: {
+            missions_completed: parseInt(todayResult.rows[0]?.missions_completed_today || 0),
+            achievements_unlocked: parseInt(todayResult.rows[0]?.achievements_unlocked_today || 0),
+            missions_claimed: parseInt(todayResult.rows[0]?.missions_claimed_today || 0),
+            achievements_claimed: parseInt(todayResult.rows[0]?.achievements_claimed_today || 0),
+            unique_mission_claimers: parseInt(todayResult.rows[0]?.unique_mission_claimers_today || 0),
+            unique_achievement_claimers: parseInt(todayResult.rows[0]?.unique_achievement_claimers_today || 0),
+          },
+          trend: trendResult.rows.map(r => ({
+            date: r.date,
+            missions_completed: parseInt(r.missions_completed || 0),
+            achievements_unlocked: parseInt(r.achievements_unlocked || 0),
+            missions_claimed: parseInt(r.missions_claimed || 0),
+            achievements_claimed: parseInt(r.achievements_claimed || 0),
+            unique_mission_claimers: parseInt(r.unique_mission_claimers || 0),
+            unique_achievement_claimers: parseInt(r.unique_achievement_claimers || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching missions/achievements metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch missions/achievements metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/tournaments
+   * Returns tournament metrics
+   */
+  router.get('/tournaments', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 30);
+      
+      const data = await getCachedQuery(req, `tournaments-${days}`, async () => {
+        // Today's metrics
+        const todayQuery = `
+          SELECT 
+            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_played_today,
+            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_won_today,
+            COUNT(CASE WHEN event_type = 'tournament_round_failed' THEN 1 END) as rounds_lost_today,
+            COUNT(CASE WHEN event_type = 'tournament_completed' THEN 1 END) as tournaments_won_today
+          FROM events
+          WHERE DATE(received_at) = CURRENT_DATE
+            AND event_type IN ('tournament_round_completed', 'tournament_round_failed', 'tournament_completed')
+        `;
+
+        // 7-day trend
+        const trendQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_played,
+            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_won,
+            COUNT(CASE WHEN event_type = 'tournament_round_failed' THEN 1 END) as rounds_lost,
+            COUNT(CASE WHEN event_type = 'tournament_completed' THEN 1 END) as tournaments_won
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type IN ('tournament_round_completed', 'tournament_round_failed', 'tournament_completed')
+          GROUP BY DATE(received_at)
+          ORDER BY date ASC
+        `;
+
+        // Tournament type distribution (today)
+        const distributionTodayQuery = `
+          SELECT 
+            COALESCE(payload->>'tournament_name', payload->>'tournament_id', 'unknown') as tournament_type,
+            COUNT(*) as rounds_played
+          FROM events
+          WHERE DATE(received_at) = CURRENT_DATE
+            AND event_type = 'tournament_round_completed'
+          GROUP BY COALESCE(payload->>'tournament_name', payload->>'tournament_id', 'unknown')
+          ORDER BY rounds_played DESC
+        `;
+
+        // Tournament type distribution (7-day trend) - get all dates first
+        const allDatesQuery = `
+          SELECT DISTINCT DATE(received_at) as date
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type = 'tournament_round_completed'
+          ORDER BY date ASC
+        `;
+
+        // Get all tournament types
+        const tournamentTypesQuery = `
+          SELECT DISTINCT COALESCE(payload->>'tournament_name', payload->>'tournament_id', 'unknown') as tournament_type
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type = 'tournament_round_completed'
+        `;
+
+        const [todayResult, trendResult, distributionTodayResult, allDatesResult, tournamentTypesResult] = await Promise.all([
+          db.query(todayQuery),
+          db.query(trendQuery),
+          db.query(distributionTodayQuery),
+          db.query(allDatesQuery),
+          db.query(tournamentTypesQuery)
+        ]);
+
+        // Get distribution data for each date and tournament type
+        const dates = allDatesResult.rows.map(r => r.date);
+        const tournamentTypes = tournamentTypesResult.rows.map(r => r.tournament_type || 'unknown');
+        
+        const distributionTrendQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COALESCE(payload->>'tournament_name', payload->>'tournament_id', 'unknown') as tournament_type,
+            COUNT(*) as rounds_played
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type = 'tournament_round_completed'
+          GROUP BY DATE(received_at), COALESCE(payload->>'tournament_name', payload->>'tournament_id', 'unknown')
+        `;
+
+        const distributionTrendResult = await db.query(distributionTrendQuery);
+
+        // Group distribution trend by tournament type
+        const distributionByType = {};
+        tournamentTypes.forEach(type => {
+          distributionByType[type] = dates.map(date => {
+            const row = distributionTrendResult.rows.find(r => 
+              r.date.getTime() === date.getTime() && (r.tournament_type || 'unknown') === type
+            );
+            return {
+              date: date,
+              rounds_played: row ? parseInt(row.rounds_played || 0) : 0
+            };
+          });
+        });
+
+        return {
+          today: {
+            rounds_played: parseInt(todayResult.rows[0]?.rounds_played_today || 0),
+            rounds_won: parseInt(todayResult.rows[0]?.rounds_won_today || 0),
+            rounds_lost: parseInt(todayResult.rows[0]?.rounds_lost_today || 0),
+            tournaments_won: parseInt(todayResult.rows[0]?.tournaments_won_today || 0),
+          },
+          trend: trendResult.rows.map(r => ({
+            date: r.date,
+            rounds_played: parseInt(r.rounds_played || 0),
+            rounds_won: parseInt(r.rounds_won || 0),
+            rounds_lost: parseInt(r.rounds_lost || 0),
+            tournaments_won: parseInt(r.tournaments_won || 0),
+          })),
+          distribution_today: distributionTodayResult.rows.map(r => ({
+            tournament_type: r.tournament_type || 'unknown',
+            rounds_played: parseInt(r.rounds_played || 0)
+          })),
+          distribution_trend: distributionByType,
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching tournament metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch tournament metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/continue-usage
+   * Returns continue usage metrics
+   */
+  router.get('/continue-usage', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 30);
+      
+      const data = await getCachedQuery(req, `continue-usage-${days}`, async () => {
+        // Today's metrics
+        const todayQuery = `
+          SELECT 
+            COUNT(CASE WHEN event_type = 'continue_used' AND payload->>'continue_type' = 'ad_watch' THEN 1 END) as continues_via_ads_today,
+            COUNT(CASE WHEN event_type = 'continue_used' AND payload->>'continue_type' = 'gem_purchase' THEN 1 END) as continues_via_gems_today
+          FROM events
+          WHERE DATE(received_at) = CURRENT_DATE
+            AND event_type = 'continue_used'
+        `;
+
+        // 7-day trend
+        const trendQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN payload->>'continue_type' = 'ad_watch' THEN 1 END) as continues_via_ads,
+            COUNT(CASE WHEN payload->>'continue_type' = 'gem_purchase' THEN 1 END) as continues_via_gems
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type = 'continue_used'
+          GROUP BY DATE(received_at)
+          ORDER BY date ASC
+        `;
+
+        const [todayResult, trendResult] = await Promise.all([
+          db.query(todayQuery),
+          db.query(trendQuery)
+        ]);
+
+        return {
+          today: {
+            continues_via_ads: parseInt(todayResult.rows[0]?.continues_via_ads_today || 0),
+            continues_via_gems: parseInt(todayResult.rows[0]?.continues_via_gems_today || 0),
+          },
+          trend: trendResult.rows.map(r => ({
+            date: r.date,
+            continues_via_ads: parseInt(r.continues_via_ads || 0),
+            continues_via_gems: parseInt(r.continues_via_gems || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching continue usage metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch continue usage metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/ads-shown
+   * Returns ads shown metrics
+   */
+  router.get('/ads-shown', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 7), 30);
+      
+      const data = await getCachedQuery(req, `ads-shown-${days}`, async () => {
+        // Today's metrics
+        const todayQuery = `
+          SELECT 
+            COUNT(CASE WHEN event_type = 'interstitial_shown' AND payload->>'trigger_reason' = 'win_milestone' THEN 1 END) as ads_after_wins_today,
+            COUNT(CASE WHEN event_type = 'interstitial_shown' AND payload->>'trigger_reason' = 'loss_streak' THEN 1 END) as ads_after_losses_today,
+            COUNT(CASE WHEN event_type = 'interstitial_shown' AND (
+              payload->>'trigger_reason' = 'tournament_round_win' OR
+              payload->>'trigger_reason' = 'tournament_start_over' OR
+              payload->>'trigger_reason' = 'tournament_game_over'
+            ) THEN 1 END) as ads_from_tournaments_today
+          FROM events
+          WHERE DATE(received_at) = CURRENT_DATE
+            AND event_type = 'interstitial_shown'
+        `;
+
+        // 7-day trend
+        const trendQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(CASE WHEN payload->>'trigger_reason' = 'win_milestone' THEN 1 END) as ads_after_wins,
+            COUNT(CASE WHEN payload->>'trigger_reason' = 'loss_streak' THEN 1 END) as ads_after_losses,
+            COUNT(CASE WHEN (
+              payload->>'trigger_reason' = 'tournament_round_win' OR
+              payload->>'trigger_reason' = 'tournament_start_over' OR
+              payload->>'trigger_reason' = 'tournament_game_over'
+            ) THEN 1 END) as ads_from_tournaments
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            AND event_type = 'interstitial_shown'
+          GROUP BY DATE(received_at)
+          ORDER BY date ASC
+        `;
+
+        const [todayResult, trendResult] = await Promise.all([
+          db.query(todayQuery),
+          db.query(trendQuery)
+        ]);
+
+        return {
+          today: {
+            ads_after_wins: parseInt(todayResult.rows[0]?.ads_after_wins_today || 0),
+            ads_after_losses: parseInt(todayResult.rows[0]?.ads_after_losses_today || 0),
+            ads_from_tournaments: parseInt(todayResult.rows[0]?.ads_from_tournaments_today || 0),
+          },
+          trend: trendResult.rows.map(r => ({
+            date: r.date,
+            ads_after_wins: parseInt(r.ads_after_wins || 0),
+            ads_after_losses: parseInt(r.ads_after_losses || 0),
+            ads_from_tournaments: parseInt(r.ads_from_tournaments || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching ads shown metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch ads shown metrics' });
     }
   });
 

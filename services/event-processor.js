@@ -105,15 +105,19 @@ class EventProcessor {
    * @returns {Promise<string>} - Event ID (UUID)
    */
   async storeEvent(event) {
+    // ✅ Extract campaign_id from event payload (enriched by Flutter EventBus)
+    const campaignId = event.campaign_id || null;
+    
     const query = `
-      INSERT INTO events (event_type, user_id, payload, received_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO events (event_type, user_id, campaign_id, payload, received_at)
+      VALUES ($1, $2, $3, $4, NOW())
       RETURNING id
     `;
 
     const values = [
       event.event_type,
       event.user_id,
+      campaignId,
       JSON.stringify(event) // Store entire event as JSONB
     ];
 
@@ -373,6 +377,81 @@ class EventProcessor {
       };
     } finally {
       client.release();
+    }
+  }
+
+  /**
+   * Store user acquisition data in user_acquisitions table
+   * ✅ Called when user_acquired event is received
+   * 
+   * @param {Object} event - user_acquired event with campaign data
+   */
+  async _storeUserAcquisition(event) {
+    try {
+      const userId = event.user_id;
+      const installDate = event.install_date ? new Date(event.install_date) : new Date();
+      
+      // Extract campaign data from event payload
+      const campaignId = event.campaign_id || null;
+      const source = event.source || null;
+      const medium = event.medium || null;
+      const campaign = event.campaign || null;
+      const adGroup = event.ad_group || null;
+      const adGroupId = event.ad_group_id || null;
+      const keyword = event.keyword || null;
+      const gclid = event.gclid || null;
+      const creative = event.creative || null;
+      const platform = event.platform || event.payload?.platform || null;
+      const country = event.country || event.payload?.country || null;
+
+      // Insert or update user acquisition record
+      const query = `
+        INSERT INTO user_acquisitions (
+          user_id, install_date, campaign_id, source, medium, campaign,
+          ad_group, ad_group_id, keyword, gclid, creative, platform, country
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (user_id) DO UPDATE SET
+          campaign_id = COALESCE(EXCLUDED.campaign_id, user_acquisitions.campaign_id),
+          source = COALESCE(EXCLUDED.source, user_acquisitions.source),
+          medium = COALESCE(EXCLUDED.medium, user_acquisitions.medium),
+          campaign = COALESCE(EXCLUDED.campaign, user_acquisitions.campaign),
+          ad_group = COALESCE(EXCLUDED.ad_group, user_acquisitions.ad_group),
+          ad_group_id = COALESCE(EXCLUDED.ad_group_id, user_acquisitions.ad_group_id),
+          keyword = COALESCE(EXCLUDED.keyword, user_acquisitions.keyword),
+          gclid = COALESCE(EXCLUDED.gclid, user_acquisitions.gclid),
+          creative = COALESCE(EXCLUDED.creative, user_acquisitions.creative),
+          platform = COALESCE(EXCLUDED.platform, user_acquisitions.platform),
+          country = COALESCE(EXCLUDED.country, user_acquisitions.country)
+      `;
+
+      await this.db.query(query, [
+        userId,
+        installDate,
+        campaignId,
+        source,
+        medium,
+        campaign,
+        adGroup,
+        adGroupId,
+        keyword,
+        gclid,
+        creative,
+        platform,
+        country
+      ]);
+
+      logger.info('✅ User acquisition stored', {
+        user_id: userId?.substring(0, 8) + '...',
+        campaign_id: campaignId,
+        source: source
+      });
+    } catch (error) {
+      logger.error('❌ Failed to store user acquisition', {
+        user_id: event.user_id,
+        error: error.message
+      });
+      throw error;
     }
   }
 

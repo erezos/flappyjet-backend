@@ -331,32 +331,6 @@
         </div>
     </div>
 
-    <!-- Controls -->
-    <div class="controls">
-        <label>
-            <strong>Date Range:</strong>
-            <select id="dateRange" onchange="loadDashboard()">
-                <option value="7">Last 7 days</option>
-                <option value="30" selected>Last 30 days</option>
-                <option value="90">Last 90 days</option>
-                <option value="custom">Custom Range</option>
-            </select>
-        </label>
-        <div id="customRange" style="display: none;">
-            <input type="date" id="startDate">
-            <input type="date" id="endDate">
-        </div>
-        <label>
-            <strong>Compare:</strong>
-            <select id="compareMode" onchange="loadDashboard()">
-                <option value="none">None</option>
-                <option value="wow">Week-over-Week</option>
-                <option value="mom">Month-over-Month</option>
-            </select>
-        </label>
-        <button onclick="loadDashboard()">Apply Filters</button>
-    </div>
-
     <!-- Container -->
     <div class="container">
         <!-- Section 1: Overview (Executive Summary) -->
@@ -373,8 +347,33 @@
                     Loading overview metrics...
                 </div>
             </div>
-            <div class="chart-container">
-                <canvas id="overview-trend-chart"></canvas>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px;">
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">DAU & MAU Trend (Last 30 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="dau-mau-trend-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Average Games Per User (Last 30 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="games-per-user-trend-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px;">
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Average Sessions Per User (Last 30 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="sessions-per-user-trend-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Average Session Length (Last 30 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="session-length-trend-chart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -422,30 +421,11 @@
             </div>
         </div>
 
-        <!-- Section 3: Engagement Metrics -->
-        <div class="section" id="engagement-section">
-            <div class="section-header">
-                <div>
-                    <div class="section-title">3. Engagement Metrics</div>
-                    <div class="section-subtitle">User activity and session metrics</div>
-                </div>
-            </div>
-            <div class="chart-container">
-                <canvas id="engagement-dau-mau-chart"></canvas>
-            </div>
-            <div class="chart-container small">
-                <canvas id="engagement-stickiness-chart"></canvas>
-            </div>
-            <div class="chart-container small">
-                <canvas id="engagement-sessions-chart"></canvas>
-            </div>
-        </div>
-
-        <!-- Section 4: Retention & Churn -->
+        <!-- Section 3: Retention & Churn -->
         <div class="section" id="retention-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">4. Retention & Churn</div>
+                    <div class="section-title">3. Retention & Churn</div>
                     <div class="section-subtitle">User retention rates and churn analysis</div>
                 </div>
             </div>
@@ -460,8 +440,19 @@
                 </div>
             </div>
             <div id="retention-cohorts" class="tab-content">
+                <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
+                    <label>
+                        <strong>Campaign Filter:</strong>
+                        <select id="cohortCampaignFilter" onchange="loadRetention()" style="margin-left: 8px;">
+                            <option value="all">All Campaigns</option>
+                        </select>
+                    </label>
+                </div>
                 <div class="chart-container large">
                     <canvas id="cohort-heatmap-chart"></canvas>
+                </div>
+                <div class="table-container" id="cohort-table" style="margin-top: 30px;">
+                    <div class="loading">Loading cohort data...</div>
                 </div>
             </div>
             <div id="retention-churn" class="tab-content">
@@ -471,11 +462,11 @@
             </div>
         </div>
 
-        <!-- Section 5: Monetization Metrics -->
+        <!-- Section 4: Monetization Metrics -->
         <div class="section" id="monetization-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">5. Monetization Metrics</div>
+                    <div class="section-title">4. Monetization Metrics</div>
                     <div class="section-subtitle">Revenue, ARPU, ARPPU, and LTV</div>
                 </div>
             </div>
@@ -496,30 +487,52 @@
             </div>
         </div>
 
-        <!-- Section 6: Player Behavior -->
-        <div class="section" id="behavior-section">
+        <!-- Section 5: Level Performance Detailed -->
+        <div class="section" id="level-performance-detailed-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">6. Player Behavior & Gameplay Events</div>
-                    <div class="section-subtitle">How users interact with the game</div>
+                    <div class="section-title">5. Level Performance Detailed</div>
+                    <div class="section-subtitle">Completions, tries, and first-time attempts by level</div>
+                </div>
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <label style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="newUsersOnlyFilter" onchange="loadLevelPerformanceDetailed()" style="width: auto;">
+                        <span>New Users Only (Installed Today)</span>
+                    </label>
                 </div>
             </div>
-            <div class="chart-container">
-                <canvas id="event-funnel-chart"></canvas>
-            </div>
-            <div class="chart-container small">
-                <canvas id="level-progression-chart"></canvas>
-            </div>
-            <div class="chart-container small">
-                <canvas id="gameplay-metrics-chart"></canvas>
+            <div class="table-container" id="level-performance-detailed-table">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading level performance data...
+                </div>
             </div>
         </div>
 
-        <!-- Section 7: Quality & Stability -->
+        <!-- Section 6: User Funnel -->
+        <div class="section" id="funnel-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">6. User Funnel</div>
+                    <div class="section-subtitle">Installs → First Open → Tutorial → Levels 1-10</div>
+                </div>
+            </div>
+            <div class="chart-container large">
+                <canvas id="funnel-chart"></canvas>
+            </div>
+            <div class="table-container" id="funnel-table">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading funnel data...
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 11: Quality & Stability -->
         <div class="section" id="quality-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">7. Quality & Stability Metrics</div>
+                    <div class="section-title">11. Quality & Stability Metrics</div>
                     <div class="section-subtitle">Performance, crashes, and app health</div>
                 </div>
             </div>
@@ -537,11 +550,11 @@
             </div>
         </div>
 
-        <!-- Section 8: Advanced Segmentation -->
+        <!-- Section 12: Advanced Segmentation -->
         <div class="section" id="segmentation-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">8. Advanced Segmentation</div>
+                    <div class="section-title">12. Advanced Segmentation</div>
                     <div class="section-subtitle">Filter and analyze by geography, device, cohort, campaign</div>
                 </div>
             </div>
@@ -578,11 +591,106 @@
             </div>
         </div>
 
-        <!-- Section 9: Drill-Down & Comparison -->
+        <div class="section" id="missions-achievements-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">7. Missions & Achievements</div>
+                    <div class="section-subtitle">Mission and achievement completion metrics</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="missions-achievements-kpis">
+                <div class="loading">Loading missions/achievements metrics...</div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px;">
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Missions & Achievements Completed (Last 7 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="missions-achievements-completed-chart"></canvas>
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Missions & Achievements Claims (Last 7 Days)</h3>
+                    <div class="chart-container small">
+                        <canvas id="missions-achievements-claims-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; font-size: 18px;">Unique Claimers (Last 7 Days)</h3>
+                <div class="chart-container small">
+                    <canvas id="unique-claimers-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 8: Tournaments -->
+        <div class="section" id="tournaments-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">8. Tournaments</div>
+                    <div class="section-subtitle">Tournament rounds and completion metrics</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="tournaments-kpis">
+                <div class="loading">Loading tournament metrics...</div>
+            </div>
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; font-size: 18px;">Tournament Activity (Last 7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="tournament-activity-chart"></canvas>
+                </div>
+            </div>
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; font-size: 18px;">Tournament Type Distribution (Last 7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="tournament-distribution-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 9: Continue Usage -->
+        <div class="section" id="continue-usage-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">9. Continue Usage</div>
+                    <div class="section-subtitle">How users continue gameplay</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="continue-usage-kpis">
+                <div class="loading">Loading continue usage metrics...</div>
+            </div>
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; font-size: 18px;">Continue Usage (Last 7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="continue-usage-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 10: Ads Shown -->
+        <div class="section" id="ads-shown-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">10. Ads Shown</div>
+                    <div class="section-subtitle">Ad placement and context metrics</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="ads-shown-kpis">
+                <div class="loading">Loading ads shown metrics...</div>
+            </div>
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; font-size: 18px;">Ads Shown by Context (Last 7 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="ads-shown-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 13: Drill-Down & Comparison -->
         <div class="section" id="comparison-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">9. Drill-Down & Comparison</div>
+                    <div class="section-title">13. Drill-Down & Comparison</div>
                     <div class="section-subtitle">Compare periods and export data</div>
                 </div>
             </div>
@@ -607,11 +715,11 @@
             </div>
         </div>
 
-        <!-- Section 10: Alerts & Benchmarking -->
+        <!-- Section 14: Alerts & Benchmarking -->
         <div class="section" id="alerts-section">
             <div class="section-header">
                 <div>
-                    <div class="section-title">10. Alerts & Benchmarking</div>
+                    <div class="section-title">14. Alerts & Benchmarking</div>
                     <div class="section-subtitle">Automated alerts and industry benchmarks</div>
                 </div>
             </div>
@@ -628,54 +736,28 @@
         // Global state
         const API_BASE = '/api/dashboard';
         let charts = {};
-        let currentDateRange = 30;
-        let currentCompareMode = 'none';
+        const DEFAULT_DAYS = 30; // Fixed date range
 
         // Initialize dashboard on load
         document.addEventListener('DOMContentLoaded', () => {
             loadDashboard();
-            setupCustomDateRange();
         });
-
-        // Setup custom date range toggle
-        function setupCustomDateRange() {
-            document.getElementById('dateRange').addEventListener('change', (e) => {
-                const customRange = document.getElementById('customRange');
-                if (e.target.value === 'custom') {
-                    customRange.style.display = 'flex';
-                    customRange.style.gap = '10px';
-                } else {
-                    customRange.style.display = 'none';
-                }
-            });
-        }
 
         // Load all dashboard data
         async function loadDashboard() {
-            const dateRange = document.getElementById('dateRange').value;
-            const compareMode = document.getElementById('compareMode').value;
-            
-            if (dateRange === 'custom') {
-                const startDate = document.getElementById('startDate').value;
-                const endDate = document.getElementById('endDate').value;
-                if (!startDate || !endDate) {
-                    alert('Please select both start and end dates');
-                    return;
-                }
-                currentDateRange = { startDate, endDate };
-            } else {
-                currentDateRange = parseInt(dateRange);
-            }
-            currentCompareMode = compareMode;
 
             // Load all sections in parallel
             await Promise.all([
                 loadOverview(),
                 loadAcquisition(),
-                loadEngagement(),
                 loadRetention(),
                 loadMonetization(),
-                loadBehavior(),
+                loadLevelPerformanceDetailed(),
+                loadFunnel(),
+                loadMissionsAchievements(),
+                loadTournaments(),
+                loadContinueUsage(),
+                loadAdsShown(),
                 loadQuality(),
                 loadSegmentation(),
                 loadComparison(),
@@ -686,48 +768,93 @@
         // Section 1: Overview
         async function loadOverview() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : null;
-                const params = days ? `?days=${days}` : 
-                    `?startDate=${currentDateRange.startDate}&endDate=${currentDateRange.endDate}`;
-                
-                const [overview, dauTrend] = await Promise.all([
-                    fetch(`${API_BASE}/overview${params}`).then(r => r.json()),
-                    fetch(`${API_BASE}/dau-trend?days=${days || 30}`).then(r => r.json())
+                const [overview, dauTrend, mauTrend, gamesPerUserTrend, sessionsPerUserTrend, sessionLengthTrend] = await Promise.all([
+                    fetch(`${API_BASE}/overview?days=${DEFAULT_DAYS}`).then(r => r.json()),
+                    fetch(`${API_BASE}/dau-trend?days=30`).then(r => r.json()),
+                    fetch(`${API_BASE}/mau-trend?days=30`).then(r => r.json()),
+                    fetch(`${API_BASE}/games-per-player-trend?days=30`).then(r => r.json()),
+                    fetch(`${API_BASE}/sessions-per-user-trend?days=30`).then(r => r.json()),
+                    fetch(`${API_BASE}/session-length-trend?days=30`).then(r => r.json())
                 ]);
 
-                // Update KPI cards
+                // Update KPI cards ✅ ENHANCED
                 const kpiGrid = document.getElementById('overview-kpis');
                 kpiGrid.innerHTML = `
                     <div class="kpi-card">
-                        <div class="kpi-label">Daily Active Users</div>
+                        <div class="kpi-label">Daily Active Users (Today)</div>
                         <div class="kpi-value">${formatNumber(overview.dau)}</div>
-                        <div class="kpi-change">Total Players: ${formatNumber(overview.total_players)}</div>
+                        <div class="kpi-change">MAU: ${formatNumber(overview.mau || overview.dau)}</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">Avg Session Duration</div>
-                        <div class="kpi-value">${formatDuration(overview.avg_session_seconds)}</div>
-                        <div class="kpi-change">Avg Sessions/User: ${overview.avg_sessions_per_user?.toFixed(1)}</div>
+                        <div class="kpi-label">Avg Games Per User (Today)</div>
+                        <div class="kpi-value">${(overview.avg_games_per_user || 0).toFixed(1)}</div>
+                        <div class="kpi-change">Games Started: ${formatNumber(overview.games_started)}</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">Games Played</div>
-                        <div class="kpi-value">${formatNumber(overview.games_started)}</div>
+                        <div class="kpi-label">Avg Sessions Per User (Today)</div>
+                        <div class="kpi-value">${(overview.avg_sessions_per_user || 0).toFixed(1)}</div>
                         <div class="kpi-change">Completion: ${overview.completion_rate?.toFixed(1)}%</div>
                     </div>
                     <div class="kpi-card">
-                        <div class="kpi-label">Avg Game Duration</div>
-                        <div class="kpi-value">${formatDuration(overview.avg_game_duration)}</div>
-                        <div class="kpi-change">Games Ended: ${formatNumber(overview.games_ended)}</div>
+                        <div class="kpi-label">Avg Session Length (Today)</div>
+                        <div class="kpi-value">${formatDuration(overview.avg_session_seconds)}</div>
+                        <div class="kpi-change">Total Players: ${formatNumber(overview.total_players)}</div>
                     </div>
                 `;
 
-                // Create trend chart
-                createLineChart('overview-trend-chart', {
-                    labels: dauTrend.trend?.map(d => d.date) || [],
+                // DAU & MAU Trend Chart ✅ NEW
+                createLineChart('dau-mau-trend-chart', {
+                    labels: dauTrend.dates || [],
+                    datasets: [
+                        {
+                            label: 'DAU',
+                            data: dauTrend.values || [],
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'MAU',
+                            data: mauTrend.mau || [],
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Games Per User Trend Chart ✅ NEW
+                createLineChart('games-per-user-trend-chart', {
+                    labels: gamesPerUserTrend.daily?.map(d => d.date) || [],
                     datasets: [{
-                        label: 'DAU',
-                        data: dauTrend.trend?.map(d => d.dau) || [],
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        label: 'Games Per User',
+                        data: gamesPerUserTrend.daily?.map(d => d.games_per_player) || [],
+                        borderColor: '#f6ad55',
+                        backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Sessions Per User Trend Chart ✅ NEW
+                createLineChart('sessions-per-user-trend-chart', {
+                    labels: sessionsPerUserTrend.dates || [],
+                    datasets: [{
+                        label: 'Sessions Per User',
+                        data: sessionsPerUserTrend.values || [],
+                        borderColor: '#9f7aea',
+                        backgroundColor: 'rgba(159, 122, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Session Length Trend Chart ✅ NEW
+                createLineChart('session-length-trend-chart', {
+                    labels: sessionLengthTrend.dates || [],
+                    datasets: [{
+                        label: 'Avg Session Length (seconds)',
+                        data: sessionLengthTrend.values || [],
+                        borderColor: '#ed64a6',
+                        backgroundColor: 'rgba(237, 100, 166, 0.1)',
                         tension: 0.4
                     }]
                 });
@@ -739,10 +866,8 @@
         // Section 2: Acquisition
         async function loadAcquisition() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                
                 // Load cohort ROI data for campaign performance
-                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=${days}`).then(r => r.json());
+                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=${DEFAULT_DAYS}`).then(r => r.json());
                 
                 // Update campaign performance table
                 const tableBody = document.querySelector('#campaign-performance-table tbody');
@@ -789,75 +914,16 @@
             }
         }
 
-        // Section 3: Engagement
-        async function loadEngagement() {
-            try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                
-                const [dauTrend, stickiness, sessionMetrics] = await Promise.all([
-                    fetch(`${API_BASE}/dau-trend?days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/stickiness?days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/session-metrics?days=${days}`).then(r => r.json())
-                ]);
-
-                // DAU/MAU chart
-                createLineChart('engagement-dau-mau-chart', {
-                    labels: dauTrend.trend?.map(d => d.date) || [],
-                    datasets: [
-                        {
-                            label: 'DAU',
-                            data: dauTrend.trend?.map(d => d.dau) || [],
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            tension: 0.4
-                        },
-                        {
-                            label: 'MAU',
-                            data: stickiness.daily_breakdown?.map(d => d.mau) || [],
-                            borderColor: '#48bb78',
-                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
-                            tension: 0.4
-                        }
-                    ]
-                });
-
-                // Stickiness chart
-                createLineChart('engagement-stickiness-chart', {
-                    labels: stickiness.daily_breakdown?.map(d => d.date) || [],
-                    datasets: [{
-                        label: 'Stickiness Rate (%)',
-                        data: stickiness.daily_breakdown?.map(d => d.stickiness_rate) || [],
-                        borderColor: '#f6ad55',
-                        backgroundColor: 'rgba(246, 173, 85, 0.1)',
-                        tension: 0.4
-                    }]
-                });
-
-                // Sessions chart
-                createLineChart('engagement-sessions-chart', {
-                    labels: sessionMetrics.daily_trend?.map(d => d.date) || [],
-                    datasets: [{
-                        label: 'Total Sessions',
-                        data: sessionMetrics.daily_trend?.map(d => d.total_sessions) || [],
-                        borderColor: '#9f7aea',
-                        backgroundColor: 'rgba(159, 122, 234, 0.1)',
-                        tension: 0.4
-                    }]
-                });
-            } catch (error) {
-                showError('engagement-section', error);
-            }
-        }
-
-        // Section 4: Retention
+        // Section 3: Retention
         async function loadRetention() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                const campaignFilter = document.getElementById('cohortCampaignFilter')?.value || 'all';
                 
-                const [retention, cohorts, churn] = await Promise.all([
-                    fetch(`${API_BASE}/retention-detailed?days=${days}`).then(r => r.json()),
+                const [retention, cohorts, churn, enhancedCohorts] = await Promise.all([
+                    fetch(`${API_BASE}/retention-detailed?days=${DEFAULT_DAYS}`).then(r => r.json()),
                     fetch(`${API_BASE}/cohort-analysis?type=install_date`).then(r => r.json()),
-                    fetch(`${API_BASE}/churn?days=${days}`).then(r => r.json())
+                    fetch(`${API_BASE}/churn?days=${DEFAULT_DAYS}`).then(r => r.json()),
+                    fetch(`${API_BASE}/cohort-analysis-enhanced?campaign_id=${campaignFilter}&days=${DEFAULT_DAYS}`).then(r => r.json())
                 ]);
 
                 // Retention curve chart
@@ -909,21 +975,52 @@
                         tension: 0.4
                     }]
                 });
+
+                // ✅ NEW: Enhanced Cohort Table with D1/D2/D3/D7/D30, Revenue, CPI, ROI
+                const cohortTable = document.getElementById('cohort-table');
+                if (enhancedCohorts.cohorts && enhancedCohorts.cohorts.length > 0) {
+                    let html = '<table><thead><tr>';
+                    html += '<th>Date</th><th>Campaign</th><th>Platform</th><th>Installs</th>';
+                    html += '<th>D1</th><th>D2</th><th>D3</th><th>D7</th><th>D30</th>';
+                    html += '<th>IAP Revenue</th><th>Ad Revenue</th><th>CPI</th><th>ROI</th>';
+                    html += '</tr></thead><tbody>';
+
+                    enhancedCohorts.cohorts.forEach(cohort => {
+                        html += `<tr>`;
+                        html += `<td>${cohort.cohort_date}</td>`;
+                        html += `<td>${cohort.campaign_id || 'Organic'}</td>`;
+                        html += `<td>${cohort.platform || 'N/A'}</td>`;
+                        html += `<td>${formatNumber(cohort.cohort_size)}</td>`;
+                        html += `<td>${cohort.retention.d1.rate.toFixed(1)}%</td>`;
+                        html += `<td>${cohort.retention.d2.rate.toFixed(1)}%</td>`;
+                        html += `<td>${cohort.retention.d3.rate.toFixed(1)}%</td>`;
+                        html += `<td>${cohort.retention.d7.rate.toFixed(1)}%</td>`;
+                        html += `<td>${cohort.retention.d30.rate.toFixed(1)}%</td>`;
+                        html += `<td>$${formatNumber(cohort.revenue.iap_revenue_usd, 2)}</td>`;
+                        html += `<td>$${formatNumber(cohort.revenue.ad_revenue_usd, 2)}</td>`;
+                        html += `<td>$${formatNumber(cohort.campaign.cpi, 2)}</td>`;
+                        html += `<td>${cohort.campaign.roi_percentage.toFixed(1)}%</td>`;
+                        html += `</tr>`;
+                    });
+
+                    html += '</tbody></table>';
+                    cohortTable.innerHTML = html;
+                } else {
+                    cohortTable.innerHTML = '<div style="padding: 20px; text-align: center; color: #718096;">No cohort data available</div>';
+                }
             } catch (error) {
                 showError('retention-section', error);
             }
         }
 
-        // Section 5: Monetization
+        // Section 4: Monetization
         async function loadMonetization() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                
                 const [arpu, revenue, ltv, conversion] = await Promise.all([
-                    fetch(`${API_BASE}/arpu?days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/revenue-breakdown?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/arpu?days=${DEFAULT_DAYS}`).then(r => r.json()),
+                    fetch(`${API_BASE}/revenue-breakdown?days=${DEFAULT_DAYS}`).then(r => r.json()),
                     fetch(`${API_BASE}/ltv`).then(r => r.json()),
-                    fetch(`${API_BASE}/conversion-rate?days=${days}`).then(r => r.json())
+                    fetch(`${API_BASE}/conversion-rate?days=${DEFAULT_DAYS}`).then(r => r.json())
                 ]);
 
                 // Update monetization KPIs
@@ -1018,68 +1115,134 @@
             }
         }
 
-        // Section 6: Player Behavior
-        async function loadBehavior() {
+        // Section 5: Level Performance Detailed
+        async function loadLevelPerformanceDetailed() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                const newUsersOnly = document.getElementById('newUsersOnlyFilter')?.checked || false;
+                const data = await fetch(`${API_BASE}/level-performance-detailed?new_users_only=${newUsersOnly}`).then(r => r.json());
                 
-                const [levelPerformance, conversions] = await Promise.all([
-                    fetch(`${API_BASE}/level-performance?zone=1&days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/conversions?days=${days}`).then(r => r.json())
-                ]);
-
-                // Event funnel (simplified)
-                const funnelData = conversions.summary || {};
-                createBarChart('event-funnel-chart', {
-                    labels: ['Installs', 'First Open', 'First Game', 'Repeat Play'],
-                    datasets: [{
-                        label: 'Users',
-                        data: [
-                            funnelData.total_conversions_all_time || 0,
-                            funnelData.total_in_period || 0,
-                            funnelData.total_in_period || 0,
-                            funnelData.unique_users_in_period || 0
-                        ],
-                        backgroundColor: ['#667eea', '#48bb78', '#f6ad55', '#9f7aea']
-                    }]
+                // Build table by zone
+                const tableContainer = document.getElementById('level-performance-detailed-table');
+                let tableHTML = '<table style="width: 100%; border-collapse: collapse;"><thead><tr>';
+                tableHTML += '<th>Zone</th><th>Level</th>';
+                tableHTML += '<th>Today: Tries</th><th>Today: Completions</th><th>Today: Completion %</th>';
+                tableHTML += '<th>Today: First Tries</th><th>Today: First Completions</th><th>Today: First Completion %</th>';
+                tableHTML += '<th>7-Day Avg: Tries</th><th>7-Day Avg: Completions</th><th>7-Day Avg: Completion %</th>';
+                tableHTML += '<th>7-Day Avg: First Tries</th><th>7-Day Avg: First Completions</th><th>7-Day Avg: First Completion %</th>';
+                tableHTML += '</tr></thead><tbody>';
+                
+                // Sort zones
+                const sortedZones = Object.keys(data.zones || {}).sort((a, b) => parseInt(a) - parseInt(b));
+                
+                sortedZones.forEach(zoneId => {
+                    const levels = data.zones[zoneId] || [];
+                    levels.forEach(level => {
+                        const today = level.today || {};
+                        const avg7days = level.avg_7days || {};
+                        tableHTML += `<tr>
+                            <td>Zone ${zoneId}</td>
+                            <td>Level ${level.level_id}</td>
+                            <td>${formatNumber(today.total_tries || 0)}</td>
+                            <td>${formatNumber(today.total_completions || 0)}</td>
+                            <td>${(today.completion_rate || 0).toFixed(1)}%</td>
+                            <td>${formatNumber(today.first_tries || 0)}</td>
+                            <td>${formatNumber(today.first_completions || 0)}</td>
+                            <td>${(today.first_time_completion_rate || 0).toFixed(1)}%</td>
+                            <td>${formatNumber(avg7days.avg_total_tries || 0)}</td>
+                            <td>${formatNumber(avg7days.avg_total_completions || 0)}</td>
+                            <td>${(avg7days.avg_completion_rate || 0).toFixed(1)}%</td>
+                            <td>${formatNumber(avg7days.avg_first_tries || 0)}</td>
+                            <td>${formatNumber(avg7days.avg_first_completions || 0)}</td>
+                            <td>${(avg7days.avg_first_time_completion_rate || 0).toFixed(1)}%</td>
+                        </tr>`;
+                    });
                 });
-
-                // Level progression chart
-                createBarChart('level-progression-chart', {
-                    labels: levelPerformance.levels?.map(l => `Level ${l.level_id}`) || [],
-                    datasets: [{
-                        label: 'Completion Rate (%)',
-                        data: levelPerformance.levels?.map(l => l.completion_rate) || [],
-                        backgroundColor: levelPerformance.levels?.map(l => 
-                            l.completion_rate > 50 ? '#48bb78' : 
-                            l.completion_rate > 30 ? '#f6ad55' : '#f56565'
-                        ) || []
-                    }]
-                });
-
-                // Gameplay metrics (placeholder)
-                createLineChart('gameplay-metrics-chart', {
-                    labels: levelPerformance.levels?.map(l => `Level ${l.level_id}`) || [],
-                    datasets: [{
-                        label: 'Avg Attempts',
-                        data: levelPerformance.levels?.map(l => l.avg_attempts || 0) || [],
-                        borderColor: '#667eea',
-                        tension: 0.4
-                    }]
-                });
+                
+                tableHTML += '</tbody></table>';
+                tableContainer.innerHTML = tableHTML;
             } catch (error) {
-                showError('behavior-section', error);
+                showError('level-performance-detailed-section', error);
             }
         }
 
-        // Section 7: Quality & Stability
+        // Section 6: User Funnel
+        async function loadFunnel() {
+            try {
+                const data = await fetch(`${API_BASE}/funnel?days=30`).then(r => r.json());
+                
+                // Build funnel chart
+                const latest = data.daily && data.daily.length > 0 ? data.daily[0] : null;
+                if (latest) {
+                    createBarChart('funnel-chart', {
+                        labels: ['Installs', 'First Open', 'Tutorial', 'Level 1', 'Level 2', 'Level 3', 'Level 4', 'Level 5', 'Level 6', 'Level 7', 'Level 8', 'Level 9', 'Level 10'],
+                        datasets: [{
+                            label: 'Users',
+                            data: [
+                                latest.installs || 0,
+                                latest.first_opens || 0,
+                                latest.tutorial_starts || 0,
+                                latest.level_1_starts || 0,
+                                latest.level_2_starts || 0,
+                                latest.level_3_starts || 0,
+                                latest.level_4_starts || 0,
+                                latest.level_5_starts || 0,
+                                latest.level_6_starts || 0,
+                                latest.level_7_starts || 0,
+                                latest.level_8_starts || 0,
+                                latest.level_9_starts || 0,
+                                latest.level_10_starts || 0
+                            ],
+                            backgroundColor: '#667eea'
+                        }]
+                    });
+                }
+                
+                // Build funnel table
+                const tableContainer = document.getElementById('funnel-table');
+                let tableHTML = '<table style="width: 100%; border-collapse: collapse;"><thead><tr>';
+                tableHTML += '<th>Date</th><th>Installs</th><th>First Opens</th><th>Tutorial</th>';
+                tableHTML += '<th>L1</th><th>L2</th><th>L3</th><th>L4</th><th>L5</th>';
+                tableHTML += '<th>L6</th><th>L7</th><th>L8</th><th>L9</th><th>L10</th>';
+                tableHTML += '<th>Install→Open</th><th>Open→Tutorial</th><th>Tutorial→L1</th><th>L1→L10</th>';
+                tableHTML += '</tr></thead><tbody>';
+                
+                (data.daily || []).slice(0, 30).forEach(day => {
+                    const rates = day.conversion_rates || {};
+                    tableHTML += `<tr>
+                        <td>${day.date}</td>
+                        <td>${formatNumber(day.installs || 0)}</td>
+                        <td>${formatNumber(day.first_opens || 0)}</td>
+                        <td>${formatNumber(day.tutorial_starts || 0)}</td>
+                        <td>${formatNumber(day.level_1_starts || 0)}</td>
+                        <td>${formatNumber(day.level_2_starts || 0)}</td>
+                        <td>${formatNumber(day.level_3_starts || 0)}</td>
+                        <td>${formatNumber(day.level_4_starts || 0)}</td>
+                        <td>${formatNumber(day.level_5_starts || 0)}</td>
+                        <td>${formatNumber(day.level_6_starts || 0)}</td>
+                        <td>${formatNumber(day.level_7_starts || 0)}</td>
+                        <td>${formatNumber(day.level_8_starts || 0)}</td>
+                        <td>${formatNumber(day.level_9_starts || 0)}</td>
+                        <td>${formatNumber(day.level_10_starts || 0)}</td>
+                        <td>${(rates.install_to_first_open || 0).toFixed(1)}%</td>
+                        <td>${(rates.first_open_to_tutorial || 0).toFixed(1)}%</td>
+                        <td>${(rates.tutorial_to_level_1 || 0).toFixed(1)}%</td>
+                        <td>${(rates.level_1_to_level_10 || 0).toFixed(1)}%</td>
+                    </tr>`;
+                });
+                
+                tableHTML += '</tbody></table>';
+                tableContainer.innerHTML = tableHTML;
+            } catch (error) {
+                showError('funnel-section', error);
+            }
+        }
+
+        // Section 11: Quality & Stability
         async function loadQuality() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                
                 const [performance, crashes] = await Promise.all([
-                    fetch(`${API_BASE}/performance?days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/crashes?days=${days}`).then(r => r.json())
+                    fetch(`${API_BASE}/performance?days=${DEFAULT_DAYS}`).then(r => r.json()),
+                    fetch(`${API_BASE}/crashes?days=${DEFAULT_DAYS}`).then(r => r.json())
                 ]);
 
                 // Update quality KPIs
@@ -1154,7 +1317,7 @@
             }
         }
 
-        // Section 8: Segmentation
+        // Section 12: Segmentation
         async function loadSegmentation() {
             try {
                 // Load countries for filter
@@ -1187,8 +1350,7 @@
                 const campaign = document.getElementById('campaignFilter').value;
                 
                 // Load data with filters (simplified - would need backend support)
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                const data = await fetch(`${API_BASE}/overview?days=${days}`).then(r => r.json());
+                const data = await fetch(`${API_BASE}/overview?days=${DEFAULT_DAYS}`).then(r => r.json());
                 
                 // Create segmentation chart (placeholder)
                 createBarChart('segmentation-chart', {
@@ -1204,15 +1366,279 @@
             }
         }
 
-        // Section 9: Comparison
+        // Section 7: Missions & Achievements
+        async function loadMissionsAchievements() {
+            try {
+                const data = await fetch(`${API_BASE}/missions-achievements?days=7`).then(r => r.json());
+                
+                // Update KPIs
+                const kpiGrid = document.getElementById('missions-achievements-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Missions Completed (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.missions_completed)}</div>
+                        <div class="kpi-change">Achievements: ${formatNumber(data.today.achievements_unlocked)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Missions Claimed (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.missions_claimed)}</div>
+                        <div class="kpi-change">Achievements: ${formatNumber(data.today.achievements_claimed)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Unique Mission Claimers (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.unique_mission_claimers)}</div>
+                        <div class="kpi-change">Achievement Claimers: ${formatNumber(data.today.unique_achievement_claimers)}</div>
+                    </div>
+                `;
+
+                // Completed chart
+                createLineChart('missions-achievements-completed-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Missions Completed',
+                            data: data.trend.map(t => t.missions_completed),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Achievements Unlocked',
+                            data: data.trend.map(t => t.achievements_unlocked),
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Claims chart
+                createLineChart('missions-achievements-claims-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Missions Claimed',
+                            data: data.trend.map(t => t.missions_claimed),
+                            borderColor: '#f6ad55',
+                            backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Achievements Claimed',
+                            data: data.trend.map(t => t.achievements_claimed),
+                            borderColor: '#ed64a6',
+                            backgroundColor: 'rgba(237, 100, 166, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Unique claimers chart
+                createLineChart('unique-claimers-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Unique Mission Claimers',
+                            data: data.trend.map(t => t.unique_mission_claimers),
+                            borderColor: '#9f7aea',
+                            backgroundColor: 'rgba(159, 122, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Unique Achievement Claimers',
+                            data: data.trend.map(t => t.unique_achievement_claimers),
+                            borderColor: '#38b2ac',
+                            backgroundColor: 'rgba(56, 178, 172, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+            } catch (error) {
+                showError('missions-achievements-section', error);
+            }
+        }
+
+        // Section 8: Tournaments
+        async function loadTournaments() {
+            try {
+                const data = await fetch(`${API_BASE}/tournaments?days=7`).then(r => r.json());
+                
+                // Update KPIs
+                const kpiGrid = document.getElementById('tournaments-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Rounds Played (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.rounds_played)}</div>
+                        <div class="kpi-change">Won: ${formatNumber(data.today.rounds_won)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Rounds Lost (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.rounds_lost)}</div>
+                        <div class="kpi-change">Tournaments Won: ${formatNumber(data.today.tournaments_won)}</div>
+                    </div>
+                `;
+
+                // Tournament activity chart
+                createLineChart('tournament-activity-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Rounds Played',
+                            data: data.trend.map(t => t.rounds_played),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Rounds Won',
+                            data: data.trend.map(t => t.rounds_won),
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Rounds Lost',
+                            data: data.trend.map(t => t.rounds_lost),
+                            borderColor: '#f56565',
+                            backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Tournaments Won',
+                            data: data.trend.map(t => t.tournaments_won),
+                            borderColor: '#f6ad55',
+                            backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Tournament distribution chart (stacked area or bar)
+                const tournamentTypes = Object.keys(data.distribution_trend);
+                const dates = data.trend.map(t => t.date);
+                
+                createLineChart('tournament-distribution-chart', {
+                    labels: dates,
+                    datasets: tournamentTypes.map((type, index) => {
+                        const colors = ['#667eea', '#48bb78', '#f6ad55', '#ed64a6', '#9f7aea', '#38b2ac'];
+                        const typeData = data.distribution_trend[type] || [];
+                        const dataMap = {};
+                        typeData.forEach(d => {
+                            dataMap[d.date] = d.rounds_played;
+                        });
+                        return {
+                            label: type,
+                            data: dates.map(date => dataMap[date] || 0),
+                            borderColor: colors[index % colors.length],
+                            backgroundColor: colors[index % colors.length].replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                            tension: 0.4,
+                            fill: true
+                        };
+                    })
+                });
+            } catch (error) {
+                showError('tournaments-section', error);
+            }
+        }
+
+        // Section 9: Continue Usage
+        async function loadContinueUsage() {
+            try {
+                const data = await fetch(`${API_BASE}/continue-usage?days=7`).then(r => r.json());
+                
+                // Update KPIs
+                const kpiGrid = document.getElementById('continue-usage-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Continues via Ads (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.continues_via_ads)}</div>
+                        <div class="kpi-change">Via Gems: ${formatNumber(data.today.continues_via_gems)}</div>
+                    </div>
+                `;
+
+                // Continue usage chart
+                createLineChart('continue-usage-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Continues via Ads',
+                            data: data.trend.map(t => t.continues_via_ads),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Continues via Gems',
+                            data: data.trend.map(t => t.continues_via_gems),
+                            borderColor: '#f6ad55',
+                            backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+            } catch (error) {
+                showError('continue-usage-section', error);
+            }
+        }
+
+        // Section 10: Ads Shown
+        async function loadAdsShown() {
+            try {
+                const data = await fetch(`${API_BASE}/ads-shown?days=7`).then(r => r.json());
+                
+                // Update KPIs
+                const kpiGrid = document.getElementById('ads-shown-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Ads After Wins (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.ads_after_wins)}</div>
+                        <div class="kpi-change">After Losses: ${formatNumber(data.today.ads_after_losses)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Ads from Tournaments (Today)</div>
+                        <div class="kpi-value">${formatNumber(data.today.ads_from_tournaments)}</div>
+                    </div>
+                `;
+
+                // Ads shown chart
+                createLineChart('ads-shown-chart', {
+                    labels: data.trend.map(t => t.date),
+                    datasets: [
+                        {
+                            label: 'Ads After Wins',
+                            data: data.trend.map(t => t.ads_after_wins),
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Ads After Losses',
+                            data: data.trend.map(t => t.ads_after_losses),
+                            borderColor: '#f56565',
+                            backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Ads from Tournaments',
+                            data: data.trend.map(t => t.ads_from_tournaments),
+                            borderColor: '#f6ad55',
+                            backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+            } catch (error) {
+                showError('ads-shown-section', error);
+            }
+        }
+
+        // Section 13: Comparison
         async function loadComparison() {
             try {
-                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
-                const compareDays = currentCompareMode === 'wow' ? days : days * 4;
-                
+                // Comparison section - using fixed 30 days for current period
                 const [current, previous] = await Promise.all([
-                    fetch(`${API_BASE}/overview?days=${days}`).then(r => r.json()),
-                    fetch(`${API_BASE}/overview?days=${compareDays}`).then(r => r.json())
+                    fetch(`${API_BASE}/overview?days=${DEFAULT_DAYS}`).then(r => r.json()),
+                    fetch(`${API_BASE}/overview?days=${DEFAULT_DAYS * 2}`).then(r => r.json())
                 ]);
 
                 // Update comparison table
@@ -1259,7 +1685,7 @@
             }
         }
 
-        // Section 10: Alerts
+        // Section 14: Alerts
         async function loadAlerts() {
             try {
                 const alertsContainer = document.getElementById('alerts-container');

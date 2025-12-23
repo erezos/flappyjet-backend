@@ -31,8 +31,8 @@ class DashboardService {
       }
     }));
 
-    // Dashboard route with caching
-    app.get('/dashboard', this.handleDashboardRequest.bind(this));
+    // ✅ REMOVED: Dashboard route - now handled in server.js before static files
+    // app.get('/dashboard', this.handleDashboardRequest.bind(this));
     
     // Dashboard API endpoints
     app.get('/dashboard/api/kpis', this.handleKPIsRequest.bind(this));
@@ -42,8 +42,8 @@ class DashboardService {
   // Handle dashboard HTML request
   async handleDashboardRequest(req, res) {
     try {
-      // Serve static HTML file instead of generating dynamically
-      const dashboardPath = path.join(__dirname, '../analytics/dashboard.html');
+      // ✅ Serve new analytics dashboard with optimized materialized views
+      const dashboardPath = path.join(__dirname, '../public/analytics-dashboard.html');
       res.sendFile(dashboardPath);
     } catch (error) {
       this.logger.error('Dashboard generation error:', error);
