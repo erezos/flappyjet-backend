@@ -2692,6 +2692,1246 @@ module.exports = (db, cacheManager) => {
     }
   });
 
+  // ============================================================================
+  // PHASE 2: CORE ANALYTICS METRICS
+  // ============================================================================
+
+  /**
+   * GET /api/dashboard/retention-detailed
+   * ✅ NEW: Detailed retention metrics (D1, D7, D30)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   * - cohort: Filter by cohort type ('install_date' or 'campaign_id')
+   */
+  router.get('/retention-detailed', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const cohortType = req.query.cohort || 'install_date';
+
+      const data = await getCachedQuery(req, `retention-detailed:${days}:${startDate || 'all'}:${endDate || 'all'}:${cohortType}`, async () => {
+        // Get install date range
+        const dateFilter = startDate && endDate
+          ? `AND ua.install_date >= '${startDate}'::date AND ua.install_date <= '${endDate}'::date`
+          : startDate
+          ? `AND ua.install_date >= '${startDate}'::date`
+          : endDate
+          ? `AND ua.install_date <= '${endDate}'::date`
+          : `AND ua.install_date >= CURRENT_DATE - INTERVAL '${days} days'`;
+
+        // Calculate D1, D7, D30 retention
+        const retentionQuery = `
+          WITH installs AS (
+            SELECT 
+              ua.user_id,
+              ua.install_date,
+              ${cohortType === 'campaign_id' ? 'ua.campaign_id,' : ''}
+              DATE(ua.install_date) as cohort_date
+            FROM user_acquisitions ua
+            WHERE 1=1 ${dateFilter}
+          ),
+          day1_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_type IN ('app_launched', 'game_started')
+              AND received_at >= CURRENT_DATE - INTERVAL '1 day'
+          ),
+          day7_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_type IN ('app_launched', 'game_started')
+              AND received_at >= CURRENT_DATE - INTERVAL '7 days'
+          ),
+          day30_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_type IN ('app_launched', 'game_started')
+              AND received_at >= CURRENT_DATE - INTERVAL '30 days'
+          )
+          SELECT 
+            i.cohort_date,
+            ${cohortType === 'campaign_id' ? 'i.campaign_id,' : ''}
+            COUNT(DISTINCT i.user_id) as total_installs,
+            COUNT(DISTINCT CASE WHEN d1.user_id IS NOT NULL THEN i.user_id END) as d1_retained,
+            COUNT(DISTINCT CASE WHEN d7.user_id IS NOT NULL THEN i.user_id END) as d7_retained,
+            COUNT(DISTINCT CASE WHEN d30.user_id IS NOT NULL THEN i.user_id END) as d30_retained,
+            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d1.user_id IS NOT NULL THEN i.user_id END) / 
+                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d1_retention_rate,
+            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d7.user_id IS NOT NULL THEN i.user_id END) / 
+                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d7_retention_rate,
+            ROUND(100.0 * COUNT(DISTINCT CASE WHEN d30.user_id IS NOT NULL THEN i.user_id END) / 
+                  NULLIF(COUNT(DISTINCT i.user_id), 0), 2) as d30_retention_rate
+          FROM installs i
+          LEFT JOIN day1_users d1 ON i.user_id = d1.user_id
+          LEFT JOIN day7_users d7 ON i.user_id = d7.user_id
+          LEFT JOIN day30_users d30 ON i.user_id = d30.user_id
+          GROUP BY i.cohort_date${cohortType === 'campaign_id' ? ', i.campaign_id' : ''}
+          ORDER BY i.cohort_date DESC${cohortType === 'campaign_id' ? ', i.campaign_id' : ''}
+        `;
+
+        const result = await db.query(retentionQuery);
+
+        return {
+          summary: {
+            total_cohorts: result.rows.length,
+            total_installs: result.rows.reduce((sum, r) => sum + parseInt(r.total_installs || 0), 0),
+            avg_d1_retention: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.d1_retention_rate || 0), 0) / result.rows.length
+              : 0,
+            avg_d7_retention: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.d7_retention_rate || 0), 0) / result.rows.length
+              : 0,
+            avg_d30_retention: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.d30_retention_rate || 0), 0) / result.rows.length
+              : 0,
+          },
+          cohorts: result.rows.map(r => ({
+            cohort_date: r.cohort_date,
+            ...(cohortType === 'campaign_id' && r.campaign_id ? { campaign_id: r.campaign_id } : {}),
+            total_installs: parseInt(r.total_installs || 0),
+            d1_retained: parseInt(r.d1_retained || 0),
+            d7_retained: parseInt(r.d7_retained || 0),
+            d30_retained: parseInt(r.d30_retained || 0),
+            d1_retention_rate: parseFloat(r.d1_retention_rate || 0),
+            d7_retention_rate: parseFloat(r.d7_retention_rate || 0),
+            d30_retention_rate: parseFloat(r.d30_retention_rate || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching detailed retention:', error);
+      res.status(500).json({ error: 'Failed to fetch detailed retention metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/churn
+   * ✅ NEW: Churn rate and churned users
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   * - inactiveDays: Days of inactivity to consider churned (default: 7)
+   */
+  router.get('/churn', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const inactiveDays = parseInt(req.query.inactiveDays) || 7;
+
+      const data = await getCachedQuery(req, `churn:${days}:${inactiveDays}`, async () => {
+        // Get all users who were active in the period
+        const activeUsersQuery = `
+          SELECT DISTINCT user_id
+          FROM events
+          WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+        `;
+
+        // Get users who haven't been active in the last N days
+        const churnedUsersQuery = `
+          SELECT DISTINCT user_id
+          FROM events
+          WHERE received_at < CURRENT_DATE - INTERVAL '${inactiveDays} days'
+            AND user_id NOT IN (
+              SELECT DISTINCT user_id
+              FROM events
+              WHERE received_at >= CURRENT_DATE - INTERVAL '${inactiveDays} days'
+            )
+        `;
+
+        const [activeUsers, churnedUsers] = await Promise.all([
+          db.query(activeUsersQuery),
+          db.query(churnedUsersQuery)
+        ]);
+
+        const totalActive = activeUsers.rows.length;
+        const totalChurned = churnedUsers.rows.length;
+        const churnRate = totalActive > 0 ? (totalChurned / totalActive) * 100 : 0;
+
+        // Get churn trend over time
+        const churnTrendQuery = `
+          WITH daily_active AS (
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(DISTINCT user_id) as active_users
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+          ),
+          daily_churned AS (
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(DISTINCT user_id) as churned_users
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND user_id NOT IN (
+                SELECT DISTINCT user_id
+                FROM events
+                WHERE received_at > DATE(received_at) + INTERVAL '${inactiveDays} days'
+              )
+            GROUP BY DATE(received_at)
+          )
+          SELECT 
+            COALESCE(da.date, dc.date) as date,
+            COALESCE(da.active_users, 0) as active_users,
+            COALESCE(dc.churned_users, 0) as churned_users,
+            CASE 
+              WHEN COALESCE(da.active_users, 0) > 0 
+              THEN ROUND(100.0 * COALESCE(dc.churned_users, 0) / da.active_users, 2)
+              ELSE 0
+            END as churn_rate
+          FROM daily_active da
+          FULL OUTER JOIN daily_churned dc ON da.date = dc.date
+          ORDER BY date DESC
+        `;
+
+        const churnTrend = await db.query(churnTrendQuery);
+
+        return {
+          summary: {
+            total_active_users: totalActive,
+            total_churned_users: totalChurned,
+            churn_rate: parseFloat(churnRate.toFixed(2)),
+            inactive_days_threshold: inactiveDays,
+            analysis_period_days: days,
+          },
+          trend: churnTrend.rows.map(r => ({
+            date: r.date,
+            active_users: parseInt(r.active_users || 0),
+            churned_users: parseInt(r.churned_users || 0),
+            churn_rate: parseFloat(r.churn_rate || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching churn metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch churn metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/cohort-analysis
+   * ✅ NEW: Cohort analysis (install date or campaign-based)
+   * 
+   * Query params:
+   * - type: 'install_date' or 'campaign_id' (default: 'install_date')
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   */
+  router.get('/cohort-analysis', async (req, res) => {
+    try {
+      const cohortType = req.query.type || 'install_date';
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+
+      const data = await getCachedQuery(req, `cohort-analysis:${cohortType}:${startDate || 'all'}:${endDate || 'all'}`, async () => {
+        const dateFilter = startDate && endDate
+          ? `AND ua.install_date >= '${startDate}'::date AND ua.install_date <= '${endDate}'::date`
+          : startDate
+          ? `AND ua.install_date >= '${startDate}'::date`
+          : endDate
+          ? `AND ua.install_date <= '${endDate}'::date`
+          : '';
+
+        // Get cohort data with retention and LTV
+        const cohortQuery = `
+          WITH cohorts AS (
+            SELECT 
+              ${cohortType === 'campaign_id' ? 'ua.campaign_id,' : ''}
+              DATE(ua.install_date) as cohort_date,
+              ua.user_id
+            FROM user_acquisitions ua
+            WHERE 1=1 ${dateFilter}
+          ),
+          user_revenue AS (
+            SELECT 
+              user_id,
+              SUM(CASE WHEN payload->>'revenue_usd' IS NOT NULL 
+                THEN (payload->>'revenue_usd')::numeric ELSE 0 END) as total_revenue
+            FROM events
+            WHERE event_type IN ('ad_revenue', 'purchase_completed')
+            GROUP BY user_id
+          )
+          SELECT 
+            c.cohort_date,
+            ${cohortType === 'campaign_id' ? 'c.campaign_id,' : ''}
+            COUNT(DISTINCT c.user_id) as cohort_size,
+            COUNT(DISTINCT CASE WHEN e.user_id IS NOT NULL THEN c.user_id END) as active_users,
+            COALESCE(SUM(ur.total_revenue), 0) as total_revenue,
+            CASE 
+              WHEN COUNT(DISTINCT c.user_id) > 0 
+              THEN ROUND(100.0 * COUNT(DISTINCT CASE WHEN e.user_id IS NOT NULL THEN c.user_id END) / 
+                    COUNT(DISTINCT c.user_id), 2)
+              ELSE 0
+            END as retention_rate,
+            CASE 
+              WHEN COUNT(DISTINCT c.user_id) > 0 
+              THEN ROUND(COALESCE(SUM(ur.total_revenue), 0) / COUNT(DISTINCT c.user_id), 2)
+              ELSE 0
+            END as ltv
+          FROM cohorts c
+          LEFT JOIN events e ON c.user_id = e.user_id 
+            AND e.received_at >= c.cohort_date
+            AND e.event_type IN ('app_launched', 'game_started')
+          LEFT JOIN user_revenue ur ON c.user_id = ur.user_id
+          GROUP BY c.cohort_date${cohortType === 'campaign_id' ? ', c.campaign_id' : ''}
+          ORDER BY c.cohort_date DESC${cohortType === 'campaign_id' ? ', c.campaign_id' : ''}
+        `;
+
+        const result = await db.query(cohortQuery);
+
+        return {
+          cohort_type: cohortType,
+          cohorts: result.rows.map(r => ({
+            cohort_date: r.cohort_date,
+            ...(cohortType === 'campaign_id' && r.campaign_id ? { campaign_id: r.campaign_id } : {}),
+            cohort_size: parseInt(r.cohort_size || 0),
+            active_users: parseInt(r.active_users || 0),
+            retention_rate: parseFloat(r.retention_rate || 0),
+            total_revenue: parseFloat(r.total_revenue || 0),
+            ltv: parseFloat(r.ltv || 0),
+          })),
+          summary: {
+            total_cohorts: result.rows.length,
+            total_users: result.rows.reduce((sum, r) => sum + parseInt(r.cohort_size || 0), 0),
+            avg_retention: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.retention_rate || 0), 0) / result.rows.length
+              : 0,
+            avg_ltv: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.ltv || 0), 0) / result.rows.length
+              : 0,
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching cohort analysis:', error);
+      res.status(500).json({ error: 'Failed to fetch cohort analysis' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/arpu
+   * ✅ NEW: ARPU (Average Revenue Per User) and ARPPU (Average Revenue Per Paying User)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   */
+  router.get('/arpu', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+
+      const data = await getCachedQuery(req, `arpu:${days}:${startDate || 'all'}:${endDate || 'all'}`, async () => {
+        const dateFilter = startDate && endDate
+          ? `AND received_at >= '${startDate}'::date AND received_at <= '${endDate}'::date`
+          : startDate
+          ? `AND received_at >= '${startDate}'::date`
+          : endDate
+          ? `AND received_at <= '${endDate}'::date`
+          : `AND received_at >= CURRENT_DATE - INTERVAL '${days} days'`;
+
+        // Calculate ARPU and ARPPU
+        const arpuQuery = `
+          WITH user_revenue AS (
+            SELECT 
+              user_id,
+              SUM(CASE WHEN payload->>'revenue_usd' IS NOT NULL 
+                THEN (payload->>'revenue_usd')::numeric ELSE 0 END) as total_revenue
+            FROM events
+            WHERE event_type IN ('ad_revenue', 'purchase_completed')
+              ${dateFilter}
+            GROUP BY user_id
+          ),
+          all_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE 1=1 ${dateFilter}
+          ),
+          paying_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_type = 'purchase_completed'
+              ${dateFilter}
+          )
+          SELECT 
+            COUNT(DISTINCT au.user_id) as total_users,
+            COUNT(DISTINCT pu.user_id) as paying_users,
+            COALESCE(SUM(ur.total_revenue), 0) as total_revenue,
+            CASE 
+              WHEN COUNT(DISTINCT au.user_id) > 0 
+              THEN ROUND(COALESCE(SUM(ur.total_revenue), 0) / COUNT(DISTINCT au.user_id), 2)
+              ELSE 0
+            END as arpu,
+            CASE 
+              WHEN COUNT(DISTINCT pu.user_id) > 0 
+              THEN ROUND(COALESCE(SUM(ur.total_revenue), 0) / COUNT(DISTINCT pu.user_id), 2)
+              ELSE 0
+            END as arppu
+          FROM all_users au
+          LEFT JOIN user_revenue ur ON au.user_id = ur.user_id
+          LEFT JOIN paying_users pu ON au.user_id = pu.user_id
+        `;
+
+        const result = await db.query(arpuQuery);
+        const row = result.rows[0];
+
+        // Get daily trend
+        const dailyTrendQuery = `
+          WITH daily_revenue AS (
+            SELECT 
+              DATE(received_at) as date,
+              user_id,
+              SUM(CASE WHEN payload->>'revenue_usd' IS NOT NULL 
+                THEN (payload->>'revenue_usd')::numeric ELSE 0 END) as daily_revenue
+            FROM events
+            WHERE event_type IN ('ad_revenue', 'purchase_completed')
+              ${dateFilter}
+            GROUP BY DATE(received_at), user_id
+          ),
+          daily_users AS (
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(DISTINCT user_id) as total_users
+            FROM events
+            WHERE 1=1 ${dateFilter}
+            GROUP BY DATE(received_at)
+          ),
+          daily_paying AS (
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(DISTINCT user_id) as paying_users
+            FROM events
+            WHERE event_type = 'purchase_completed'
+              ${dateFilter}
+            GROUP BY DATE(received_at)
+          )
+          SELECT 
+            COALESCE(du.date, dp.date) as date,
+            COALESCE(du.total_users, 0) as total_users,
+            COALESCE(dp.paying_users, 0) as paying_users,
+            COALESCE(SUM(dr.daily_revenue), 0) as total_revenue,
+            CASE 
+              WHEN COALESCE(du.total_users, 0) > 0 
+              THEN ROUND(COALESCE(SUM(dr.daily_revenue), 0) / du.total_users, 2)
+              ELSE 0
+            END as arpu,
+            CASE 
+              WHEN COALESCE(dp.paying_users, 0) > 0 
+              THEN ROUND(COALESCE(SUM(dr.daily_revenue), 0) / dp.paying_users, 2)
+              ELSE 0
+            END as arppu
+          FROM daily_users du
+          FULL OUTER JOIN daily_paying dp ON du.date = dp.date
+          LEFT JOIN daily_revenue dr ON COALESCE(du.date, dp.date) = dr.date
+          GROUP BY COALESCE(du.date, dp.date), du.total_users, dp.paying_users
+          ORDER BY date DESC
+        `;
+
+        const dailyTrend = await db.query(dailyTrendQuery);
+
+        return {
+          summary: {
+            total_users: parseInt(row.total_users || 0),
+            paying_users: parseInt(row.paying_users || 0),
+            total_revenue: parseFloat(row.total_revenue || 0),
+            arpu: parseFloat(row.arpu || 0),
+            arppu: parseFloat(row.arppu || 0),
+            conversion_rate: row.total_users > 0
+              ? parseFloat(((row.paying_users / row.total_users) * 100).toFixed(2))
+              : 0,
+          },
+          daily_trend: dailyTrend.rows.map(r => ({
+            date: r.date,
+            total_users: parseInt(r.total_users || 0),
+            paying_users: parseInt(r.paying_users || 0),
+            total_revenue: parseFloat(r.total_revenue || 0),
+            arpu: parseFloat(r.arpu || 0),
+            arppu: parseFloat(r.arppu || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching ARPU metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch ARPU metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/ltv
+   * ✅ NEW: Lifetime Value (LTV) by cohort
+   * 
+   * Query params:
+   * - cohort: Cohort date (YYYY-MM-DD) or 'all' for all cohorts
+   * - days: Days since install to calculate LTV (default: 30)
+   */
+  router.get('/ltv', async (req, res) => {
+    try {
+      const cohort = req.query.cohort;
+      const days = parseInt(req.query.days) || 30;
+
+      const data = await getCachedQuery(req, `ltv:${cohort || 'all'}:${days}`, async () => {
+        const cohortFilter = cohort && cohort !== 'all'
+          ? `AND DATE(ua.install_date) = '${cohort}'::date`
+          : '';
+
+        // Calculate LTV per cohort
+        const ltvQuery = `
+          WITH user_revenue AS (
+            SELECT 
+              user_id,
+              SUM(CASE WHEN payload->>'revenue_usd' IS NOT NULL 
+                THEN (payload->>'revenue_usd')::numeric ELSE 0 END) as total_revenue
+            FROM events
+            WHERE event_type IN ('ad_revenue', 'purchase_completed')
+            GROUP BY user_id
+          ),
+          cohorts AS (
+            SELECT 
+              ua.user_id,
+              DATE(ua.install_date) as cohort_date,
+              ua.campaign_id
+            FROM user_acquisitions ua
+            WHERE 1=1 ${cohortFilter}
+          )
+          SELECT 
+            c.cohort_date,
+            c.campaign_id,
+            COUNT(DISTINCT c.user_id) as cohort_size,
+            COALESCE(SUM(ur.total_revenue), 0) as total_revenue,
+            CASE 
+              WHEN COUNT(DISTINCT c.user_id) > 0 
+              THEN ROUND(COALESCE(SUM(ur.total_revenue), 0) / COUNT(DISTINCT c.user_id), 2)
+              ELSE 0
+            END as ltv,
+            COUNT(DISTINCT CASE WHEN ur.total_revenue > 0 THEN c.user_id END) as paying_users,
+            CASE 
+              WHEN COUNT(DISTINCT c.user_id) > 0 
+              THEN ROUND(100.0 * COUNT(DISTINCT CASE WHEN ur.total_revenue > 0 THEN c.user_id END) / 
+                    COUNT(DISTINCT c.user_id), 2)
+              ELSE 0
+            END as payer_rate
+          FROM cohorts c
+          LEFT JOIN user_revenue ur ON c.user_id = ur.user_id
+          GROUP BY c.cohort_date, c.campaign_id
+          ORDER BY c.cohort_date DESC, c.campaign_id
+        `;
+
+        const result = await db.query(ltvQuery);
+
+        return {
+          cohorts: result.rows.map(r => ({
+            cohort_date: r.cohort_date,
+            campaign_id: r.campaign_id || null,
+            cohort_size: parseInt(r.cohort_size || 0),
+            total_revenue: parseFloat(r.total_revenue || 0),
+            ltv: parseFloat(r.ltv || 0),
+            paying_users: parseInt(r.paying_users || 0),
+            payer_rate: parseFloat(r.payer_rate || 0),
+          })),
+          summary: {
+            total_cohorts: result.rows.length,
+            total_users: result.rows.reduce((sum, r) => sum + parseInt(r.cohort_size || 0), 0),
+            avg_ltv: result.rows.length > 0
+              ? result.rows.reduce((sum, r) => sum + parseFloat(r.ltv || 0), 0) / result.rows.length
+              : 0,
+            total_revenue: result.rows.reduce((sum, r) => sum + parseFloat(r.total_revenue || 0), 0),
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching LTV metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch LTV metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/revenue-breakdown
+   * ✅ NEW: Revenue breakdown by source (Ads vs IAP)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   * - campaign: Filter by campaign_id
+   */
+  router.get('/revenue-breakdown', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const campaignId = req.query.campaign;
+
+      const data = await getCachedQuery(req, `revenue-breakdown:${days}:${startDate || 'all'}:${endDate || 'all'}:${campaignId || 'all'}`, async () => {
+        const dateFilter = startDate && endDate
+          ? `AND e.received_at >= '${startDate}'::date AND e.received_at <= '${endDate}'::date`
+          : startDate
+          ? `AND e.received_at >= '${startDate}'::date`
+          : endDate
+          ? `AND e.received_at <= '${endDate}'::date`
+          : `AND e.received_at >= CURRENT_DATE - INTERVAL '${days} days'`;
+
+        const campaignFilter = campaignId
+          ? `AND (e.campaign_id = '${campaignId}' OR ua.campaign_id = '${campaignId}')`
+          : '';
+
+        // Revenue breakdown by source
+        const revenueQuery = `
+          WITH ad_revenue AS (
+            SELECT 
+              DATE(e.received_at) as date,
+              SUM((e.payload->>'revenue_usd')::numeric) as ad_revenue
+            FROM events e
+            LEFT JOIN user_acquisitions ua ON e.user_id = ua.user_id
+            WHERE e.event_type = 'ad_revenue'
+              ${dateFilter}
+              ${campaignFilter}
+            GROUP BY DATE(e.received_at)
+          ),
+          iap_revenue AS (
+            SELECT 
+              DATE(e.received_at) as date,
+              SUM((e.payload->>'revenue_usd')::numeric) as iap_revenue
+            FROM events e
+            LEFT JOIN user_acquisitions ua ON e.user_id = ua.user_id
+            WHERE e.event_type = 'purchase_completed'
+              ${dateFilter}
+              ${campaignFilter}
+            GROUP BY DATE(e.received_at)
+          )
+          SELECT 
+            COALESCE(ar.date, ir.date) as date,
+            COALESCE(ar.ad_revenue, 0) as ad_revenue,
+            COALESCE(ir.iap_revenue, 0) as iap_revenue,
+            COALESCE(ar.ad_revenue, 0) + COALESCE(ir.iap_revenue, 0) as total_revenue
+          FROM ad_revenue ar
+          FULL OUTER JOIN iap_revenue ir ON ar.date = ir.date
+          ORDER BY date DESC
+        `;
+
+        const result = await db.query(revenueQuery);
+
+        // Calculate totals
+        const totals = result.rows.reduce((acc, r) => ({
+          ad_revenue: acc.ad_revenue + parseFloat(r.ad_revenue || 0),
+          iap_revenue: acc.iap_revenue + parseFloat(r.iap_revenue || 0),
+          total_revenue: acc.total_revenue + parseFloat(r.total_revenue || 0),
+        }), { ad_revenue: 0, iap_revenue: 0, total_revenue: 0 });
+
+        return {
+          summary: {
+            total_ad_revenue: parseFloat(totals.ad_revenue.toFixed(2)),
+            total_iap_revenue: parseFloat(totals.iap_revenue.toFixed(2)),
+            total_revenue: parseFloat(totals.total_revenue.toFixed(2)),
+            ad_revenue_percentage: totals.total_revenue > 0
+              ? parseFloat(((totals.ad_revenue / totals.total_revenue) * 100).toFixed(2))
+              : 0,
+            iap_revenue_percentage: totals.total_revenue > 0
+              ? parseFloat(((totals.iap_revenue / totals.total_revenue) * 100).toFixed(2))
+              : 0,
+          },
+          daily_breakdown: result.rows.map(r => ({
+            date: r.date,
+            ad_revenue: parseFloat(r.ad_revenue || 0),
+            iap_revenue: parseFloat(r.iap_revenue || 0),
+            total_revenue: parseFloat(r.total_revenue || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching revenue breakdown:', error);
+      res.status(500).json({ error: 'Failed to fetch revenue breakdown' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/conversion-rate
+   * ✅ NEW: Free to paying user conversion rate
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   */
+  router.get('/conversion-rate', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+
+      const data = await getCachedQuery(req, `conversion-rate:${days}`, async () => {
+        // Get all users and paying users
+        const conversionQuery = `
+          WITH all_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+          ),
+          paying_users AS (
+            SELECT DISTINCT user_id
+            FROM events
+            WHERE event_type = 'purchase_completed'
+              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
+          )
+          SELECT 
+            COUNT(DISTINCT au.user_id) as total_users,
+            COUNT(DISTINCT pu.user_id) as paying_users,
+            CASE 
+              WHEN COUNT(DISTINCT au.user_id) > 0 
+              THEN ROUND(100.0 * COUNT(DISTINCT pu.user_id) / COUNT(DISTINCT au.user_id), 2)
+              ELSE 0
+            END as conversion_rate
+          FROM all_users au
+          LEFT JOIN paying_users pu ON au.user_id = pu.user_id
+        `;
+
+        const result = await db.query(conversionQuery);
+        const row = result.rows[0];
+
+        return {
+          summary: {
+            total_users: parseInt(row.total_users || 0),
+            paying_users: parseInt(row.paying_users || 0),
+            free_users: parseInt(row.total_users || 0) - parseInt(row.paying_users || 0),
+            conversion_rate: parseFloat(row.conversion_rate || 0),
+          },
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching conversion rate:', error);
+      res.status(500).json({ error: 'Failed to fetch conversion rate' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/mau
+   * ✅ NEW: Monthly Active Users (MAU)
+   * 
+   * Query params:
+   * - month: Month to analyze (YYYY-MM format, default: current month)
+   */
+  router.get('/mau', async (req, res) => {
+    try {
+      const month = req.query.month || new Date().toISOString().slice(0, 7);
+
+      const data = await getCachedQuery(req, `mau:${month}`, async () => {
+        // Get MAU for the month
+        const mauQuery = `
+          SELECT COUNT(DISTINCT user_id) as mau
+          FROM events
+          WHERE DATE_TRUNC('month', received_at) = '${month}-01'::date
+        `;
+
+        const result = await db.query(mauQuery);
+
+        // Get daily breakdown
+        const dailyQuery = `
+          SELECT 
+            DATE(received_at) as date,
+            COUNT(DISTINCT user_id) as daily_active_users
+          FROM events
+          WHERE DATE_TRUNC('month', received_at) = '${month}-01'::date
+          GROUP BY DATE(received_at)
+          ORDER BY date
+        `;
+
+        const daily = await db.query(dailyQuery);
+
+        return {
+          month: month,
+          mau: parseInt(result.rows[0].mau || 0),
+          daily_breakdown: daily.rows.map(r => ({
+            date: r.date,
+            daily_active_users: parseInt(r.daily_active_users || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching MAU:', error);
+      res.status(500).json({ error: 'Failed to fetch MAU' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/stickiness
+   * ✅ NEW: Stickiness rate (DAU/MAU ratio)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   */
+  router.get('/stickiness', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+
+      const data = await getCachedQuery(req, `stickiness:${days}`, async () => {
+        // Calculate DAU and MAU
+        const stickinessQuery = `
+          WITH dau_data AS (
+            SELECT 
+              DATE(received_at) as date,
+              COUNT(DISTINCT user_id) as dau
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE(received_at)
+          ),
+          mau_data AS (
+            SELECT 
+              DATE_TRUNC('month', received_at) as month,
+              COUNT(DISTINCT user_id) as mau
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+            GROUP BY DATE_TRUNC('month', received_at)
+          )
+          SELECT 
+            d.date,
+            d.dau,
+            m.mau,
+            CASE 
+              WHEN m.mau > 0 
+              THEN ROUND(100.0 * d.dau / m.mau, 2)
+              ELSE 0
+            END as stickiness_rate
+          FROM dau_data d
+          LEFT JOIN mau_data m ON DATE_TRUNC('month', d.date) = m.month
+          ORDER BY d.date DESC
+        `;
+
+        const result = await db.query(stickinessQuery);
+
+        const avgStickiness = result.rows.length > 0
+          ? result.rows.reduce((sum, r) => sum + parseFloat(r.stickiness_rate || 0), 0) / result.rows.length
+          : 0;
+
+        return {
+          summary: {
+            avg_stickiness_rate: parseFloat(avgStickiness.toFixed(2)),
+            analysis_period_days: days,
+          },
+          daily_breakdown: result.rows.map(r => ({
+            date: r.date,
+            dau: parseInt(r.dau || 0),
+            mau: parseInt(r.mau || 0),
+            stickiness_rate: parseFloat(r.stickiness_rate || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching stickiness:', error);
+      res.status(500).json({ error: 'Failed to fetch stickiness metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/session-metrics
+   * ✅ NEW: Session metrics (frequency, length, count)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 30)
+   */
+  router.get('/session-metrics', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+
+      const data = await getCachedQuery(req, `session-metrics:${days}`, async () => {
+        // Calculate session metrics
+        const sessionQuery = `
+          WITH sessions AS (
+            SELECT 
+              user_id,
+              payload->>'session_id' as session_id,
+              MIN(received_at) as session_start,
+              MAX(received_at) as session_end,
+              EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) as duration_seconds
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND payload->>'session_id' IS NOT NULL
+            GROUP BY user_id, payload->>'session_id'
+            HAVING EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) > 0
+              AND EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) <= 3600
+          ),
+          user_sessions AS (
+            SELECT 
+              user_id,
+              COUNT(DISTINCT session_id) as session_count,
+              AVG(duration_seconds) as avg_session_duration,
+              SUM(duration_seconds) as total_session_time
+            FROM sessions
+            GROUP BY user_id
+          )
+          SELECT 
+            COUNT(DISTINCT user_id) as total_users,
+            COUNT(DISTINCT session_id) as total_sessions,
+            ROUND(AVG(session_count), 2) as avg_sessions_per_user,
+            ROUND(AVG(avg_session_duration), 0) as avg_session_duration_seconds,
+            ROUND(AVG(total_session_time), 0) as avg_total_session_time_per_user
+          FROM sessions s
+          JOIN user_sessions us ON s.user_id = us.user_id
+        `;
+
+        const result = await db.query(sessionQuery);
+        const row = result.rows[0];
+
+        // Get daily session trends
+        const dailyQuery = `
+          WITH daily_sessions AS (
+            SELECT 
+              DATE(received_at) as date,
+              user_id,
+              payload->>'session_id' as session_id,
+              MIN(received_at) as session_start,
+              MAX(received_at) as session_end,
+              EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) as duration_seconds
+            FROM events
+            WHERE received_at >= CURRENT_DATE - INTERVAL '${days} days'
+              AND payload->>'session_id' IS NOT NULL
+            GROUP BY DATE(received_at), user_id, payload->>'session_id'
+            HAVING EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) > 0
+              AND EXTRACT(EPOCH FROM (MAX(received_at) - MIN(received_at))) <= 3600
+          )
+          SELECT 
+            date,
+            COUNT(DISTINCT user_id) as active_users,
+            COUNT(DISTINCT session_id) as total_sessions,
+            ROUND(AVG(duration_seconds), 0) as avg_session_duration_seconds
+          FROM daily_sessions
+          GROUP BY date
+          ORDER BY date DESC
+        `;
+
+        const daily = await db.query(dailyQuery);
+
+        return {
+          summary: {
+            total_users: parseInt(row.total_users || 0),
+            total_sessions: parseInt(row.total_sessions || 0),
+            avg_sessions_per_user: parseFloat(row.avg_sessions_per_user || 0),
+            avg_session_duration_seconds: parseInt(row.avg_session_duration_seconds || 0),
+            avg_total_session_time_per_user: parseInt(row.avg_total_session_time_per_user || 0),
+          },
+          daily_trend: daily.rows.map(r => ({
+            date: r.date,
+            active_users: parseInt(r.active_users || 0),
+            total_sessions: parseInt(r.total_sessions || 0),
+            avg_session_duration_seconds: parseInt(r.avg_session_duration_seconds || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching session metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch session metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/performance
+   * ✅ NEW: Performance metrics (FPS, load times, memory)
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 7)
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   * - device: Filter by device model
+   */
+  router.get('/performance', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 7;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const device = req.query.device;
+
+      const data = await getCachedQuery(req, `performance:${days}:${startDate || 'all'}:${endDate || 'all'}:${device || 'all'}`, async () => {
+        const dateFilter = startDate && endDate
+          ? `AND timestamp >= '${startDate}'::date AND timestamp <= '${endDate}'::date`
+          : startDate
+          ? `AND timestamp >= '${startDate}'::date`
+          : endDate
+          ? `AND timestamp <= '${endDate}'::date`
+          : `AND timestamp >= CURRENT_DATE - INTERVAL '${days} days'`;
+
+        const deviceFilter = device ? `AND device_model = '${device}'` : '';
+
+        // Calculate average FPS, load times, memory
+        const performanceQuery = `
+          SELECT 
+            COUNT(*) as sample_count,
+            ROUND(AVG(fps_average), 2) as avg_fps,
+            ROUND(MIN(fps_min), 2) as min_fps,
+            ROUND(MAX(fps_max), 2) as max_fps,
+            ROUND(AVG(app_load_time_ms), 0) as avg_app_load_time_ms,
+            ROUND(AVG(game_load_time_ms), 0) as avg_game_load_time_ms,
+            ROUND(AVG(memory_mb), 2) as avg_memory_mb,
+            ROUND(AVG(frame_time_ms), 2) as avg_frame_time_ms
+          FROM performance_metrics
+          WHERE 1=1 ${dateFilter} ${deviceFilter}
+        `;
+
+        const result = await db.query(performanceQuery);
+        const row = result.rows[0];
+
+        // Get daily trends
+        const dailyQuery = `
+          SELECT 
+            DATE(timestamp) as date,
+            COUNT(*) as sample_count,
+            ROUND(AVG(fps_average), 2) as avg_fps,
+            ROUND(AVG(app_load_time_ms), 0) as avg_app_load_time_ms,
+            ROUND(AVG(game_load_time_ms), 0) as avg_game_load_time_ms
+          FROM performance_metrics
+          WHERE 1=1 ${dateFilter} ${deviceFilter}
+          GROUP BY DATE(timestamp)
+          ORDER BY date DESC
+        `;
+
+        const daily = await db.query(dailyQuery);
+
+        // Get device breakdown
+        const deviceQuery = `
+          SELECT 
+            device_model,
+            COUNT(*) as sample_count,
+            ROUND(AVG(fps_average), 2) as avg_fps,
+            ROUND(AVG(app_load_time_ms), 0) as avg_app_load_time_ms
+          FROM performance_metrics
+          WHERE 1=1 ${dateFilter}
+            AND device_model IS NOT NULL
+          GROUP BY device_model
+          ORDER BY sample_count DESC
+          LIMIT 10
+        `;
+
+        const devices = await db.query(deviceQuery);
+
+        return {
+          summary: {
+            sample_count: parseInt(row.sample_count || 0),
+            avg_fps: parseFloat(row.avg_fps || 0),
+            min_fps: parseFloat(row.min_fps || 0),
+            max_fps: parseFloat(row.max_fps || 0),
+            avg_app_load_time_ms: parseInt(row.avg_app_load_time_ms || 0),
+            avg_game_load_time_ms: parseInt(row.avg_game_load_time_ms || 0),
+            avg_memory_mb: parseFloat(row.avg_memory_mb || 0),
+            avg_frame_time_ms: parseFloat(row.avg_frame_time_ms || 0),
+          },
+          daily_trend: daily.rows.map(r => ({
+            date: r.date,
+            sample_count: parseInt(r.sample_count || 0),
+            avg_fps: parseFloat(r.avg_fps || 0),
+            avg_app_load_time_ms: parseInt(r.avg_app_load_time_ms || 0),
+            avg_game_load_time_ms: parseInt(r.avg_game_load_time_ms || 0),
+          })),
+          device_breakdown: devices.rows.map(r => ({
+            device_model: r.device_model,
+            sample_count: parseInt(r.sample_count || 0),
+            avg_fps: parseFloat(r.avg_fps || 0),
+            avg_app_load_time_ms: parseInt(r.avg_app_load_time_ms || 0),
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching performance metrics:', error);
+      res.status(500).json({ error: 'Failed to fetch performance metrics' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/crashes
+   * ✅ NEW: Crash and error logs
+   * 
+   * Query params:
+   * - days: Number of days to analyze (default: 7)
+   * - startDate: Start date (YYYY-MM-DD)
+   * - endDate: End date (YYYY-MM-DD)
+   * - crashType: Filter by crash type ('fatal', 'error', 'exception')
+   * - fatal: Filter by fatal crashes only (true/false)
+   */
+  router.get('/crashes', async (req, res) => {
+    try {
+      const days = parseInt(req.query.days) || 7;
+      const startDate = req.query.startDate;
+      const endDate = req.query.endDate;
+      const crashType = req.query.crashType;
+      const fatalOnly = req.query.fatal === 'true';
+
+      const data = await getCachedQuery(req, `crashes:${days}:${startDate || 'all'}:${endDate || 'all'}:${crashType || 'all'}:${fatalOnly}`, async () => {
+        const dateFilter = startDate && endDate
+          ? `AND timestamp >= '${startDate}'::date AND timestamp <= '${endDate}'::date`
+          : startDate
+          ? `AND timestamp >= '${startDate}'::date`
+          : endDate
+          ? `AND timestamp <= '${endDate}'::date`
+          : `AND timestamp >= CURRENT_DATE - INTERVAL '${days} days'`;
+
+        const typeFilter = crashType ? `AND crash_type = '${crashType}'` : '';
+        const fatalFilter = fatalOnly ? `AND fatal = true` : '';
+
+        // Calculate crash statistics
+        const crashQuery = `
+          SELECT 
+            COUNT(*) as total_crashes,
+            COUNT(CASE WHEN fatal = true THEN 1 END) as fatal_crashes,
+            COUNT(CASE WHEN fatal = false THEN 1 END) as non_fatal_errors,
+            COUNT(DISTINCT user_id) as affected_users,
+            COUNT(DISTINCT crash_type) as unique_crash_types
+          FROM crash_logs
+          WHERE 1=1 ${dateFilter} ${typeFilter} ${fatalFilter}
+        `;
+
+        const result = await db.query(crashQuery);
+        const row = result.rows[0];
+
+        // Calculate crash rate (crashes per 1000 users)
+        const totalUsersQuery = `
+          SELECT COUNT(DISTINCT user_id) as total_users
+          FROM events
+          WHERE 1=1 ${dateFilter}
+        `;
+        const totalUsersResult = await db.query(totalUsersQuery);
+        const totalUsers = parseInt(totalUsersResult.rows[0]?.total_users || 0);
+        const crashRate = totalUsers > 0 
+          ? ((parseInt(row.total_crashes || 0) / totalUsers) * 1000).toFixed(2)
+          : 0;
+
+        // Get crash breakdown by type
+        const typeBreakdownQuery = `
+          SELECT 
+            crash_type,
+            COUNT(*) as count,
+            COUNT(CASE WHEN fatal = true THEN 1 END) as fatal_count
+          FROM crash_logs
+          WHERE 1=1 ${dateFilter} ${fatalFilter}
+          GROUP BY crash_type
+          ORDER BY count DESC
+        `;
+
+        const typeBreakdown = await db.query(typeBreakdownQuery);
+
+        // Get crash breakdown by context
+        const contextBreakdownQuery = `
+          SELECT 
+            context,
+            COUNT(*) as count
+          FROM crash_logs
+          WHERE 1=1 ${dateFilter} ${fatalFilter}
+            AND context IS NOT NULL
+          GROUP BY context
+          ORDER BY count DESC
+          LIMIT 10
+        `;
+
+        const contextBreakdown = await db.query(contextBreakdownQuery);
+
+        // Get daily crash trend
+        const dailyQuery = `
+          SELECT 
+            DATE(timestamp) as date,
+            COUNT(*) as total_crashes,
+            COUNT(CASE WHEN fatal = true THEN 1 END) as fatal_crashes
+          FROM crash_logs
+          WHERE 1=1 ${dateFilter} ${typeFilter} ${fatalFilter}
+          GROUP BY DATE(timestamp)
+          ORDER BY date DESC
+        `;
+
+        const daily = await db.query(dailyQuery);
+
+        // Get recent crashes (last 20)
+        const recentQuery = `
+          SELECT 
+            id,
+            user_id,
+            timestamp,
+            crash_type,
+            crash_message,
+            context,
+            device_model,
+            os_version,
+            fatal
+          FROM crash_logs
+          WHERE 1=1 ${dateFilter} ${typeFilter} ${fatalFilter}
+          ORDER BY timestamp DESC
+          LIMIT 20
+        `;
+
+        const recent = await db.query(recentQuery);
+
+        return {
+          summary: {
+            total_crashes: parseInt(row.total_crashes || 0),
+            fatal_crashes: parseInt(row.fatal_crashes || 0),
+            non_fatal_errors: parseInt(row.non_fatal_errors || 0),
+            affected_users: parseInt(row.affected_users || 0),
+            unique_crash_types: parseInt(row.unique_crash_types || 0),
+            crash_rate_per_1000_users: parseFloat(crashRate),
+          },
+          type_breakdown: typeBreakdown.rows.map(r => ({
+            crash_type: r.crash_type,
+            count: parseInt(r.count || 0),
+            fatal_count: parseInt(r.fatal_count || 0),
+          })),
+          context_breakdown: contextBreakdown.rows.map(r => ({
+            context: r.context,
+            count: parseInt(r.count || 0),
+          })),
+          daily_trend: daily.rows.map(r => ({
+            date: r.date,
+            total_crashes: parseInt(r.total_crashes || 0),
+            fatal_crashes: parseInt(r.fatal_crashes || 0),
+          })),
+          recent_crashes: recent.rows.map(r => ({
+            id: r.id,
+            user_id: r.user_id?.substring(0, 8) + '...',
+            timestamp: r.timestamp,
+            crash_type: r.crash_type,
+            crash_message: r.crash_message?.substring(0, 100),
+            context: r.context,
+            device_model: r.device_model,
+            os_version: r.os_version,
+            fatal: r.fatal,
+          })),
+          last_updated: new Date().toISOString()
+        };
+      });
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching crash logs:', error);
+      res.status(500).json({ error: 'Failed to fetch crash logs' });
+    }
+  });
+
   /**
    * GET /api/dashboard/health
    * Check dashboard API health

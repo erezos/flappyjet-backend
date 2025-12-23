@@ -105,6 +105,27 @@ const userInstalledSchema = Joi.object({
   nickname: Joi.string().max(50).optional(), // Player nickname (1-50 chars)
 }).unknown(true); // Allow additional fields
 
+// 7. user_acquired - User acquisition with campaign attribution (NEW for ROI analysis)
+const userAcquiredSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('user_acquired').required(),
+  install_date: Joi.string().isoDate().required(),
+  
+  // Campaign Attribution Fields
+  source: Joi.string().max(50).optional(),              // "google", "organic", "referral"
+  medium: Joi.string().max(50).optional(),             // "cpc", "organic", "referral"
+  campaign: Joi.string().max(255).optional(),          // Campaign name
+  campaign_id: Joi.string().max(255).optional(),        // Google Ads campaign ID
+  ad_group: Joi.string().max(255).optional(),           // Ad group name
+  ad_group_id: Joi.string().max(255).optional(),        // Ad group ID
+  keyword: Joi.string().max(255).optional(),             // Search keyword
+  gclid: Joi.string().max(255).optional(),              // Google Click ID
+  creative: Joi.string().max(255).optional(),           // Ad creative identifier
+  
+  // Platform (already in baseFields, but ensure it's required)
+  platform: Joi.string().valid('ios', 'android').required(),
+}).unknown(true); // Allow additional fields for flexibility
+
 // ============================================================================
 // GAME SESSION EVENTS (8 events)
 // ============================================================================
@@ -959,6 +980,71 @@ const powerupExpiredSchema = Joi.object({
   duration_seconds: Joi.number().integer().min(0).optional(),
 });
 
+// 52. performance_metrics - Performance metrics (FPS, load times, memory)
+const performanceMetricsSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('performance_metrics').required(),
+  fps_average: Joi.number().min(0).max(120).optional(),
+  fps_min: Joi.number().min(0).max(120).optional(),
+  fps_max: Joi.number().min(0).max(120).optional(),
+  fps_current: Joi.number().min(0).max(120).optional(),
+  frame_time_ms: Joi.number().min(0).optional(),
+  device_model: Joi.string().max(255).optional(),
+  os_version: Joi.string().max(100).optional(),
+}).unknown(true);
+
+// 53. app_load_time - App initialization time
+const appLoadTimeSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('app_load_time').required(),
+  load_time_ms: Joi.number().integer().min(0).required(),
+  device_model: Joi.string().max(255).optional(),
+  os_version: Joi.string().max(100).optional(),
+}).unknown(true);
+
+// 54. game_load_time - Game scene load time
+const gameLoadTimeSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('game_load_time').required(),
+  load_time_ms: Joi.number().integer().min(0).required(),
+  device_model: Joi.string().max(255).optional(),
+  os_version: Joi.string().max(100).optional(),
+}).unknown(true);
+
+// 55. memory_usage - Memory usage tracking
+const memoryUsageSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('memory_usage').required(),
+  memory_mb: Joi.number().min(0).optional(),
+  device_model: Joi.string().max(255).optional(),
+}).unknown(true);
+
+// 56. app_crashed - Fatal crash event
+const appCrashedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('app_crashed').required(),
+  crash_type: Joi.string().valid('fatal', 'error', 'exception', 'crash').required(),
+  crash_message: Joi.string().required(),
+  stack_trace: Joi.string().optional(),
+  context: Joi.string().max(255).optional(),
+  device_model: Joi.string().max(255).optional(),
+  os_version: Joi.string().max(100).optional(),
+  fatal: Joi.boolean().default(true),
+}).unknown(true);
+
+// 57. app_error - Non-fatal error event
+const appErrorSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('app_error').required(),
+  error_type: Joi.string().required(),
+  error_message: Joi.string().required(),
+  stack_trace: Joi.string().optional(),
+  context: Joi.string().max(255).optional(),
+  device_model: Joi.string().max(255).optional(),
+  os_version: Joi.string().max(100).optional(),
+  fatal: Joi.boolean().default(false),
+}).unknown(true);
+
 // ============================================================================
 // SCHEMA MAP (for quick lookup by event_type)
 // ============================================================================
@@ -972,6 +1058,7 @@ const schemaMap = {
   nickname_changed: nicknameChangedSchema, // ✅ NEW: Nickname updates (updates users table)
   app_uninstalled: appUninstalledSchema,
   user_installed: userInstalledSchema, // ✅ NEW: Add user_installed event
+  user_acquired: userAcquiredSchema, // ✅ NEW: Add user_acquired event (campaign attribution)
   
   // Game Session
   game_started: gameStartedSchema,
@@ -1120,6 +1207,7 @@ module.exports = {
   nicknameChangedSchema, // ✅ NEW: Nickname change event
   appUninstalledSchema,
   userInstalledSchema, // ✅ NEW: Export user_installed schema
+  userAcquiredSchema, // ✅ NEW: Export user_acquired schema (campaign attribution)
   gameStartedSchema,
   gameEndedSchema,
   gamePausedSchema,
@@ -1191,6 +1279,12 @@ module.exports = {
   // ⚡ Powerup Events
   powerupActivatedSchema,
   powerupExpiredSchema,
+  performanceMetricsSchema,
+  appLoadTimeSchema,
+  gameLoadTimeSchema,
+  memoryUsageSchema,
+  appCrashedSchema,
+  appErrorSchema,
   
   // Schema map and validation
   schemaMap,

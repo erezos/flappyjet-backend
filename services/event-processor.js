@@ -159,6 +159,25 @@ class EventProcessor {
             await this._updateUserNickname(event.user_id, event.nickname);
           }
           break;
+        
+        case 'user_acquired':
+          // ✅ NEW: Store campaign attribution data in user_acquisitions table
+          await this._storeUserAcquisition(event);
+          break;
+        
+        case 'performance_metrics':
+        case 'app_load_time':
+        case 'game_load_time':
+        case 'memory_usage':
+          // ✅ NEW: Store performance metrics
+          await this._storePerformanceMetric(event);
+          break;
+        
+        case 'app_crashed':
+        case 'app_error':
+          // ✅ NEW: Store crash/error logs
+          await this._storeCrashLog(event);
+          break;
       }
     } catch (error) {
       // Don't fail the event processing if special handling fails

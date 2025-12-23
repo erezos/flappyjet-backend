@@ -27,7 +27,19 @@ const MIGRATIONS = [
   '001_events_table.sql',
   '002_event_leaderboards.sql',
   '003_prizes.sql',
-  '004_analytics_aggregates.sql'
+  '004_analytics_aggregates.sql',
+  // ✅ NEW: Analytics Dashboard migrations (Phase 1-4)
+  '020_create_user_acquisitions.sql',
+  '021_add_campaign_id_to_events.sql',
+  '022_create_campaign_costs.sql',
+  '023_create_performance_metrics.sql',
+  '024_create_crash_logs.sql',
+  '025_partition_events_table_weekly.sql', // ⚠️ CRITICAL - backup first!
+  '026_add_partition_indexes.sql',
+  '027_create_daily_aggregations_mv.sql',
+  '028_create_cohort_aggregations_mv.sql',
+  '029_create_campaign_aggregations_mv.sql',
+  '030_create_weekly_aggregations_mv.sql'
 ];
 
 const MIGRATIONS_DIR = path.join(__dirname, '../database/migrations');

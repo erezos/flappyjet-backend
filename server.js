@@ -596,6 +596,15 @@ app.use(cors({
 }));
 app.use(morgan('combined'));
 
+// ✅ NEW: Serve static files (dashboard HTML)
+app.use(express.static('public'));
+app.use('/analytics', express.static('analytics'));
+
+// ✅ NEW: Dashboard route
+app.get('/analytics-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'analytics-dashboard.html'));
+});
+
 // ✅ FIX: Handle aborted requests BEFORE body parsing
 // Mobile apps often disconnect quickly with fire-and-forget pattern
 app.use((req, res, next) => {
@@ -636,6 +645,11 @@ app.use(rateLimitMiddleware);
 
 // ✅ Serve static files from 'public' directory (for dashboard.html)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ✅ NEW: Analytics Dashboard route
+app.get('/analytics-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'analytics-dashboard.html'));
+});
 
 // Initialize production dashboard service
 const DashboardService = require('./services/dashboard-service');
@@ -874,6 +888,24 @@ if (db && tournamentManager) {
 
 // 🧹 Cleanup old events (keep 90 days) - runs weekly on Sunday at 3 AM
 if (db) {
+  // ✅ NEW: Partition maintenance (weekly, every Monday at 2 AM)
+  // Maintains weekly partitions: creates future partitions, drops old ones
+  cron.schedule('0 2 * * 1', async () => {
+    try {
+      const PartitionManager = require('./services/partition-manager');
+      const partitionManager = new PartitionManager(db);
+      const result = await partitionManager.maintainPartitions();
+      
+      if (result.success) {
+        logger.info('📊 ✅ Partition maintenance completed');
+      } else {
+        logger.error('📊 ❌ Partition maintenance failed:', result.error);
+      }
+    } catch (error) {
+      logger.error('📊 ❌ Partition maintenance error:', error.message);
+    }
+  });
+
   cron.schedule('0 3 * * 0', async () => {
     try {
       logger.info('🧹 Cron: Cleaning up old events (>90 days)...');
@@ -898,7 +930,42 @@ if (db) {
 // ============================================================================
 
 // Dashboard views refresh (twice daily: 6 AM and 6 PM UTC)
-cron.schedule('0 6,18 * * *', async () => {
+  // ✅ NEW: Refresh materialized views (daily, at 3 AM)
+  // Refreshes daily_aggregations, cohort_aggregations, campaign_aggregations
+  cron.schedule('0 3 * * *', async () => {
+    try {
+      const MaterializedViewRefresher = require('./services/materialized-view-refresher');
+      const refresher = new MaterializedViewRefresher(db);
+      const result = await refresher.refreshAll({ daily: true, weekly: false, concurrent: true });
+      
+      if (result.errors === 0) {
+        logger.info('📊 ✅ Materialized views refreshed successfully');
+      } else {
+        logger.error('📊 ❌ Some materialized views failed to refresh:', result.view_errors);
+      }
+    } catch (error) {
+      logger.error('📊 ❌ Materialized view refresh error:', error.message);
+    }
+  });
+
+  // ✅ NEW: Refresh weekly aggregations (weekly, every Monday at 4 AM)
+  cron.schedule('0 4 * * 1', async () => {
+    try {
+      const MaterializedViewRefresher = require('./services/materialized-view-refresher');
+      const refresher = new MaterializedViewRefresher(db);
+      const result = await refresher.refreshAll({ daily: false, weekly: true, concurrent: true });
+      
+      if (result.errors === 0) {
+        logger.info('📊 ✅ Weekly aggregations refreshed successfully');
+      } else {
+        logger.error('📊 ❌ Weekly aggregations failed to refresh:', result.view_errors);
+      }
+    } catch (error) {
+      logger.error('📊 ❌ Weekly aggregations refresh error:', error.message);
+    }
+  });
+
+  cron.schedule('0 6,18 * * *', async () => {
   logger.info('📊 Running dashboard views refresh...');
   try {
     const { refreshDashboardViews } = require('./scripts/refresh-dashboard-views');

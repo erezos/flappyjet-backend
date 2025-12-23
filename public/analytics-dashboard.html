@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlappyJet Analytics Dashboard - Comprehensive</title>
+    
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f7fa;
+            color: #2d3748;
+            line-height: 1.6;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        /* Controls */
+        .controls {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 30px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        select, input, button {
+            padding: 10px 15px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            font-weight: 600;
+        }
+
+        button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 30px 50px;
+        }
+
+        /* Section */
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
+        .section-subtitle {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .kpi-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.9;
+            margin-bottom: 10px;
+        }
+
+        .kpi-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .kpi-change {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .kpi-change.positive {
+            color: #48bb78;
+        }
+
+        .kpi-change.negative {
+            color: #f56565;
+        }
+
+        /* Charts */
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container.small {
+            height: 300px;
+        }
+
+        .chart-container.large {
+            height: 500px;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Error */
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .tab {
+            padding: 12px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #718096;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Export Button */
+        .export-btn {
+            background: #48bb78;
+            margin-left: auto;
+        }
+
+        .export-btn:hover {
+            background: #38a169;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .chart-container {
+                height: 300px;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <h1>📊 FlappyJet Analytics Dashboard</h1>
+                <div class="subtitle">Comprehensive Analytics & Business Intelligence</div>
+            </div>
+            <div class="header-controls">
+                <button onclick="refreshAll()" class="refresh-btn">🔄 Refresh All</button>
+                <button onclick="exportData()" class="refresh-btn">📥 Export CSV</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+        <label>
+            <strong>Date Range:</strong>
+            <select id="dateRange" onchange="loadDashboard()">
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="custom">Custom Range</option>
+            </select>
+        </label>
+        <div id="customRange" style="display: none;">
+            <input type="date" id="startDate">
+            <input type="date" id="endDate">
+        </div>
+        <label>
+            <strong>Compare:</strong>
+            <select id="compareMode" onchange="loadDashboard()">
+                <option value="none">None</option>
+                <option value="wow">Week-over-Week</option>
+                <option value="mom">Month-over-Month</option>
+            </select>
+        </label>
+        <button onclick="loadDashboard()">Apply Filters</button>
+    </div>
+
+    <!-- Container -->
+    <div class="container">
+        <!-- Section 1: Overview (Executive Summary) -->
+        <div class="section" id="overview-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">1. Overview (Executive Summary)</div>
+                    <div class="section-subtitle">High-level KPIs and key metrics</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="overview-kpis">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading overview metrics...
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="overview-trend-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 2: User Acquisition -->
+        <div class="section" id="acquisition-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">2. User Acquisition Metrics</div>
+                    <div class="section-subtitle">Marketing effectiveness and install tracking</div>
+                </div>
+            </div>
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('acquisition', 'trends')">Trends</button>
+                <button class="tab" onclick="switchTab('acquisition', 'campaigns')">Campaigns</button>
+                <button class="tab" onclick="switchTab('acquisition', 'sources')">Sources</button>
+            </div>
+            <div id="acquisition-trends" class="tab-content active">
+                <div class="chart-container">
+                    <canvas id="acquisition-trend-chart"></canvas>
+                </div>
+            </div>
+            <div id="acquisition-campaigns" class="tab-content">
+                <div class="table-container">
+                    <table id="campaign-performance-table">
+                        <thead>
+                            <tr>
+                                <th>Campaign</th>
+                                <th>Installs</th>
+                                <th>Cost (USD)</th>
+                                <th>CPI</th>
+                                <th>Revenue (USD)</th>
+                                <th>ROI (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="6" class="loading">Loading campaign data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="acquisition-sources" class="tab-content">
+                <div class="chart-container small">
+                    <canvas id="acquisition-sources-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 3: Engagement Metrics -->
+        <div class="section" id="engagement-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">3. Engagement Metrics</div>
+                    <div class="section-subtitle">User activity and session metrics</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="engagement-dau-mau-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="engagement-stickiness-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="engagement-sessions-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 4: Retention & Churn -->
+        <div class="section" id="retention-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">4. Retention & Churn</div>
+                    <div class="section-subtitle">User retention rates and churn analysis</div>
+                </div>
+            </div>
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('retention', 'curve')">Retention Curve</button>
+                <button class="tab" onclick="switchTab('retention', 'cohorts')">Cohort Analysis</button>
+                <button class="tab" onclick="switchTab('retention', 'churn')">Churn Analysis</button>
+            </div>
+            <div id="retention-curve" class="tab-content active">
+                <div class="chart-container">
+                    <canvas id="retention-curve-chart"></canvas>
+                </div>
+            </div>
+            <div id="retention-cohorts" class="tab-content">
+                <div class="chart-container large">
+                    <canvas id="cohort-heatmap-chart"></canvas>
+                </div>
+            </div>
+            <div id="retention-churn" class="tab-content">
+                <div class="chart-container">
+                    <canvas id="churn-trend-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 5: Monetization Metrics -->
+        <div class="section" id="monetization-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">5. Monetization Metrics</div>
+                    <div class="section-subtitle">Revenue, ARPU, ARPPU, and LTV</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="monetization-kpis">
+                <div class="loading">Loading monetization metrics...</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="revenue-breakdown-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="arpu-arppu-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="ltv-curve-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="conversion-funnel-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 6: Player Behavior -->
+        <div class="section" id="behavior-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">6. Player Behavior & Gameplay Events</div>
+                    <div class="section-subtitle">How users interact with the game</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="event-funnel-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="level-progression-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="gameplay-metrics-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 7: Quality & Stability -->
+        <div class="section" id="quality-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">7. Quality & Stability Metrics</div>
+                    <div class="section-subtitle">Performance, crashes, and app health</div>
+                </div>
+            </div>
+            <div class="kpi-grid" id="quality-kpis">
+                <div class="loading">Loading quality metrics...</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="fps-trend-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="crash-rate-chart"></canvas>
+            </div>
+            <div class="chart-container small">
+                <canvas id="load-time-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 8: Advanced Segmentation -->
+        <div class="section" id="segmentation-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">8. Advanced Segmentation</div>
+                    <div class="section-subtitle">Filter and analyze by geography, device, cohort, campaign</div>
+                </div>
+            </div>
+            <div class="controls" style="margin: 0 0 25px 0; padding: 0;">
+                <label>
+                    <strong>Geography:</strong>
+                    <select id="geoFilter" onchange="loadSegmentedData()">
+                        <option value="all">All Countries</option>
+                    </select>
+                </label>
+                <label>
+                    <strong>Platform:</strong>
+                    <select id="platformFilter" onchange="loadSegmentedData()">
+                        <option value="all">All Platforms</option>
+                        <option value="ios">iOS</option>
+                        <option value="android">Android</option>
+                    </select>
+                </label>
+                <label>
+                    <strong>Cohort:</strong>
+                    <select id="cohortFilter" onchange="loadSegmentedData()">
+                        <option value="all">All Cohorts</option>
+                    </select>
+                </label>
+                <label>
+                    <strong>Campaign:</strong>
+                    <select id="campaignFilter" onchange="loadSegmentedData()">
+                        <option value="all">All Campaigns</option>
+                    </select>
+                </label>
+            </div>
+            <div class="chart-container">
+                <canvas id="segmentation-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- Section 9: Drill-Down & Comparison -->
+        <div class="section" id="comparison-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">9. Drill-Down & Comparison</div>
+                    <div class="section-subtitle">Compare periods and export data</div>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="comparison-chart"></canvas>
+            </div>
+            <div class="table-container">
+                <table id="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th id="current-period-label">Current Period</th>
+                            <th id="compare-period-label">Comparison Period</th>
+                            <th>Change</th>
+                            <th>% Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="5" class="loading">Loading comparison data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Section 10: Alerts & Benchmarking -->
+        <div class="section" id="alerts-section">
+            <div class="section-header">
+                <div>
+                    <div class="section-title">10. Alerts & Benchmarking</div>
+                    <div class="section-subtitle">Automated alerts and industry benchmarks</div>
+                </div>
+            </div>
+            <div id="alerts-container">
+                <div class="loading">Loading alerts...</div>
+            </div>
+            <div class="chart-container small">
+                <canvas id="benchmark-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        const API_BASE = '/api/dashboard';
+        let charts = {};
+        let currentDateRange = 30;
+        let currentCompareMode = 'none';
+
+        // Initialize dashboard on load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDashboard();
+            setupCustomDateRange();
+        });
+
+        // Setup custom date range toggle
+        function setupCustomDateRange() {
+            document.getElementById('dateRange').addEventListener('change', (e) => {
+                const customRange = document.getElementById('customRange');
+                if (e.target.value === 'custom') {
+                    customRange.style.display = 'flex';
+                    customRange.style.gap = '10px';
+                } else {
+                    customRange.style.display = 'none';
+                }
+            });
+        }
+
+        // Load all dashboard data
+        async function loadDashboard() {
+            const dateRange = document.getElementById('dateRange').value;
+            const compareMode = document.getElementById('compareMode').value;
+            
+            if (dateRange === 'custom') {
+                const startDate = document.getElementById('startDate').value;
+                const endDate = document.getElementById('endDate').value;
+                if (!startDate || !endDate) {
+                    alert('Please select both start and end dates');
+                    return;
+                }
+                currentDateRange = { startDate, endDate };
+            } else {
+                currentDateRange = parseInt(dateRange);
+            }
+            currentCompareMode = compareMode;
+
+            // Load all sections in parallel
+            await Promise.all([
+                loadOverview(),
+                loadAcquisition(),
+                loadEngagement(),
+                loadRetention(),
+                loadMonetization(),
+                loadBehavior(),
+                loadQuality(),
+                loadSegmentation(),
+                loadComparison(),
+                loadAlerts()
+            ]);
+        }
+
+        // Section 1: Overview
+        async function loadOverview() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : null;
+                const params = days ? `?days=${days}` : 
+                    `?startDate=${currentDateRange.startDate}&endDate=${currentDateRange.endDate}`;
+                
+                const [overview, dauTrend] = await Promise.all([
+                    fetch(`${API_BASE}/overview${params}`).then(r => r.json()),
+                    fetch(`${API_BASE}/dau-trend?days=${days || 30}`).then(r => r.json())
+                ]);
+
+                // Update KPI cards
+                const kpiGrid = document.getElementById('overview-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Daily Active Users</div>
+                        <div class="kpi-value">${formatNumber(overview.dau)}</div>
+                        <div class="kpi-change">Total Players: ${formatNumber(overview.total_players)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Avg Session Duration</div>
+                        <div class="kpi-value">${formatDuration(overview.avg_session_seconds)}</div>
+                        <div class="kpi-change">Avg Sessions/User: ${overview.avg_sessions_per_user?.toFixed(1)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Games Played</div>
+                        <div class="kpi-value">${formatNumber(overview.games_started)}</div>
+                        <div class="kpi-change">Completion: ${overview.completion_rate?.toFixed(1)}%</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Avg Game Duration</div>
+                        <div class="kpi-value">${formatDuration(overview.avg_game_duration)}</div>
+                        <div class="kpi-change">Games Ended: ${formatNumber(overview.games_ended)}</div>
+                    </div>
+                `;
+
+                // Create trend chart
+                createLineChart('overview-trend-chart', {
+                    labels: dauTrend.trend?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'DAU',
+                        data: dauTrend.trend?.map(d => d.dau) || [],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+            } catch (error) {
+                showError('overview-section', error);
+            }
+        }
+
+        // Section 2: Acquisition
+        async function loadAcquisition() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                // Load cohort ROI data for campaign performance
+                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=${days}`).then(r => r.json());
+                
+                // Update campaign performance table
+                const tableBody = document.querySelector('#campaign-performance-table tbody');
+                if (cohortRoi.cohorts && cohortRoi.cohorts.length > 0) {
+                    tableBody.innerHTML = cohortRoi.cohorts.map(cohort => `
+                        <tr>
+                            <td>${cohort.campaign_id || 'Organic'}</td>
+                            <td>${formatNumber(cohort.cohort_size)}</td>
+                            <td>$${formatNumber(cohort.total_cost || 0, 2)}</td>
+                            <td>$${formatNumber(cohort.cpi || 0, 2)}</td>
+                            <td>$${formatNumber(cohort.total_revenue || 0, 2)}</td>
+                            <td>${formatNumber(cohort.roi || 0, 1)}%</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="6">No campaign data available</td></tr>';
+                }
+
+                // Create acquisition trend chart
+                const acquisitionData = cohortRoi.cohorts || [];
+                createLineChart('acquisition-trend-chart', {
+                    labels: acquisitionData.map(c => c.cohort_date || 'N/A'),
+                    datasets: [{
+                        label: 'Installs',
+                        data: acquisitionData.map(c => c.cohort_size || 0),
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Create sources pie chart
+                const organicCount = acquisitionData.filter(c => !c.campaign_id).reduce((sum, c) => sum + (c.cohort_size || 0), 0);
+                const paidCount = acquisitionData.filter(c => c.campaign_id).reduce((sum, c) => sum + (c.cohort_size || 0), 0);
+                createPieChart('acquisition-sources-chart', {
+                    labels: ['Organic', 'Paid'],
+                    datasets: [{
+                        data: [organicCount, paidCount],
+                        backgroundColor: ['#48bb78', '#667eea']
+                    }]
+                });
+            } catch (error) {
+                showError('acquisition-section', error);
+            }
+        }
+
+        // Section 3: Engagement
+        async function loadEngagement() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                const [dauTrend, stickiness, sessionMetrics] = await Promise.all([
+                    fetch(`${API_BASE}/dau-trend?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/stickiness?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/session-metrics?days=${days}`).then(r => r.json())
+                ]);
+
+                // DAU/MAU chart
+                createLineChart('engagement-dau-mau-chart', {
+                    labels: dauTrend.trend?.map(d => d.date) || [],
+                    datasets: [
+                        {
+                            label: 'DAU',
+                            data: dauTrend.trend?.map(d => d.dau) || [],
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'MAU',
+                            data: stickiness.daily_breakdown?.map(d => d.mau) || [],
+                            borderColor: '#48bb78',
+                            backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Stickiness chart
+                createLineChart('engagement-stickiness-chart', {
+                    labels: stickiness.daily_breakdown?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'Stickiness Rate (%)',
+                        data: stickiness.daily_breakdown?.map(d => d.stickiness_rate) || [],
+                        borderColor: '#f6ad55',
+                        backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Sessions chart
+                createLineChart('engagement-sessions-chart', {
+                    labels: sessionMetrics.daily_trend?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'Total Sessions',
+                        data: sessionMetrics.daily_trend?.map(d => d.total_sessions) || [],
+                        borderColor: '#9f7aea',
+                        backgroundColor: 'rgba(159, 122, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+            } catch (error) {
+                showError('engagement-section', error);
+            }
+        }
+
+        // Section 4: Retention
+        async function loadRetention() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                const [retention, cohorts, churn] = await Promise.all([
+                    fetch(`${API_BASE}/retention-detailed?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/cohort-analysis?type=install_date`).then(r => r.json()),
+                    fetch(`${API_BASE}/churn?days=${days}`).then(r => r.json())
+                ]);
+
+                // Retention curve chart
+                createLineChart('retention-curve-chart', {
+                    labels: retention.cohorts?.map(c => c.cohort_date) || [],
+                    datasets: [
+                        {
+                            label: 'D1 Retention',
+                            data: retention.cohorts?.map(c => c.d1_retention_rate) || [],
+                            borderColor: '#667eea',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'D7 Retention',
+                            data: retention.cohorts?.map(c => c.d7_retention_rate) || [],
+                            borderColor: '#48bb78',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'D30 Retention',
+                            data: retention.cohorts?.map(c => c.d30_retention_rate) || [],
+                            borderColor: '#f6ad55',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // Cohort heatmap (simplified as bar chart for now)
+                createBarChart('cohort-heatmap-chart', {
+                    labels: cohorts.cohorts?.map(c => c.cohort_date) || [],
+                    datasets: [{
+                        label: 'Retention Rate (%)',
+                        data: cohorts.cohorts?.map(c => c.retention_rate) || [],
+                        backgroundColor: cohorts.cohorts?.map(c => 
+                            c.retention_rate > 50 ? '#48bb78' : 
+                            c.retention_rate > 30 ? '#f6ad55' : '#f56565'
+                        ) || []
+                    }]
+                });
+
+                // Churn trend chart
+                createLineChart('churn-trend-chart', {
+                    labels: churn.trend?.map(t => t.date) || [],
+                    datasets: [{
+                        label: 'Churn Rate (%)',
+                        data: churn.trend?.map(t => t.churn_rate) || [],
+                        borderColor: '#f56565',
+                        backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+            } catch (error) {
+                showError('retention-section', error);
+            }
+        }
+
+        // Section 5: Monetization
+        async function loadMonetization() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                const [arpu, revenue, ltv, conversion] = await Promise.all([
+                    fetch(`${API_BASE}/arpu?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/revenue-breakdown?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/ltv`).then(r => r.json()),
+                    fetch(`${API_BASE}/conversion-rate?days=${days}`).then(r => r.json())
+                ]);
+
+                // Update monetization KPIs
+                const kpiGrid = document.getElementById('monetization-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">ARPU</div>
+                        <div class="kpi-value">$${formatNumber(arpu.summary?.arpu || 0, 2)}</div>
+                        <div class="kpi-change">Total Users: ${formatNumber(arpu.summary?.total_users || 0)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">ARPPU</div>
+                        <div class="kpi-value">$${formatNumber(arpu.summary?.arppu || 0, 2)}</div>
+                        <div class="kpi-change">Paying Users: ${formatNumber(arpu.summary?.paying_users || 0)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Conversion Rate</div>
+                        <div class="kpi-value">${formatNumber(conversion.summary?.conversion_rate || 0, 2)}%</div>
+                        <div class="kpi-change">Paying: ${formatNumber(conversion.summary?.paying_users || 0)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Total Revenue</div>
+                        <div class="kpi-value">$${formatNumber(revenue.summary?.total_revenue || 0, 2)}</div>
+                        <div class="kpi-change">Ads: ${revenue.summary?.ad_revenue_percentage?.toFixed(1)}% | IAP: ${revenue.summary?.iap_revenue_percentage?.toFixed(1)}%</div>
+                    </div>
+                `;
+
+                // Revenue breakdown chart
+                createStackedAreaChart('revenue-breakdown-chart', {
+                    labels: revenue.daily_breakdown?.map(d => d.date) || [],
+                    datasets: [
+                        {
+                            label: 'Ad Revenue',
+                            data: revenue.daily_breakdown?.map(d => d.ad_revenue) || [],
+                            backgroundColor: 'rgba(102, 126, 234, 0.6)',
+                            borderColor: '#667eea'
+                        },
+                        {
+                            label: 'IAP Revenue',
+                            data: revenue.daily_breakdown?.map(d => d.iap_revenue) || [],
+                            backgroundColor: 'rgba(72, 187, 120, 0.6)',
+                            borderColor: '#48bb78'
+                        }
+                    ]
+                });
+
+                // ARPU/ARPPU chart
+                createLineChart('arpu-arppu-chart', {
+                    labels: arpu.daily_trend?.map(d => d.date) || [],
+                    datasets: [
+                        {
+                            label: 'ARPU',
+                            data: arpu.daily_trend?.map(d => d.arpu) || [],
+                            borderColor: '#667eea',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'ARPPU',
+                            data: arpu.daily_trend?.map(d => d.arppu) || [],
+                            borderColor: '#48bb78',
+                            tension: 0.4
+                        }
+                    ]
+                });
+
+                // LTV curve chart
+                createLineChart('ltv-curve-chart', {
+                    labels: ltv.cohorts?.map(c => c.cohort_date) || [],
+                    datasets: [{
+                        label: 'LTV (USD)',
+                        data: ltv.cohorts?.map(c => c.ltv) || [],
+                        borderColor: '#f6ad55',
+                        backgroundColor: 'rgba(246, 173, 85, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Conversion funnel chart
+                createBarChart('conversion-funnel-chart', {
+                    labels: ['Total Users', 'Paying Users'],
+                    datasets: [{
+                        label: 'Users',
+                        data: [
+                            conversion.summary?.total_users || 0,
+                            conversion.summary?.paying_users || 0
+                        ],
+                        backgroundColor: ['#667eea', '#48bb78']
+                    }]
+                });
+            } catch (error) {
+                showError('monetization-section', error);
+            }
+        }
+
+        // Section 6: Player Behavior
+        async function loadBehavior() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                const [levelPerformance, conversions] = await Promise.all([
+                    fetch(`${API_BASE}/level-performance?zone=1&days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/conversions?days=${days}`).then(r => r.json())
+                ]);
+
+                // Event funnel (simplified)
+                const funnelData = conversions.summary || {};
+                createBarChart('event-funnel-chart', {
+                    labels: ['Installs', 'First Open', 'First Game', 'Repeat Play'],
+                    datasets: [{
+                        label: 'Users',
+                        data: [
+                            funnelData.total_conversions_all_time || 0,
+                            funnelData.total_in_period || 0,
+                            funnelData.total_in_period || 0,
+                            funnelData.unique_users_in_period || 0
+                        ],
+                        backgroundColor: ['#667eea', '#48bb78', '#f6ad55', '#9f7aea']
+                    }]
+                });
+
+                // Level progression chart
+                createBarChart('level-progression-chart', {
+                    labels: levelPerformance.levels?.map(l => `Level ${l.level_id}`) || [],
+                    datasets: [{
+                        label: 'Completion Rate (%)',
+                        data: levelPerformance.levels?.map(l => l.completion_rate) || [],
+                        backgroundColor: levelPerformance.levels?.map(l => 
+                            l.completion_rate > 50 ? '#48bb78' : 
+                            l.completion_rate > 30 ? '#f6ad55' : '#f56565'
+                        ) || []
+                    }]
+                });
+
+                // Gameplay metrics (placeholder)
+                createLineChart('gameplay-metrics-chart', {
+                    labels: levelPerformance.levels?.map(l => `Level ${l.level_id}`) || [],
+                    datasets: [{
+                        label: 'Avg Attempts',
+                        data: levelPerformance.levels?.map(l => l.avg_attempts || 0) || [],
+                        borderColor: '#667eea',
+                        tension: 0.4
+                    }]
+                });
+            } catch (error) {
+                showError('behavior-section', error);
+            }
+        }
+
+        // Section 7: Quality & Stability
+        async function loadQuality() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                
+                const [performance, crashes] = await Promise.all([
+                    fetch(`${API_BASE}/performance?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/crashes?days=${days}`).then(r => r.json())
+                ]);
+
+                // Update quality KPIs
+                const kpiGrid = document.getElementById('quality-kpis');
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-label">Avg FPS</div>
+                        <div class="kpi-value">${formatNumber(performance.summary?.avg_fps || 0, 1)}</div>
+                        <div class="kpi-change">Min: ${formatNumber(performance.summary?.min_fps || 0, 1)} | Max: ${formatNumber(performance.summary?.max_fps || 0, 1)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Crash Rate</div>
+                        <div class="kpi-value">${formatNumber(crashes.summary?.crash_rate_per_1000_users || 0, 2)}</div>
+                        <div class="kpi-change">Per 1000 users | Total: ${formatNumber(crashes.summary?.total_crashes || 0)}</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">App Load Time</div>
+                        <div class="kpi-value">${formatNumber(performance.summary?.avg_app_load_time_ms || 0)}ms</div>
+                        <div class="kpi-change">Game Load: ${formatNumber(performance.summary?.avg_game_load_time_ms || 0)}ms</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">Fatal Crashes</div>
+                        <div class="kpi-value">${formatNumber(crashes.summary?.fatal_crashes || 0)}</div>
+                        <div class="kpi-change">Affected Users: ${formatNumber(crashes.summary?.affected_users || 0)}</div>
+                    </div>
+                `;
+
+                // FPS trend chart
+                createLineChart('fps-trend-chart', {
+                    labels: performance.daily_trend?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'Avg FPS',
+                        data: performance.daily_trend?.map(d => d.avg_fps) || [],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Crash rate chart
+                createLineChart('crash-rate-chart', {
+                    labels: crashes.daily_trend?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'Crash Rate (%)',
+                        data: crashes.daily_trend?.map(d => d.churn_rate) || [],
+                        borderColor: '#f56565',
+                        backgroundColor: 'rgba(245, 101, 101, 0.1)',
+                        tension: 0.4
+                    }]
+                });
+
+                // Load time chart
+                createLineChart('load-time-chart', {
+                    labels: performance.daily_trend?.map(d => d.date) || [],
+                    datasets: [
+                        {
+                            label: 'App Load (ms)',
+                            data: performance.daily_trend?.map(d => d.avg_app_load_time_ms) || [],
+                            borderColor: '#667eea',
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Game Load (ms)',
+                            data: performance.daily_trend?.map(d => d.avg_game_load_time_ms) || [],
+                            borderColor: '#48bb78',
+                            tension: 0.4
+                        }
+                    ]
+                });
+            } catch (error) {
+                showError('quality-section', error);
+            }
+        }
+
+        // Section 8: Segmentation
+        async function loadSegmentation() {
+            try {
+                // Load countries for filter
+                const countries = await fetch(`${API_BASE}/countries?days=30`).then(r => r.json());
+                const countrySelect = document.getElementById('geoFilter');
+                countrySelect.innerHTML = '<option value="all">All Countries</option>' +
+                    (countries.countries || []).map(c => 
+                        `<option value="${c.country}">${c.country} (${c.user_count})</option>`
+                    ).join('');
+
+                // Load campaigns for filter
+                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=30`).then(r => r.json());
+                const campaignSelect = document.getElementById('campaignFilter');
+                campaignSelect.innerHTML = '<option value="all">All Campaigns</option>' +
+                    (cohortRoi.cohorts || []).filter(c => c.campaign_id).map(c => 
+                        `<option value="${c.campaign_id}">${c.campaign_id}</option>`
+                    ).join('');
+
+                // Load segmented data based on filters
+                loadSegmentedData();
+            } catch (error) {
+                showError('segmentation-section', error);
+            }
+        }
+
+        async function loadSegmentedData() {
+            try {
+                const geo = document.getElementById('geoFilter').value;
+                const platform = document.getElementById('platformFilter').value;
+                const campaign = document.getElementById('campaignFilter').value;
+                
+                // Load data with filters (simplified - would need backend support)
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                const data = await fetch(`${API_BASE}/overview?days=${days}`).then(r => r.json());
+                
+                // Create segmentation chart (placeholder)
+                createBarChart('segmentation-chart', {
+                    labels: ['All Users', 'iOS', 'Android'],
+                    datasets: [{
+                        label: 'Users',
+                        data: [data.total_players || 0, data.total_players || 0, data.total_players || 0],
+                        backgroundColor: ['#667eea', '#48bb78', '#f6ad55']
+                    }]
+                });
+            } catch (error) {
+                showError('segmentation-section', error);
+            }
+        }
+
+        // Section 9: Comparison
+        async function loadComparison() {
+            try {
+                const days = typeof currentDateRange === 'number' ? currentDateRange : 30;
+                const compareDays = currentCompareMode === 'wow' ? days : days * 4;
+                
+                const [current, previous] = await Promise.all([
+                    fetch(`${API_BASE}/overview?days=${days}`).then(r => r.json()),
+                    fetch(`${API_BASE}/overview?days=${compareDays}`).then(r => r.json())
+                ]);
+
+                // Update comparison table
+                const tableBody = document.querySelector('#comparison-table tbody');
+                const metrics = [
+                    { label: 'DAU', current: current.dau, previous: previous.dau },
+                    { label: 'Total Players', current: current.total_players, previous: previous.total_players },
+                    { label: 'Games Started', current: current.games_started, previous: previous.games_started },
+                    { label: 'Avg Session Duration', current: current.avg_session_seconds, previous: previous.avg_session_seconds }
+                ];
+
+                tableBody.innerHTML = metrics.map(m => {
+                    const change = m.current - m.previous;
+                    const percentChange = m.previous > 0 ? ((change / m.previous) * 100) : 0;
+                    return `
+                        <tr>
+                            <td>${m.label}</td>
+                            <td>${formatNumber(m.current)}</td>
+                            <td>${formatNumber(m.previous)}</td>
+                            <td class="${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : ''}${formatNumber(change)}</td>
+                            <td class="${percentChange >= 0 ? 'positive' : 'negative'}">${percentChange >= 0 ? '+' : ''}${formatNumber(percentChange, 1)}%</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Comparison chart
+                createBarChart('comparison-chart', {
+                    labels: metrics.map(m => m.label),
+                    datasets: [
+                        {
+                            label: 'Current Period',
+                            data: metrics.map(m => m.current),
+                            backgroundColor: '#667eea'
+                        },
+                        {
+                            label: 'Previous Period',
+                            data: metrics.map(m => m.previous),
+                            backgroundColor: '#cbd5e0'
+                        }
+                    ]
+                });
+            } catch (error) {
+                showError('comparison-section', error);
+            }
+        }
+
+        // Section 10: Alerts
+        async function loadAlerts() {
+            try {
+                const alertsContainer = document.getElementById('alerts-container');
+                
+                // Check for alerts (simplified - would need backend alert system)
+                const [performance, crashes] = await Promise.all([
+                    fetch(`${API_BASE}/performance?days=7`).then(r => r.json()),
+                    fetch(`${API_BASE}/crashes?days=7`).then(r => r.json())
+                ]);
+
+                const alerts = [];
+                
+                // Check FPS alert
+                if (performance.summary?.avg_fps < 30) {
+                    alerts.push({
+                        type: 'warning',
+                        message: `Low FPS detected: ${performance.summary.avg_fps.toFixed(1)} (target: 60)`,
+                        metric: 'fps'
+                    });
+                }
+
+                // Check crash alert
+                if (crashes.summary?.crash_rate_per_1000_users > 10) {
+                    alerts.push({
+                        type: 'error',
+                        message: `High crash rate: ${crashes.summary.crash_rate_per_1000_users.toFixed(2)} per 1000 users`,
+                        metric: 'crashes'
+                    });
+                }
+
+                if (alerts.length === 0) {
+                    alertsContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #48bb78;">✅ No alerts - All systems healthy</div>';
+                } else {
+                    alertsContainer.innerHTML = alerts.map(alert => `
+                        <div class="error" style="margin-bottom: 10px;">
+                            <strong>${alert.type === 'error' ? '🔴' : '⚠️'}</strong> ${alert.message}
+                        </div>
+                    `).join('');
+                }
+
+                // Benchmark chart (placeholder)
+                createBarChart('benchmark-chart', {
+                    labels: ['D1 Retention', 'D7 Retention', 'ARPU', 'FPS'],
+                    datasets: [{
+                        label: 'Your Game',
+                        data: [40, 25, 0.5, 60],
+                        backgroundColor: '#667eea'
+                    }, {
+                        label: 'Industry Avg',
+                        data: [35, 20, 0.4, 55],
+                        backgroundColor: '#cbd5e0'
+                    }]
+                });
+            } catch (error) {
+                showError('alerts-section', error);
+            }
+        }
+
+        // Chart creation helpers
+        function createLineChart(canvasId, data) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function createBarChart(canvasId, data) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function createPieChart(canvasId, data) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'pie',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'right' }
+                    }
+                }
+            });
+        }
+
+        function createStackedAreaChart(canvasId, data) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' }
+                    },
+                    scales: {
+                        y: { 
+                            beginAtZero: true,
+                            stacked: true
+                        },
+                        x: {
+                            stacked: true
+                        }
+                    }
+                }
+            });
+        }
+
+        // Utility functions
+        function formatNumber(num, decimals = 0) {
+            if (num === null || num === undefined) return '0';
+            return new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals
+            }).format(num);
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return '0s';
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return `${mins}m ${secs}s`;
+        }
+
+        function showError(sectionId, error) {
+            const section = document.getElementById(sectionId);
+            if (section) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = `Error loading data: ${error.message}`;
+                section.appendChild(errorDiv);
+            }
+        }
+
+        function switchTab(section, tab) {
+            // Hide all tabs
+            document.querySelectorAll(`#${section}-section .tab`).forEach(t => t.classList.remove('active'));
+            document.querySelectorAll(`#${section}-section .tab-content`).forEach(c => c.classList.remove('active'));
+            
+            // Show selected tab
+            event.target.classList.add('active');
+            document.getElementById(`${section}-${tab}`).classList.add('active');
+        }
+
+        function refreshAll() {
+            loadDashboard();
+        }
+
+        function exportData() {
+            // Export functionality (simplified)
+            alert('Export functionality - would generate CSV with all current data');
+        }
+    </script>
+</body>
+</html>
+
