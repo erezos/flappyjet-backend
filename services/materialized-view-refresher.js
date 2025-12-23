@@ -134,6 +134,59 @@ class MaterializedViewRefresher {
   }
 
   /**
+   * Refresh level performance and user funnel views
+   * These are refreshed more frequently (every 6 hours) for better real-time analytics
+   * 
+   * @param {boolean} concurrent - Use CONCURRENT refresh (default: true)
+   * @returns {Promise<Object>} - { refreshed, errors }
+   */
+  async refreshAnalyticsViews(concurrent = true) {
+    const refreshed = [];
+    const errors = [];
+
+    try {
+      logger.info('📊 Starting analytics views refresh (level performance & user funnel)...', { concurrent });
+
+      const analyticsViews = [
+        'level_performance_daily',
+        'user_funnel_daily'
+      ];
+
+      for (const viewName of analyticsViews) {
+        try {
+          await this.refreshView(viewName, concurrent);
+          refreshed.push(viewName);
+          logger.info(`✅ Refreshed ${viewName}`);
+        } catch (error) {
+          errors.push({
+            view: viewName,
+            error: error.message
+          });
+          logger.error(`❌ Failed to refresh ${viewName}:`, error.message);
+        }
+      }
+
+      logger.info('📊 Analytics views refresh completed', {
+        refreshed: refreshed.length,
+        errors: errors.length
+      });
+
+      return {
+        refreshed: refreshed.length,
+        errors: errors.length,
+        views_refreshed: refreshed,
+        view_errors: errors
+      };
+    } catch (error) {
+      logger.error('❌ Analytics views refresh failed', {
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get materialized view statistics
    * 
    * @returns {Promise<Array>} - Array of view statistics
@@ -151,7 +204,8 @@ class MaterializedViewRefresher {
         JOIN pg_class c ON c.relname = m.matviewname
         WHERE schemaname = 'public'
           AND matviewname IN ('daily_aggregations', 'cohort_aggregations', 
-                              'campaign_aggregations', 'weekly_aggregations')
+                              'campaign_aggregations', 'weekly_aggregations',
+                              'level_performance_daily', 'user_funnel_daily')
         ORDER BY matviewname
       `;
 

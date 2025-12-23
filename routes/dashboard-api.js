@@ -83,12 +83,14 @@ module.exports = (db, cacheManager) => {
       // Try cache first
       const cached = await currentCacheManager.get(`${CACHE_PREFIX}${cacheKey}`);
       if (cached) {
-        logger.info(`📊 Cache HIT: ${cacheKey}`);
+        // ✅ REDUCED LOGGING: Only log cache hits in debug mode to avoid rate limiting
+        logger.debug(`📊 Cache HIT: ${cacheKey}`);
         return cached; // ✅ FIX: CacheManager already returns parsed JSON
       }
 
       // Cache miss - query database with timeout handling
-      logger.info(`📊 Cache MISS: ${cacheKey} - querying database`);
+      // ✅ REDUCED LOGGING: Only log cache misses in debug mode (too frequent for production)
+      logger.debug(`📊 Cache MISS: ${cacheKey} - querying database`);
       const result = await executeQueryWithTimeout(queryFn);
       
       // Store in cache and verify it succeeded
@@ -96,16 +98,19 @@ module.exports = (db, cacheManager) => {
       const setSuccess = await currentCacheManager.set(cacheKeyFull, result, ttl);
       
       if (setSuccess) {
-        logger.info(`📊 Cache SET: ${cacheKey} (TTL: ${ttl}s)`);
+        // ✅ REDUCED LOGGING: Only log cache sets in debug mode
+        logger.debug(`📊 Cache SET: ${cacheKey} (TTL: ${ttl}s)`);
         
         // Verify it was actually stored (for debugging)
         const verifyCache = await currentCacheManager.get(cacheKeyFull);
         if (verifyCache) {
           logger.debug(`📊 Cache VERIFIED: ${cacheKey} stored successfully`);
         } else {
+          // ✅ Keep warnings/errors as they indicate problems
           logger.warn(`📊 Cache WARNING: ${cacheKey} set returned true but get returned null`);
         }
       } else {
+        // ✅ Keep errors as they indicate problems
         logger.error(`📊 Cache SET FAILED: ${cacheKey} - cache.set() returned false`);
       }
       
@@ -2396,154 +2401,7 @@ module.exports = (db, cacheManager) => {
   });
 
   // ============================================================================
-  // 🏆 TOURNAMENT ANALYTICS (v2.3.0)
-  // ============================================================================
-
-  /**
-   * GET /api/dashboard/tournaments?days=7
-   * Returns tournament engagement and completion metrics
-   */
-  router.get('/tournaments', async (req, res) => {
-    try {
-      const days = Math.min(parseInt(req.query.days || 7), 90);
-
-      const data = await getCachedQuery(req, `tournaments-${days}days`, async () => {
-        const [
-          overview,
-          dailyBattles,
-          roundConversion,
-          topTournaments
-        ] = await Promise.all([
-          // Overall tournament metrics
-          db.query(`
-            SELECT 
-              COUNT(*) FILTER (WHERE event_type = 'tournament_manager_initialized') as total_initializations,
-              COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'tournament_manager_initialized') as unique_players,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as total_battles_started,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as total_battles_won,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as total_battles_lost,
-              COUNT(*) FILTER (WHERE event_type = 'tournament_round_completed') as total_rounds_completed,
-              COUNT(*) FILTER (WHERE event_type = 'tournament_completed') as total_tournaments_completed,
-              COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'tournament_completed') as unique_tournament_winners,
-              COUNT(*) FILTER (WHERE event_type = 'tournament_start_over') as total_restarts,
-              COUNT(*) FILTER (WHERE event_type = 'tournament_interstitial_shown') as tournament_ads_shown
-            FROM events
-            WHERE event_type IN (
-              'tournament_manager_initialized',
-              'playoff_battle_started', 
-              'playoff_battle_won', 
-              'playoff_battle_lost',
-              'tournament_round_completed',
-              'tournament_completed',
-              'tournament_start_over',
-              'tournament_interstitial_shown'
-            )
-            AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-          `),
-          
-          // Daily battles trend
-          db.query(`
-            SELECT 
-              DATE(received_at) as date,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as battles_started,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as battles_won,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as battles_lost,
-              COUNT(DISTINCT user_id) as unique_players
-            FROM events
-            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
-              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            GROUP BY DATE(received_at)
-            ORDER BY date DESC
-          `),
-          
-          // Round-by-round conversion
-          db.query(`
-            SELECT 
-              payload->>'round_number' as round,
-              payload->>'stage_name' as stage_name,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_started') as started,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as won,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as lost
-            FROM events
-            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
-              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-              AND payload->>'round_number' IS NOT NULL
-            GROUP BY payload->>'round_number', payload->>'stage_name'
-            ORDER BY (payload->>'round_number')::int
-          `),
-          
-          // Top tournaments by engagement
-          db.query(`
-            SELECT 
-              COALESCE(payload->>'tournament_id', 'unknown') as tournament_id,
-              COUNT(*) as total_events,
-              COUNT(DISTINCT user_id) as unique_players,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_won') as wins,
-              COUNT(*) FILTER (WHERE event_type = 'playoff_battle_lost') as losses
-            FROM events
-            WHERE event_type IN ('playoff_battle_started', 'playoff_battle_won', 'playoff_battle_lost')
-              AND received_at >= CURRENT_DATE - INTERVAL '${days} days'
-            GROUP BY payload->>'tournament_id'
-            ORDER BY total_events DESC
-            LIMIT 10
-          `)
-        ]);
-
-        const stats = overview.rows[0] || {};
-        const totalBattles = parseInt(stats.total_battles_won || 0) + parseInt(stats.total_battles_lost || 0);
-        const winRate = totalBattles > 0 
-          ? ((parseInt(stats.total_battles_won || 0) / totalBattles) * 100).toFixed(1)
-          : 0;
-
-        return {
-          summary: {
-            total_initializations: parseInt(stats.total_initializations || 0),
-            unique_players: parseInt(stats.unique_players || 0),
-            total_battles: totalBattles,
-            battles_won: parseInt(stats.total_battles_won || 0),
-            battles_lost: parseInt(stats.total_battles_lost || 0),
-            win_rate: winRate,
-            rounds_completed: parseInt(stats.total_rounds_completed || 0),         // ✅ NEW
-            tournaments_completed: parseInt(stats.total_tournaments_completed || 0), // ✅ NEW
-            unique_tournament_winners: parseInt(stats.unique_tournament_winners || 0), // ✅ NEW
-            total_restarts: parseInt(stats.total_restarts || 0),
-            tournament_ads_shown: parseInt(stats.tournament_ads_shown || 0)
-          },
-          daily_trend: dailyBattles.rows.map(r => ({
-            date: r.date,
-            battles_started: parseInt(r.battles_started || 0),
-            battles_won: parseInt(r.battles_won || 0),
-            battles_lost: parseInt(r.battles_lost || 0),
-            unique_players: parseInt(r.unique_players || 0)
-          })),
-          round_conversion: roundConversion.rows.map(r => ({
-            round: parseInt(r.round || 1),
-            stage_name: r.stage_name || `Round ${r.round}`,
-            started: parseInt(r.started || 0),
-            won: parseInt(r.won || 0),
-            lost: parseInt(r.lost || 0),
-            win_rate: parseInt(r.started || 0) > 0 
-              ? ((parseInt(r.won || 0) / parseInt(r.started || 0)) * 100).toFixed(1)
-              : 0
-          })),
-          top_tournaments: topTournaments.rows.map(r => ({
-            tournament_id: r.tournament_id,
-            total_events: parseInt(r.total_events || 0),
-            unique_players: parseInt(r.unique_players || 0),
-            wins: parseInt(r.wins || 0),
-            losses: parseInt(r.losses || 0)
-          })),
-          last_updated: new Date().toISOString()
-        };
-      });
-
-      res.json(data);
-    } catch (error) {
-      logger.error('📊 Error fetching tournament analytics:', error);
-      res.status(500).json({ error: 'Failed to fetch tournament analytics' });
-    }
-  });
-
+  // ✅ REMOVED: Duplicate /tournaments endpoint (v2.3.0) - using newer version below
   // ============================================================================
   // 🎯 CONVERSION EVENTS ANALYTICS
   // ============================================================================
@@ -4464,11 +4322,13 @@ module.exports = (db, cacheManager) => {
         const distributionByType = {};
         tournamentTypes.forEach(type => {
           distributionByType[type] = dates.map(date => {
-            const row = distributionTrendResult.rows.find(r => 
-              r.date.getTime() === date.getTime() && (r.tournament_type || 'unknown') === type
-            );
+            const dateStr = date ? date.toISOString().split('T')[0] : null;
+            const row = distributionTrendResult.rows.find(r => {
+              const rDateStr = r.date ? r.date.toISOString().split('T')[0] : null;
+              return rDateStr === dateStr && (r.tournament_type || 'unknown') === type;
+            });
             return {
-              date: date,
+              date: dateStr,
               rounds_played: row ? parseInt(row.rounds_played || 0) : 0
             };
           });
@@ -4482,7 +4342,7 @@ module.exports = (db, cacheManager) => {
             tournaments_won: parseInt(todayResult.rows[0]?.tournaments_won_today || 0),
           },
           trend: trendResult.rows.map(r => ({
-            date: r.date,
+            date: r.date ? r.date.toISOString().split('T')[0] : null,
             rounds_played: parseInt(r.rounds_played || 0),
             rounds_won: parseInt(r.rounds_won || 0),
             rounds_lost: parseInt(r.rounds_lost || 0),

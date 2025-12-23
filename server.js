@@ -949,6 +949,26 @@ if (db) {
     }
   });
 
+  // ✅ NEW: Refresh analytics views (level performance & user funnel) every 6 hours
+  // Refreshes at: 12 AM, 6 AM, 12 PM, 6 PM
+  // These views track daily metrics but benefit from more frequent updates during the day
+  cron.schedule('0 */6 * * *', async () => {
+    try {
+      const MaterializedViewRefresher = require('./services/materialized-view-refresher');
+      const refresher = new MaterializedViewRefresher(db);
+      const result = await refresher.refreshAnalyticsViews(true);
+      
+      if (result.errors === 0) {
+        logger.info('📊 ✅ Analytics views (level performance & user funnel) refreshed successfully');
+      } else {
+        logger.error('📊 ❌ Some analytics views failed to refresh:', result.view_errors);
+      }
+    } catch (error) {
+      logger.error('📊 ❌ Analytics views refresh error:', error.message);
+    }
+  });
+  logger.info('📊 Cron job registered: Analytics views refresh (every 6 hours)');
+
   cron.schedule('0 6,18 * * *', async () => {
   logger.info('📊 Running dashboard views refresh...');
   try {
