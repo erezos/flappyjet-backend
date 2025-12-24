@@ -369,7 +369,7 @@
                     </div>
                 </div>
                 <div>
-                    <h3 style="margin-bottom: 15px; font-size: 18px;">Average Session Length (Last 30 Days)</h3>
+                    <h3 style="margin-bottom: 15px; font-size: 18px;">Average Session Length (Last 30 Days) - Minutes</h3>
                     <div class="chart-container small">
                         <canvas id="session-length-trend-chart"></canvas>
                     </div>
@@ -847,16 +847,43 @@
                     }]
                 });
 
-                // Session Length Trend Chart ✅ NEW
+                // Session Length Trend Chart ✅ NEW - Converted to minutes for better readability
+                const sessionLengthMinutes = (sessionLengthTrend.values || []).map(seconds => 
+                    seconds ? parseFloat((seconds / 60).toFixed(1)) : 0
+                );
                 createLineChart('session-length-trend-chart', {
                     labels: sessionLengthTrend.dates || [],
                     datasets: [{
-                        label: 'Avg Session Length (seconds)',
-                        data: sessionLengthTrend.values || [],
+                        label: 'Avg Session Length (minutes)',
+                        data: sessionLengthMinutes,
                         borderColor: '#ed64a6',
                         backgroundColor: 'rgba(237, 100, 166, 0.1)',
                         tension: 0.4
                     }]
+                }, {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + 'm';
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Minutes'
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + parseFloat(context.parsed.y).toFixed(1) + ' minutes';
+                                }
+                            }
+                        }
+                    }
                 });
             } catch (error) {
                 showError('overview-section', error);
@@ -866,25 +893,28 @@
         // Section 2: Acquisition
         async function loadAcquisition() {
             try {
-                // Load cohort ROI data for campaign performance
-                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=${DEFAULT_DAYS}`).then(r => r.json());
+                // ✅ FIXED: Load campaign performance data (aggregated by campaign_id)
+                const campaignPerf = await fetch(`${API_BASE}/campaign-performance?days=${DEFAULT_DAYS}`).then(r => r.json());
                 
                 // Update campaign performance table
                 const tableBody = document.querySelector('#campaign-performance-table tbody');
-                if (cohortRoi.cohorts && cohortRoi.cohorts.length > 0) {
-                    tableBody.innerHTML = cohortRoi.cohorts.map(cohort => `
+                if (campaignPerf.campaigns && campaignPerf.campaigns.length > 0) {
+                    tableBody.innerHTML = campaignPerf.campaigns.map(campaign => `
                         <tr>
-                            <td>${cohort.campaign_id || 'Organic'}</td>
-                            <td>${formatNumber(cohort.cohort_size)}</td>
-                            <td>$${formatNumber(cohort.total_cost || 0, 2)}</td>
-                            <td>$${formatNumber(cohort.cpi || 0, 2)}</td>
-                            <td>$${formatNumber(cohort.total_revenue || 0, 2)}</td>
-                            <td>${formatNumber(cohort.roi || 0, 1)}%</td>
+                            <td>${campaign.campaign_id || 'Organic'}</td>
+                            <td>${formatNumber(campaign.installs)}</td>
+                            <td>$${formatNumber(campaign.cost_usd, 2)}</td>
+                            <td>$${formatNumber(campaign.cpi, 2)}</td>
+                            <td>$${formatNumber(campaign.revenue_usd, 2)}</td>
+                            <td>${formatNumber(campaign.roi_percentage, 1)}%</td>
                         </tr>
                     `).join('');
                 } else {
                     tableBody.innerHTML = '<tr><td colspan="6">No campaign data available</td></tr>';
                 }
+                
+                // ✅ FIXED: Use cohort-roi for acquisition trends (all campaigns, not just organic)
+                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=${DEFAULT_DAYS}`).then(r => r.json());
 
                 // Create acquisition trend chart
                 const acquisitionData = cohortRoi.cohorts || [];
@@ -1007,6 +1037,20 @@
                     cohortTable.innerHTML = html;
                 } else {
                     cohortTable.innerHTML = '<div style="padding: 20px; text-align: center; color: #718096;">No cohort data available</div>';
+                }
+                
+                // ✅ FIXED: Populate campaign filter dropdown with all available campaigns
+                const campaignFilterSelect = document.getElementById('cohortCampaignFilter');
+                if (campaignFilterSelect && enhancedCohorts.cohorts) {
+                    const uniqueCampaigns = [...new Set(
+                        enhancedCohorts.cohorts
+                            .map(c => c.campaign_id)
+                            .filter(id => id != null)
+                    )];
+                    campaignFilterSelect.innerHTML = '<option value="all">All Campaigns</option>' +
+                        uniqueCampaigns.map(campaignId => 
+                            `<option value="${campaignId}">${campaignId}</option>`
+                        ).join('');
                 }
             } catch (error) {
                 showError('retention-section', error);
@@ -1328,13 +1372,15 @@
                         `<option value="${c.country}">${c.country} (${c.user_count})</option>`
                     ).join('');
 
-                // Load campaigns for filter
-                const cohortRoi = await fetch(`${API_BASE}/cohort-roi?days=30`).then(r => r.json());
+                // ✅ FIXED: Load campaigns for filter from campaign-performance endpoint
+                const campaignPerf = await fetch(`${API_BASE}/campaign-performance?days=30`).then(r => r.json());
                 const campaignSelect = document.getElementById('campaignFilter');
                 campaignSelect.innerHTML = '<option value="all">All Campaigns</option>' +
-                    (cohortRoi.cohorts || []).filter(c => c.campaign_id).map(c => 
-                        `<option value="${c.campaign_id}">${c.campaign_id}</option>`
-                    ).join('');
+                    (campaignPerf.campaigns || [])
+                        .filter(c => c.campaign_id && c.campaign_id !== 'Organic')
+                        .map(c => 
+                            `<option value="${c.campaign_id}">${c.campaign_id}</option>`
+                        ).join('');
 
                 // Load segmented data based on filters
                 loadSegmentedData();
@@ -1513,7 +1559,7 @@
                     ]
                 });
 
-                // Tournament distribution chart (stacked area or bar)
+                // Tournament distribution chart ✅ FIXED: Use line chart without fill to prevent overlapping
                 const tournamentTypes = Object.keys(data.distribution_trend);
                 const dates = data.trend.map(t => t.date);
                 
@@ -1526,13 +1572,17 @@
                         typeData.forEach(d => {
                             dataMap[d.date] = d.rounds_played;
                         });
+                        const color = colors[index % colors.length];
                         return {
                             label: type,
                             data: dates.map(date => dataMap[date] || 0),
-                            borderColor: colors[index % colors.length],
-                            backgroundColor: colors[index % colors.length].replace('rgb', 'rgba').replace(')', ', 0.1)'),
+                            borderColor: color,
+                            backgroundColor: color + '40', // Add transparency (40 = ~25% opacity in hex)
+                            borderWidth: 2,
                             tension: 0.4,
-                            fill: true
+                            fill: false, // ✅ FIXED: No fill to prevent one line covering others
+                            pointRadius: 4,
+                            pointHoverRadius: 6
                         };
                     })
                 });
@@ -1745,7 +1795,7 @@
         }
 
         // Chart creation helpers
-        function createLineChart(canvasId, data) {
+        function createLineChart(canvasId, data, customOptions = {}) {
             const ctx = document.getElementById(canvasId);
             if (!ctx) return;
 
@@ -1753,20 +1803,32 @@
                 charts[canvasId].destroy();
             }
 
+            const defaultOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            };
+
+            // Merge custom options with defaults (custom options override defaults)
+            const mergedOptions = {
+                ...defaultOptions,
+                ...customOptions,
+                scales: {
+                    ...defaultOptions.scales,
+                    ...(customOptions.scales || {})
+                }
+            };
+
             charts[canvasId] = new Chart(ctx, {
                 type: 'line',
                 data: data,
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: true, position: 'top' },
-                        tooltip: { mode: 'index', intersect: false }
-                    },
-                    scales: {
-                        y: { beginAtZero: true }
-                    }
-                }
+                options: mergedOptions
             });
         }
 

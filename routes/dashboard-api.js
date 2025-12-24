@@ -877,14 +877,17 @@ module.exports = (db, cacheManager) => {
         const cohortQuery = `
           SELECT 
             cohort_date as install_date,
+            campaign_id,
             cohort_size as users,
             total_revenue_usd,
             ltv,
-            paying_users as users_with_revenue
+            paying_users as users_with_revenue,
+            cost_usd,
+            cpi,
+            roi_percentage
           FROM cohort_aggregations
           WHERE cohort_date >= CURRENT_DATE - INTERVAL '${days} days'
-            AND campaign_id IS NULL
-          ORDER BY cohort_date DESC
+          ORDER BY cohort_date DESC, campaign_id NULLS LAST
         `;
 
         const cohortResult = await db.query(cohortQuery);
@@ -932,14 +935,16 @@ module.exports = (db, cacheManager) => {
           
           return {
             install_date: date,
+            campaign_id: row.campaign_id || null,
             days_since_install: daysSinceInstall,
             users,
             users_with_revenue: parseInt(row.users_with_revenue || 0),
             total_revenue_usd: parseFloat(totalRevenue.toFixed(4)),
-            estimated_cost_usd: parseFloat(estimatedCost.toFixed(2)),
-            roi_percent: parseFloat(roi.toFixed(1)),
+            estimated_cost_usd: parseFloat((row.cost_usd || estimatedCost).toFixed(2)),
+            cpi: parseFloat((row.cpi || cpi).toFixed(2)),
+            roi_percent: parseFloat((row.roi_percentage || roi).toFixed(1)),
             arpu_usd: parseFloat(arpu.toFixed(4)),
-            is_profitable: totalRevenue >= estimatedCost,
+            is_profitable: totalRevenue >= (row.cost_usd || estimatedCost),
             top_countries: topCountries
           };
         });
@@ -981,6 +986,58 @@ module.exports = (db, cacheManager) => {
     } catch (error) {
       logger.error('📊 Error fetching cohort ROI:', error);
       res.status(500).json({ error: 'Failed to fetch cohort ROI data' });
+    }
+  });
+
+  /**
+   * GET /api/dashboard/campaign-performance
+   * Returns campaign performance metrics aggregated by campaign_id
+   */
+  router.get('/campaign-performance', async (req, res) => {
+    try {
+      const days = Math.min(parseInt(req.query.days || 30), 90);
+      
+      const data = await getCachedQuery(req, `campaign-performance-${days}`, async () => {
+        // ✅ Aggregate by campaign_id from cohort_aggregations
+        const result = await db.query(`
+          SELECT 
+            COALESCE(campaign_id, 'Organic') as campaign_id,
+            SUM(cohort_size) as installs,
+            SUM(COALESCE(cost_usd, 0)) as total_cost,
+            CASE 
+              WHEN SUM(cohort_size) > 0 
+              THEN ROUND(SUM(COALESCE(cost_usd, 0)) / SUM(cohort_size), 2)
+              ELSE 0
+            END as cpi,
+            SUM(total_revenue_usd) as total_revenue,
+            CASE 
+              WHEN SUM(COALESCE(cost_usd, 0)) > 0 
+              THEN ROUND(100.0 * SUM(total_revenue_usd) / SUM(COALESCE(cost_usd, 0)), 1)
+              ELSE 0
+            END as roi_percentage
+          FROM cohort_aggregations
+          WHERE cohort_date >= CURRENT_DATE - INTERVAL '${days} days'
+          GROUP BY campaign_id
+          ORDER BY installs DESC
+        `);
+
+        return {
+          campaigns: result.rows.map(r => ({
+            campaign_id: r.campaign_id,
+            installs: parseInt(r.installs || 0),
+            cost_usd: parseFloat(r.total_cost || 0),
+            cpi: parseFloat(r.cpi || 0),
+            revenue_usd: parseFloat(r.total_revenue || 0),
+            roi_percentage: parseFloat(r.roi_percentage || 0)
+          })),
+          last_updated: new Date().toISOString()
+        };
+      }, 300); // 5 minute cache
+
+      res.json(data);
+    } catch (error) {
+      logger.error('📊 Error fetching campaign performance:', error);
+      res.status(500).json({ error: 'Failed to fetch campaign performance data' });
     }
   });
 
@@ -4237,10 +4294,10 @@ module.exports = (db, cacheManager) => {
       const days = Math.min(parseInt(req.query.days || 7), 30);
       
       const data = await getCachedQuery(req, `tournaments-${days}`, async () => {
-        // Today's metrics
+        // Today's metrics ✅ FIXED: rounds_played = completed + failed (all rounds that finished)
         const todayQuery = `
           SELECT 
-            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_played_today,
+            COUNT(CASE WHEN event_type IN ('tournament_round_completed', 'tournament_round_failed') THEN 1 END) as rounds_played_today,
             COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_won_today,
             COUNT(CASE WHEN event_type = 'tournament_round_failed' THEN 1 END) as rounds_lost_today,
             COUNT(CASE WHEN event_type = 'tournament_completed' THEN 1 END) as tournaments_won_today
@@ -4249,11 +4306,11 @@ module.exports = (db, cacheManager) => {
             AND event_type IN ('tournament_round_completed', 'tournament_round_failed', 'tournament_completed')
         `;
 
-        // 7-day trend
+        // 7-day trend ✅ FIXED: rounds_played = completed + failed (all rounds that finished)
         const trendQuery = `
           SELECT 
             DATE(received_at) as date,
-            COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_played,
+            COUNT(CASE WHEN event_type IN ('tournament_round_completed', 'tournament_round_failed') THEN 1 END) as rounds_played,
             COUNT(CASE WHEN event_type = 'tournament_round_completed' THEN 1 END) as rounds_won,
             COUNT(CASE WHEN event_type = 'tournament_round_failed' THEN 1 END) as rounds_lost,
             COUNT(CASE WHEN event_type = 'tournament_completed' THEN 1 END) as tournaments_won

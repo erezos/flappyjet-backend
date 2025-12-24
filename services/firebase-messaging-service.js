@@ -113,18 +113,23 @@ class FirebaseMessagingService {
         messageId: response,
       };
     } catch (error) {
+      // ✅ Enhanced error detection for invalid tokens
+      const isInvalidToken = this.isInvalidTokenError(error);
+      
       logger.error('❌ Failed to send push notification', {
         token: fcmToken ? fcmToken.substring(0, 20) + '...' : 'null',
-        error: error.message || 'Unknown error',
-        errorCode: error.code || 'unknown',
-        stack: error.stack,
+        error: error?.message || error?.toString() || 'Unknown error',
+        errorCode: error?.code || 'unknown',
+        errorName: error?.name,
+        isInvalidToken: isInvalidToken, // ✅ Log if token is invalid
+        stack: error?.stack,
       });
 
       return {
         success: false,
-        error: error.message || 'Unknown error',
-        errorCode: error.code || 'unknown',
-        isInvalidToken: this.isInvalidTokenError(error),
+        error: error?.message || error?.toString() || 'Unknown error',
+        errorCode: error?.code || 'unknown',
+        isInvalidToken: isInvalidToken,
       };
     }
   }
@@ -225,28 +230,47 @@ class FirebaseMessagingService {
       'messaging/invalid-registration-token',
       'messaging/registration-token-not-registered',
       'messaging/invalid-argument',
-      'messaging/not-found',           // ✅ NEW: "Requested entity was not found"
-      'messaging/unregistered',        // ✅ NEW: App was uninstalled
-      'NOT_FOUND',                      // ✅ NEW: Alternative error code
-      'UNREGISTERED',                   // ✅ NEW: Alternative error code
+      'messaging/not-found',           // "Requested entity was not found"
+      'messaging/unregistered',        // App was uninstalled
+      'NOT_FOUND',                      // Alternative error code
+      'UNREGISTERED',                   // Alternative error code
+      'INVALID_ARGUMENT',               // Invalid token format
+      'PERMISSION_DENIED',              // Token revoked
     ];
 
-    // Check error code
-    if (invalidCodes.includes(error.code)) {
+    // Check error code (Firebase Admin SDK uses error.code)
+    const errorCode = error.code || error.errorInfo?.code || error.errorInfo?.codePrefix;
+    if (errorCode && invalidCodes.includes(errorCode)) {
       return true;
     }
 
-    // ✅ NEW: Also check error message for common patterns
-    const errorMessage = (error.message || '').toLowerCase();
+    // ✅ Also check error message for common patterns (case-insensitive)
+    const errorMessage = (error.message || error.toString() || '').toLowerCase();
     const invalidMessages = [
       'requested entity was not found',
       'not a valid fcm registration token',
       'the registration token is not a valid',
       'app instance has been unregistered',
       'token is not registered',
+      'registration token is not valid',
+      'invalid registration token',
+      'unregistered',
+      'not found',
     ];
 
-    return invalidMessages.some(msg => errorMessage.includes(msg));
+    if (invalidMessages.some(msg => errorMessage.includes(msg))) {
+      return true;
+    }
+
+    // ✅ Check Firebase errorInfo structure (Firebase Admin SDK v9+)
+    if (error.errorInfo) {
+      const errorInfoCode = (error.errorInfo.code || '').toLowerCase();
+      if (invalidMessages.some(msg => errorInfoCode.includes(msg))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

@@ -397,8 +397,23 @@ class NotificationScheduler {
         } else {
           // Handle failure
           if (sendResult.isInvalidToken) {
-            // Deactivate invalid token (expects just the token string)
-            await this.fcmTokenManager.deactivateToken(notif.token);
+            // ✅ Deactivate invalid token to prevent future attempts
+            logger.info('🔔 Invalid FCM token detected, deactivating', {
+              userId: notif.userId,
+              tokenPrefix: notif.token.substring(0, 20) + '...',
+              errorCode: sendResult.errorCode,
+            });
+            try {
+              await this.fcmTokenManager.deactivateToken(notif.token);
+              logger.info('✅ Invalid FCM token deactivated successfully', {
+                userId: notif.userId,
+              });
+            } catch (deactivateError) {
+              logger.error('❌ Failed to deactivate invalid FCM token', {
+                userId: notif.userId,
+                error: deactivateError.message,
+              });
+            }
           }
 
           // Track failed event

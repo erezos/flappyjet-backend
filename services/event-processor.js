@@ -157,8 +157,18 @@ class EventProcessor {
           break;
         
         case 'user_installed':
+        case 'app_installed':
+          // ✅ FIXED: Also store user_installed events in user_acquisitions
+          // This ensures all installs are tracked, even if user_acquired event isn't fired
+          await this._storeUserAcquisitionFromInstall(event);
+          // Update user's nickname if provided in payload
+          if (event.nickname) {
+            await this._updateUserNickname(event.user_id, event.nickname);
+          }
+          break;
+        
         case 'app_launched':
-          // Update user's nickname if provided in payload (for new users or app launches)
+          // Update user's nickname if provided in payload (for app launches)
           if (event.nickname) {
             await this._updateUserNickname(event.user_id, event.nickname);
           }
@@ -167,6 +177,13 @@ class EventProcessor {
         case 'user_acquired':
           // ✅ NEW: Store campaign attribution data in user_acquisitions table
           await this._storeUserAcquisition(event);
+          break;
+        
+        case 'user_installed':
+        case 'app_installed':
+          // ✅ FIXED: Also store user_installed events in user_acquisitions
+          // This ensures all installs are tracked, even if user_acquired event isn't fired
+          await this._storeUserAcquisitionFromInstall(event);
           break;
         
         case 'performance_metrics':
@@ -189,7 +206,17 @@ class EventProcessor {
       logger.error('⚠️ Special event handling failed (non-blocking)', {
         event_type: event.event_type,
         user_id: event.user_id,
-        error: error.message
+        error: error?.message || error?.toString() || 'Unknown error',
+        errorCode: error?.code,
+        stack: error?.stack,
+        // Include full error object for debugging (serialized safely)
+        errorDetails: error ? {
+          name: error.name,
+          message: error.message,
+          code: error.code,
+          status: error.status,
+          statusCode: error.statusCode,
+        } : null,
       });
     }
   }
@@ -449,6 +476,243 @@ class EventProcessor {
     } catch (error) {
       logger.error('❌ Failed to store user acquisition', {
         user_id: event.user_id,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Store user acquisition from user_installed/app_installed event
+   * ✅ FIXED: Ensures all installs are tracked, even if user_acquired event isn't fired
+   * 
+   * @param {Object} event - user_installed or app_installed event
+   */
+  async _storeUserAcquisitionFromInstall(event) {
+    try {
+      const userId = event.user_id;
+      if (!userId) {
+        logger.warn('⚠️ Missing user_id for user_installed event, skipping store');
+        return;
+      }
+
+      const installDate = event.payload?.timestamp 
+        ? new Date(event.payload.timestamp) 
+        : new Date(event.received_at || new Date());
+      
+      // Extract campaign data from event payload (if available)
+      const campaignId = event.campaign_id || event.payload?.campaign_id || null;
+      const source = event.source || event.payload?.source || null;
+      const medium = event.medium || event.payload?.medium || null;
+      const campaign = event.campaign || event.payload?.campaign || null;
+      const platform = event.platform || event.payload?.platform || null;
+      const country = event.country || event.payload?.country || null;
+
+      // Insert or update user acquisition record (only if not already exists)
+      // Use ON CONFLICT DO NOTHING to avoid overwriting existing user_acquired data
+      const query = `
+        INSERT INTO user_acquisitions (
+          user_id, install_date, campaign_id, source, medium, campaign,
+          platform, country
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (user_id) DO NOTHING
+      `;
+
+      await this.db.query(query, [
+        userId,
+        installDate,
+        campaignId,
+        source,
+        medium,
+        campaign,
+        platform,
+        country
+      ]);
+
+      logger.debug('✅ User acquisition stored from install event', {
+        user_id: userId?.substring(0, 8) + '...',
+        campaign_id: campaignId || 'none'
+      });
+    } catch (error) {
+      logger.error('❌ Failed to store user acquisition from install', {
+        user_id: event.user_id,
+        error: error.message
+      });
+      // Don't throw - this is non-critical
+    }
+  }
+
+  /**
+   * Store performance metrics in performance_metrics table
+   * ✅ Called for performance_metrics, app_load_time, game_load_time, memory_usage events
+   * 
+   * @param {Object} event - Performance event with metrics data
+   */
+  async _storePerformanceMetric(event) {
+    try {
+      const userId = event.user_id;
+      if (!userId) {
+        logger.warn('⚠️ Performance metric missing user_id, skipping');
+        return;
+      }
+
+      // Extract performance data from event payload
+      const payload = event.payload || {};
+      const timestamp = event.timestamp ? new Date(event.timestamp) : new Date();
+
+      // FPS metrics
+      const fpsAverage = payload.fps_average || payload.fps || null;
+      const fpsMin = payload.fps_min || null;
+      const fpsMax = payload.fps_max || null;
+      const fpsCurrent = payload.fps_current || null;
+
+      // Load times (from specific event types or payload)
+      let appLoadTime = null;
+      let gameLoadTime = null;
+      
+      if (event.event_type === 'app_load_time') {
+        appLoadTime = payload.load_time_ms || payload.app_load_time_ms || payload.duration_ms || null;
+      } else if (event.event_type === 'game_load_time') {
+        gameLoadTime = payload.load_time_ms || payload.game_load_time_ms || payload.duration_ms || null;
+      } else {
+        // From performance_metrics event
+        appLoadTime = payload.app_load_time_ms || null;
+        gameLoadTime = payload.game_load_time_ms || null;
+      }
+
+      // Memory usage
+      const memoryMb = payload.memory_mb || payload.memory_usage_mb || null;
+      const frameTimeMs = payload.frame_time_ms || null;
+
+      // Device info
+      const deviceModel = payload.device_model || event.device_model || null;
+      const osVersion = payload.os_version || event.os_version || null;
+      const platform = payload.platform || event.platform || null;
+
+      // Only insert if we have at least one metric
+      if (!fpsAverage && !appLoadTime && !gameLoadTime && !memoryMb) {
+        logger.debug('⚠️ Performance metric has no data, skipping', { event_type: event.event_type });
+        return;
+      }
+
+      const query = `
+        INSERT INTO performance_metrics (
+          user_id, timestamp, fps_average, fps_min, fps_max, fps_current,
+          app_load_time_ms, game_load_time_ms, memory_mb, frame_time_ms,
+          device_model, os_version, platform
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      `;
+
+      await this.db.query(query, [
+        userId,
+        timestamp,
+        fpsAverage,
+        fpsMin,
+        fpsMax,
+        fpsCurrent,
+        appLoadTime,
+        gameLoadTime,
+        memoryMb,
+        frameTimeMs,
+        deviceModel,
+        osVersion,
+        platform
+      ]);
+
+      logger.debug('✅ Performance metric stored', {
+        user_id: userId?.substring(0, 8) + '...',
+        event_type: event.event_type,
+        has_fps: !!fpsAverage,
+        has_load_times: !!(appLoadTime || gameLoadTime),
+        has_memory: !!memoryMb,
+      });
+    } catch (error) {
+      logger.error('❌ Failed to store performance metric', {
+        user_id: event.user_id,
+        event_type: event.event_type,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Store crash/error logs in crash_logs table
+   * ✅ Called for app_crashed, app_error events
+   * 
+   * @param {Object} event - Crash/error event with crash data
+   */
+  async _storeCrashLog(event) {
+    try {
+      const userId = event.user_id;
+      if (!userId) {
+        logger.warn('⚠️ Crash log missing user_id, skipping');
+        return;
+      }
+
+      // Extract crash data from event payload
+      const payload = event.payload || {};
+      const timestamp = event.timestamp ? new Date(event.timestamp) : new Date();
+
+      // Crash type: determine from event_type or payload
+      let crashType = 'error'; // default
+      if (event.event_type === 'app_crashed') {
+        crashType = payload.crash_type || 'crash';
+      } else if (event.event_type === 'app_error') {
+        crashType = payload.crash_type || 'error';
+      }
+
+      // Validate crash type
+      const validTypes = ['fatal', 'error', 'exception', 'crash'];
+      if (!validTypes.includes(crashType)) {
+        crashType = 'error';
+      }
+
+      const crashMessage = payload.crash_message || payload.error_message || payload.message || 'Unknown error';
+      const stackTrace = payload.stack_trace || payload.stack || null;
+      const context = payload.context || payload.where || null;
+      const fatal = payload.fatal || (crashType === 'fatal' || crashType === 'crash') || false;
+
+      // Device info
+      const deviceModel = payload.device_model || event.device_model || null;
+      const osVersion = payload.os_version || event.os_version || null;
+      const platform = payload.platform || event.platform || null;
+      const appVersion = payload.app_version || event.app_version || null;
+
+      const query = `
+        INSERT INTO crash_logs (
+          user_id, timestamp, crash_type, crash_message, stack_trace, context,
+          device_model, os_version, platform, app_version, fatal
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `;
+
+      await this.db.query(query, [
+        userId,
+        timestamp,
+        crashType,
+        crashMessage,
+        stackTrace,
+        context,
+        deviceModel,
+        osVersion,
+        platform,
+        appVersion,
+        fatal
+      ]);
+
+      logger.info('✅ Crash log stored', {
+        user_id: userId?.substring(0, 8) + '...',
+        crash_type: crashType,
+        fatal: fatal,
+        has_stack: !!stackTrace,
+      });
+    } catch (error) {
+      logger.error('❌ Failed to store crash log', {
+        user_id: event.user_id,
+        event_type: event.event_type,
         error: error.message
       });
       throw error;

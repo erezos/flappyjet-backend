@@ -391,6 +391,17 @@ const purchaseCompletedSchema = Joi.object({
   coins_granted: Joi.number().integer().min(0).optional(),
 });
 
+// 17a. special_offer_purchased - Special offer bundle purchase
+const specialOfferPurchasedSchema = Joi.object({
+  ...baseFields,
+  event_type: Joi.string().valid('special_offer_purchased').required(),
+  offer_id: Joi.string().required(), // e.g., 'starter_boss_pack', 'christmas_jet_bundle'
+  product_id: Joi.string().required(),
+  price_usd: Joi.number().min(0).required(),
+  skins_unlocked: Joi.array().items(Joi.string()).optional(), // Array of jet skin IDs
+  skin_equipped: Joi.string().optional(), // ID of skin that was equipped after purchase
+});
+
 // ============================================================================
 // PROGRESSION EVENTS (6 events)
 // ============================================================================
@@ -1136,6 +1147,7 @@ const schemaMap = {
   item_equipped: itemEquippedSchema,   // ✅ NEW: Item equip event
   purchase_initiated: purchaseInitiatedSchema,
   purchase_completed: purchaseCompletedSchema,
+  special_offer_purchased: specialOfferPurchasedSchema,
   
   // Progression
   skin_unlocked: skinUnlockedSchema,

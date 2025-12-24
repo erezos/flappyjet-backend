@@ -885,9 +885,12 @@ if (db) {
 // ============================================================================
 
 // Dashboard views refresh (twice daily: 6 AM and 6 PM UTC)
-  // ✅ NEW: Refresh materialized views (daily, at 3 AM)
+  // ✅ NEW: Refresh materialized views (every 4 hours)
   // Refreshes daily_aggregations, cohort_aggregations, campaign_aggregations
-  cron.schedule('0 3 * * *', async () => {
+  // Schedule: 12 AM, 4 AM, 8 AM, 12 PM, 4 PM, 8 PM
+  // ✅ Best Practice: CONCURRENT refresh ensures no query blocking
+  // ✅ Best Practice: 4-hour interval balances data freshness with performance
+  cron.schedule('0 */4 * * *', async () => {
     try {
       const MaterializedViewRefresher = require('./services/materialized-view-refresher');
       const refresher = new MaterializedViewRefresher(db);
@@ -902,6 +905,7 @@ if (db) {
       logger.error('📊 ❌ Materialized view refresh error:', error.message);
     }
   });
+  logger.info('📊 Cron job registered: Materialized views refresh (every 4 hours)');
 
   // ✅ NEW: Refresh weekly aggregations (weekly, every Monday at 4 AM)
   cron.schedule('0 4 * * 1', async () => {

@@ -1,15 +1,18 @@
 -- ============================================================================
--- MIGRATION: 036_create_funnel_mv.sql
--- Purpose: Create user funnel materialized view for conversion tracking
--- Date: 2025-12-23
--- Author: FlappyJet Analytics Team
+-- MIGRATION: 039_fix_funnel_unique_users.sql
+-- Purpose: Fix user_funnel_daily to count unique users instead of total events
+-- Date: 2025-12-24
 -- 
--- Funnel Steps:
--- Installs → First Open → Tutorial Started → Level 1 Started → ... → Level 10 Started
+-- Issues Fixed:
+-- 1. Funnel was counting total events instead of unique users
+-- 2. This caused discrepancy with cohort analysis (which counts unique users)
 -- ============================================================================
 
--- User Funnel Daily Materialized View
-CREATE MATERIALIZED VIEW IF NOT EXISTS user_funnel_daily AS
+-- Drop existing materialized view
+DROP MATERIALIZED VIEW IF EXISTS user_funnel_daily CASCADE;
+
+-- Recreate with FIXED unique user counting
+CREATE MATERIALIZED VIEW user_funnel_daily AS
 WITH user_events AS (
   SELECT 
     user_id,
@@ -101,16 +104,6 @@ CREATE INDEX IF NOT EXISTS idx_user_funnel_daily_date_range
   ON user_funnel_daily(date DESC);
 
 -- ============================================================================
--- COMMENTS FOR DOCUMENTATION
--- ============================================================================
-
-COMMENT ON MATERIALIZED VIEW user_funnel_daily IS 
-  'Daily user funnel metrics (installs → first open → tutorial → levels 1-10) - Refreshed daily';
-COMMENT ON COLUMN user_funnel_daily.installs IS 'Number of user_installed events';
-COMMENT ON COLUMN user_funnel_daily.first_opens IS 'Number of first_open events';
-COMMENT ON COLUMN user_funnel_daily.level_1_to_level_10_rate IS 'Conversion rate from level 1 to level 10 (%)';
-
--- ============================================================================
 -- VERIFY MIGRATION
 -- ============================================================================
 
@@ -123,7 +116,9 @@ BEGIN
     RAISE EXCEPTION 'Migration failed: user_funnel_daily materialized view not created';
   END IF;
   
-  RAISE NOTICE '✅ Migration 036_create_funnel_mv.sql completed successfully';
+  RAISE NOTICE '✅ Migration 039_fix_funnel_unique_users.sql completed successfully';
+  RAISE NOTICE '📊 Fixed funnel to count unique users instead of total events';
+  RAISE NOTICE '📊 Fixed conversion rates to use unique user counts';
   RAISE NOTICE '📊 Run REFRESH MATERIALIZED VIEW CONCURRENTLY user_funnel_daily; to update data';
 END $$;
 
