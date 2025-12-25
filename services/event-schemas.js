@@ -25,6 +25,9 @@ const baseFields = {
   // Country from backend IP geolocation (added server-side, not from Flutter)
   // Kept optional for backward compatibility with older app versions
   country: Joi.string().length(2).optional(),
+  // ✅ FIX: campaign_id is added by Flutter EventBus for ROI analysis
+  // Backend extracts this and stores it in events.campaign_id column
+  campaign_id: Joi.string().max(255).optional(),
 };
 
 // ============================================================================
