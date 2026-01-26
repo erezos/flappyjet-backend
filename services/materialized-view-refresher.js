@@ -107,17 +107,22 @@ class MaterializedViewRefresher {
    * 
    * @param {string} viewName - Name of the materialized view
    * @param {boolean} concurrent - Use CONCURRENT refresh (default: true)
+   * @param {number} timeoutMs - Query timeout in milliseconds (default: 5 minutes)
    * @returns {Promise<void>}
    */
-  async refreshView(viewName, concurrent = true) {
+  async refreshView(viewName, concurrent = true, timeoutMs = 300000) {
+    const client = await this.db.connect();
     try {
       const refreshType = concurrent ? 'CONCURRENTLY' : '';
       const query = `REFRESH MATERIALIZED VIEW ${refreshType} ${viewName}`;
 
-      logger.info(`🔄 Refreshing ${viewName}...`, { concurrent });
+      logger.info(`🔄 Refreshing ${viewName}...`, { concurrent, timeoutMs });
+
+      // Set a longer statement timeout for materialized view refresh
+      await client.query(`SET statement_timeout = ${timeoutMs}`);
 
       const startTime = Date.now();
-      await this.db.query(query);
+      await client.query(query);
       const duration = Date.now() - startTime;
 
       logger.info(`✅ ${viewName} refreshed`, {
@@ -130,6 +135,9 @@ class MaterializedViewRefresher {
         stack: error.stack
       });
       throw error;
+    } finally {
+      // Always release the client back to the pool
+      client.release();
     }
   }
 
