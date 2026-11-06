@@ -25,7 +25,25 @@ class PartitionManager {
     try {
       logger.info('📊 Starting partition maintenance...');
 
-      // Call PostgreSQL function to maintain partitions
+      // The original helper attached new weeks to events_partitioned after the
+      // rename to events, so weeks after 2026-03-23 were never created.
+      await this.db.query(`
+        CREATE OR REPLACE FUNCTION create_weekly_partition(week_start DATE)
+        RETURNS VOID AS $fn$
+        DECLARE
+          partition_name TEXT;
+          week_end DATE;
+        BEGIN
+          partition_name := get_weekly_partition_name(week_start);
+          week_end := week_start + INTERVAL '7 days';
+          EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF events FOR VALUES FROM (%L) TO (%L)',
+            partition_name, week_start, week_end
+          );
+        END;
+        $fn$ LANGUAGE plpgsql;
+      `);
+
       const result = await this.db.query('SELECT maintain_weekly_partitions()');
 
       logger.info('✅ Partition maintenance completed');
