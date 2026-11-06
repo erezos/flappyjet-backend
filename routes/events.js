@@ -356,5 +356,177 @@ router.get('/recent', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/events/scoreboard
+ * Aggregate the events the app actually sends. Counts are split by app version.
+ * Day-1 and day-7 are returning players, not session counts divided by installs.
+ */
+router.get('/scoreboard', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const now = new Date();
+    const day = 24 * 60 * 60 * 1000;
+    const recentStart = new Date(now.getTime() - 28 * day);
+    const priorStart = new Date(now.getTime() - 56 * day);
+    const focusVersion = '2.5.0';
+
+    const recent = await scoreboardWindow(db, recentStart, now, null);
+    const prior = await scoreboardWindow(db, priorStart, recentStart, null);
+    const focusRecent = await scoreboardWindow(db, recentStart, now, focusVersion);
+    const focusPrior = await scoreboardWindow(db, priorStart, recentStart, focusVersion);
+    const byVersion = await scoreboardVersions(db, recentStart, now);
+
+    const trusted = focusRecent.events > 0;
+    res.json({
+      generated_at: now.toISOString(),
+      source: 'railway',
+      trusted,
+      focus_version: focusVersion,
+      recent_28_days: focusRecent,
+      prior_28_days: focusPrior,
+      all_versions_recent_28_days: recent,
+      all_versions_prior_28_days: prior,
+      by_version: byVersion,
+      note: trusted
+        ? 'Counts are version 2.5.0 players from the Railway events table.'
+        : 'Scoreboard untrusted: version 2.5.0 has no Railway events in the last 28 days.',
+    });
+  } catch (error) {
+    logger.error('❌ Scoreboard query failed', { error: error.message });
+    res.status(500).json({
+      source: 'railway',
+      trusted: false,
+      error: 'Scoreboard untrusted',
+    });
+  }
+});
+
+function num(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function rate(part, whole) {
+  if (!whole) return null;
+  return Math.round((part / whole) * 1000) / 1000;
+}
+
+async function scoreboardWindow(db, start, end, version) {
+  const params = [start, end];
+  let versionSql = '';
+  if (version) {
+    params.push(version);
+    versionSql = `AND payload->>'app_version' = $3`;
+  }
+  const result = await db.query(
+    `
+    WITH ev AS (
+      SELECT
+        event_type,
+        user_id,
+        received_at,
+        CASE
+          WHEN payload->>'revenue_usd' ~ '^[0-9]+(\\.[0-9]+)?$'
+          THEN (payload->>'revenue_usd')::numeric
+          ELSE 0
+        END AS revenue_usd
+      FROM events
+      WHERE received_at >= $1 AND received_at < $2
+      ${versionSql}
+    ),
+    installs AS (
+      SELECT user_id, MIN(received_at) AS installed_at
+      FROM ev
+      WHERE event_type IN ('user_installed', 'first_open', 'app_installed')
+      GROUP BY user_id
+    ),
+    activity AS (
+      SELECT DISTINCT user_id, (received_at AT TIME ZONE 'UTC')::date AS day
+      FROM ev
+      WHERE event_type IN ('session_started', 'app_launched', 'game_started')
+    )
+    SELECT
+      (SELECT COUNT(*) FROM ev) AS events,
+      (SELECT COUNT(*) FROM installs) AS installs,
+      (SELECT COUNT(*) FROM ev WHERE event_type = 'session_started') AS session_started,
+      (SELECT COUNT(*) FROM ev WHERE event_type = 'game_started') AS game_started,
+      (SELECT COUNT(DISTINCT user_id) FROM ev WHERE event_type = 'game_started') AS players_who_started,
+      (SELECT COUNT(*) FROM ev WHERE event_type = 'level_completed') AS level_completed,
+      (SELECT COUNT(*) FROM ev WHERE event_type = 'level_failed') AS level_failed,
+      (SELECT COUNT(*) FROM ev WHERE event_type = 'interstitial_shown') AS interstitial_shown,
+      (SELECT COUNT(*) FROM ev WHERE event_type IN ('purchase_completed', 'iap_purchase_completed')) AS purchase_completed,
+      (SELECT COUNT(*) FROM ev WHERE event_type IN ('purchase_acknowledged', 'iap_purchase_acknowledged')) AS purchase_acknowledged,
+      (SELECT COUNT(*) FROM ev WHERE event_type ILIKE '%refund%') AS refunds,
+      (SELECT COALESCE(SUM(revenue_usd), 0) FROM ev WHERE event_type = 'ad_revenue') AS ad_revenue_usd,
+      (SELECT COALESCE(SUM(revenue_usd), 0) FROM ev WHERE event_type IN ('purchase_completed', 'iap_purchase_completed')) AS iap_revenue_usd,
+      (SELECT COUNT(*) FROM installs i WHERE i.installed_at <= NOW() - INTERVAL '1 day') AS day1_eligible,
+      (SELECT COUNT(*) FROM installs i
+        WHERE i.installed_at <= NOW() - INTERVAL '1 day'
+          AND EXISTS (
+            SELECT 1 FROM activity a
+            WHERE a.user_id = i.user_id
+              AND a.day = (i.installed_at AT TIME ZONE 'UTC')::date + 1
+          )) AS day1_retained,
+      (SELECT COUNT(*) FROM installs i WHERE i.installed_at <= NOW() - INTERVAL '7 days') AS day7_eligible,
+      (SELECT COUNT(*) FROM installs i
+        WHERE i.installed_at <= NOW() - INTERVAL '7 days'
+          AND EXISTS (
+            SELECT 1 FROM activity a
+            WHERE a.user_id = i.user_id
+              AND a.day = (i.installed_at AT TIME ZONE 'UTC')::date + 7
+          )) AS day7_retained
+    `,
+    params
+  );
+  const row = result.rows[0] || {};
+  const installs = num(row.installs);
+  const day1Eligible = num(row.day1_eligible);
+  const day7Eligible = num(row.day7_eligible);
+  const players = num(row.players_who_started);
+  return {
+    events: num(row.events),
+    installs,
+    session_started: num(row.session_started),
+    game_started: num(row.game_started),
+    plays_per_player: rate(num(row.game_started), players),
+    level_completed: num(row.level_completed),
+    level_failed: num(row.level_failed),
+    interstitial_shown: num(row.interstitial_shown),
+    purchase_completed: num(row.purchase_completed),
+    purchase_acknowledged: num(row.purchase_acknowledged),
+    refunds: num(row.refunds),
+    ad_revenue_usd: num(row.ad_revenue_usd),
+    iap_revenue_usd: num(row.iap_revenue_usd),
+    day1_eligible: day1Eligible,
+    day1_retained: num(row.day1_retained),
+    day1_rate: rate(num(row.day1_retained), day1Eligible),
+    day7_eligible: day7Eligible,
+    day7_retained: num(row.day7_retained),
+    day7_rate: rate(num(row.day7_retained), day7Eligible),
+    app_version: version || 'all',
+  };
+}
+
+async function scoreboardVersions(db, start, end) {
+  const result = await db.query(
+    `
+    SELECT COALESCE(payload->>'app_version', 'unknown') AS app_version,
+           COUNT(*) AS events,
+           COUNT(DISTINCT user_id) AS players
+    FROM events
+    WHERE received_at >= $1 AND received_at < $2
+    GROUP BY 1
+    ORDER BY events DESC
+    LIMIT 20
+    `,
+    [start, end]
+  );
+  return result.rows.map((row) => ({
+    app_version: row.app_version,
+    events: num(row.events),
+    players: num(row.players),
+  }));
+}
+
 module.exports = router;
 
